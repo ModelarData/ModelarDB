@@ -1,6 +1,6 @@
 name := "ModelarDB"
 version := "1.0"
-scalaVersion := "2.12"
+scalaVersion := "2.11.8"
 scalacOptions ++= Seq("-optimise", "-feature", "-deprecation", "-Xlint:_")
 
 resolvers += "Repo at github.com/ankurdave/maven-repo" at "https://github.com/ankurdave/maven-repo/raw/master"
@@ -15,6 +15,6 @@ libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-core" % "2.1.0" % "provided",
   "org.apache.spark" %% "spark-streaming" % "2.1.0" % "provided",
   "org.apache.spark" %% "spark-sql" % "2.1.0" % "provided",
-  "com.eed3si9n" % "sbt-assembly" % "0.15.0")
+  "com.eed3si9n" % "sbt-assembly" % "0.15.0" % "provided")
 
 run in Compile := Defaults.runTask(fullClasspath in Compile, mainClass in (Compile, run), runner in (Compile, run)).evaluated
