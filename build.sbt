@@ -14,6 +14,6 @@ libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-core" % "2.1.0" % "provided",
   "org.apache.spark" %% "spark-streaming" % "2.1.0" % "provided",
   "org.apache.spark" %% "spark-sql" % "2.1.0" % "provided",
-  "com.eed3si9n" % "sbt-assembly" % "x.y.z")
+  "com.eed3si9n" % "sbt-assembly" % "0.15.0")
 
 run in Compile := Defaults.runTask(fullClasspath in Compile, mainClass in (Compile, run), runner in (Compile, run)).evaluated
