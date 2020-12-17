@@ -1,11 +1,11 @@
 name := "ModelarDB"
 version := "1.0"
-scalaVersion := "2.11.8"
+scalaVersion := "2.11"
 scalacOptions ++= Seq("-optimise", "-feature", "-deprecation", "-Xlint:_")
 
 resolvers += "Repo at github.com/ankurdave/maven-repo" at "https://github.com/ankurdave/maven-repo/raw/master"
 resolvers += "Spark Packages Repo" at "https://dl.bintray.com/spark-packages/maven"
-resolvers += "Bintray sbt plugin releases" at "https://dl.bintray.com/sbt/sbt-plugin/"
+resolvers += "Bintray sbt plugin releases" at "https://dl.bintray.com/sbt/sbt-plugin-releases/"
 
 libraryDependencies ++= Seq(
   "org.scala-lang" % "scala-compiler" % scalaVersion.value,
