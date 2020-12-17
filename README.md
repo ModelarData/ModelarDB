@@ -14,7 +14,7 @@ cannot be public, you can, however, send us a private
 
 ## Installation
 1. Install the Scala Build Tool *sbt*.
-2. Clone the ModelarDB Git repository https://github.com/skejserjensen/ModelarDB
+2. Clone the ModelarDB Git repository https://github.com/modelardata/modelardb
 3. Start *sbt* in the root of the repository and run one of the following commands:
 
 - **compile** compiles ModelarDB to Java class files.
