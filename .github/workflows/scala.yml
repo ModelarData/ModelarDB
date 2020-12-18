@@ -23,8 +23,8 @@ jobs:
       run: sbt compile
     - name: Build package
       run: sbt package
-    #- name: Build assembly
-      #run: sbt assembly
+    - name: Build assembly
+      run: sbt assembly
   build-on-mac:
 
     runs-on: macOS-latest
@@ -43,5 +43,5 @@ jobs:
       run: sbt compile
     - name: Build package
       run: sbt package
-    #- name: Build assembly
-      #run: sbt assembly
+    - name: Build assembly
+      run: sbt assembly
