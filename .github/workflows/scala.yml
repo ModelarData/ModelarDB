@@ -31,8 +31,6 @@ jobs:
 
     steps:
     - run: |
-        pwd
-        ls -l
         brew install sbt
     - uses: actions/checkout@v2
     - name: Set up JDK 1.8
@@ -51,5 +49,5 @@ jobs:
       uses: actions/upload-artifact@v1
       with:
         name: modelardb-macos
-        path: target/scala-2.12/ModelarDB-assembly-1.0.jar
+        path: target/scala-2.11/ModelarDB-assembly-1.0.jar
     
