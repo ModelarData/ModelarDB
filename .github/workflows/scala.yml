@@ -45,3 +45,9 @@ jobs:
       run: sbt package
     - name: Build assembly
       run: sbt assembly
+    - name: upload assembly
+      uses: actions/upload-artifact@v1
+      with:
+        name: modelardb-macos
+        path: target/scala-2.12/ModelarDB-assembly-1.0.jar
+    
