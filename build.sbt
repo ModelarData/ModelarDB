@@ -1,6 +1,6 @@
 name := "ModelarDB"
 version := "1.0"
-scalaVersion := "2.12.12"
+scalaVersion := "2.11.8"
 scalacOptions ++= Seq("-optimise", "-feature", "-deprecation", "-Xlint:_")
 
 resolvers += "Repo at github.com/ankurdave/maven-repo" at "https://github.com/ankurdave/maven-repo/raw/master"
