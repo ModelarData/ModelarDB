@@ -31,6 +31,8 @@ jobs:
 
     steps:
     - run: |
+        pwd
+        ls -l
         brew install sbt
     - uses: actions/checkout@v2
     - name: Set up JDK 1.8
