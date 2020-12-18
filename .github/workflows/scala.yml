@@ -25,11 +25,13 @@ jobs:
       run: sbt package
     - name: Build assembly
       run: sbt assembly
-  build:
+  build-on-mac:
 
     runs-on: macOS-latest
 
     steps:
+    - run: |
+        brew install sbt
     - uses: actions/checkout@v2
     - name: Set up JDK 1.8
       uses: actions/setup-java@v1
