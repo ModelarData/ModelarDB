@@ -79,7 +79,7 @@ class CassandraSparkStorage(connectionString: String) extends Storage with Spark
             BigInteger.valueOf(tsg.gid)) //Gid
 
         val members = dimensions.get(ts.source)
-        if ( ! members.isEmpty) {
+        if (members.nonEmpty) {
           stmt = stmt.addPositionalValues(members: _*) //Dimensions
         }
         session.execute(stmt.build())
@@ -181,7 +181,7 @@ class CassandraSparkStorage(connectionString: String) extends Storage with Spark
         val gid = row.getBigInteger("gid").intValue()
         val gaps = row.getBigInteger("gaps").longValue()
         val size: Long = row.getBigInteger("size").longValue()
-        val endTime = row.getInstant("end_time").toEpochMilli()
+        val endTime = row.getInstant("end_time").toEpochMilli
         val mid = row.getBigInteger("mid").intValue()
         val params = row.getByteBuffer("parameters")
 

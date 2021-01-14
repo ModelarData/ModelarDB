@@ -26,7 +26,7 @@ class ViewDataPoint(dimensions: Array[StructField]) (@transient override val sql
   extends BaseRelation with PrunedFilteredScan {
 
   /** Public Methods **/
-  override def schema = StructType(Seq(
+  override def schema: StructType = StructType(Seq(
     StructField("sid", IntegerType, nullable = false),
     StructField("ts", TimestampType, nullable = false),
     StructField("val", FloatType, nullable = false))

@@ -179,9 +179,9 @@ public class TimeSeriesGroup implements Serializable {
 
     private int timeSeriesActive;
     private int timeSeriesHasNext;
-    private TimeSeries[] timeSeries;
+    private final TimeSeries[] timeSeries;
 
     private long next;
-    private DataPoint[] currentDataPoints;
-    private DataPoint[] nextDataPoints;
+    private final DataPoint[] currentDataPoints;
+    private final DataPoint[] nextDataPoints;
 }

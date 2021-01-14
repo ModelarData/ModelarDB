@@ -469,7 +469,7 @@ class SegmentGenerator {
         TimeSeriesGroup tsg = new TimeSeriesGroup(tsgs, totalJoinIndex);
 
         //If the original group is recreated the master SegmentGenerator is used, otherwise a new one is created
-        SegmentGenerator nsg = null;
+        SegmentGenerator nsg;
         if (this.sids.size() == tsg.getTimeSeries().length) {
             nsg = this;
             this.timeSeriesGroup = tsg;
@@ -546,7 +546,7 @@ class SegmentGenerator {
     private long[] prevTimeStamps;
 
     //State variables for controlling split generators
-    private List<Integer> sids;
+    private final List<Integer> sids;
     private float dynamicSplitFraction;
     private long emittedSegments;
     private double compressionRatioAverage;

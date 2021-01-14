@@ -128,7 +128,7 @@ public class Correlation {
         Pair<Integer, Integer> startEnd = getDimension(dim, dimensions);
 
         //The dimension and level is converted to a column in the denormalized schema used by Dimensions
-        int dimensionLevel = 0;
+        int dimensionLevel;
         if (level == 0) {
             dimensionLevel = startEnd._2;
         } else if (level < 0) {
@@ -194,11 +194,11 @@ public class Correlation {
     }
 
     /** Instance Variables **/
-    private HashSet<String> correlatedSources;
-    private HashMap<Integer, HashSet<Object>> correlatedMembers;
-    private HashMap<Integer, Integer> correlatedDimensions;
+    private final HashSet<String> correlatedSources;
+    private final HashMap<Integer, HashSet<Object>> correlatedMembers;
+    private final HashMap<Integer, Integer> correlatedDimensions;
     private float distance;
 
-    private HashMap<String, Float> scalingFactorForSource;
-    private HashMap<Integer, HashMap<Object, Float>> scalingFactorForMember;
+    private final HashMap<String, Float> scalingFactorForSource;
+    private final HashMap<Integer, HashMap<Object, Float>> scalingFactorForMember;
 }

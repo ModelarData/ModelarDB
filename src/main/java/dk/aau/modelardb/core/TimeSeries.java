@@ -20,7 +20,7 @@ import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.text.NumberFormat;
 import java.text.ParseException;
@@ -193,7 +193,7 @@ public class TimeSeries implements Serializable, Iterator<DataPoint> {
     }
 
     private void readLines() throws IOException {
-        int lastChar = 0;
+        int lastChar;
 
         //Reads a whole line from the channel by looking for either a new line or if no additional bytes are returned
         do {
@@ -201,7 +201,7 @@ public class TimeSeries implements Serializable, Iterator<DataPoint> {
             this.channel.read(this.byteBuffer);
             lastChar = this.byteBuffer.position();
             this.byteBuffer.flip();
-            this.decodeBuffer.append(Charset.forName("UTF-8").decode(this.byteBuffer));
+            this.decodeBuffer.append(StandardCharsets.UTF_8.decode(this.byteBuffer));
         } while (lastChar != 0 && this.decodeBuffer.indexOf("\n") == -1);
 
         //Transfer all fully read data points into a new buffer to simplify the remaining implementation
@@ -213,7 +213,7 @@ public class TimeSeries implements Serializable, Iterator<DataPoint> {
     private DataPoint nextDataPoint() throws IOException {
         try {
             int nextDataPointIndex = this.nextBuffer.indexOf("\n") + 1;
-            String[] split = null;
+            String[] split;
 
             if (nextDataPointIndex == 0) {
                 split = this.nextBuffer.toString().split(splitString);
@@ -227,11 +227,11 @@ public class TimeSeries implements Serializable, Iterator<DataPoint> {
             switch (this.dateParserType) {
                 case 1:
                     //Unix time
-                    timestamp = new Date(Long.valueOf(split[timestampColumn]) * 1000).getTime();
+                    timestamp = new Date(Long.parseLong(split[timestampColumn]) * 1000).getTime();
                     break;
                 case 2:
                     //Java time
-                    timestamp = new Date(Long.valueOf(split[timestampColumn])).getTime();
+                    timestamp = new Date(Long.parseLong(split[timestampColumn])).getTime();
                     break;
                 case 3:
                     //Human readable timestamp

@@ -48,7 +48,7 @@ public class Partitioner {
         //Initializes all time series, both bounded (files) and unbounded (sockets)
         for (String source : sources) {
             cms += 1;
-            TimeSeries ts = null;
+            TimeSeries ts;
             if (source.contains(":")) {
                 //The source is a socket
                 String[] ipSplitPort = source.split(":");
@@ -97,13 +97,13 @@ public class Partitioner {
 
         Correlation[] correlations = (Correlation[]) configuration.get("modelardb.correlation");
         Iterator<Integer> gids = IntStream.range(currentMaximumGid + 1, Integer.MAX_VALUE).iterator();
-        TimeSeriesGroup[] groups = null;
+        TimeSeriesGroup[] groups;
         if (correlations.length == 0) {
             groups = Arrays.stream(timeSeries).map(ts -> new TimeSeriesGroup(gids.next(), new TimeSeries[]{ts}))
                     .toArray(TimeSeriesGroup[]::new);
         } else {
             //If groups are specified as disjoint sets of time series, they can be created directly
-            TimeSeries[][] tss = null;
+            TimeSeries[][] tss;
             if (areAllDisjoint(correlations)) {
                 tss = Partitioner.groupTimeSeriesOnlyBySource(timeSeries, correlations);
             } else {
@@ -140,11 +140,9 @@ public class Partitioner {
                 return false;
             }
 
-            HashSet<String> sources = clause.getCorrelatedSources();
             int orgSize = all.size();
-            for (String source : sources) {
-                all.add(source);
-            }
+            HashSet<String> sources = clause.getCorrelatedSources();
+            all.addAll(sources);
 
             int newSize = all.size();
             if (newSize - orgSize != sources.size()) {
@@ -211,7 +209,7 @@ public class Partitioner {
             }
         }
         return sourceToGroup.values().stream().distinct()
-                .map(al -> al.toArray(new TimeSeries[al.size()])).toArray(TimeSeries[][]::new);
+                .map(al -> al.toArray(new TimeSeries[0])).toArray(TimeSeries[][]::new);
     }
 
     //Partitioning Methods
@@ -246,7 +244,7 @@ public class Partitioner {
         //The groups are sorted by gid to make the order they are ingested in deterministic
         return sets.stream().map(ts -> {
             ts._2.sort(Comparator.comparingInt(tsg -> tsg.gid));
-            return ts._2.toArray(new TimeSeriesGroup[ts._2.size()]);
+            return ts._2.toArray(new TimeSeriesGroup[0]);
         }).toArray(TimeSeriesGroup[][]::new);
     }
 }

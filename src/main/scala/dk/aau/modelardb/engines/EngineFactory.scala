@@ -14,7 +14,6 @@
  */
 package dk.aau.modelardb.engines
 
-import java.util.function.Consumer
 import dk.aau.modelardb.core.models.Segment
 import dk.aau.modelardb.core.utility.{Pair, SegmentFunction, ValueFunction}
 import dk.aau.modelardb.core.{Configuration, Partitioner, SegmentGroup, Storage}
@@ -83,12 +82,10 @@ object EngineFactory {
 
     //DEBUG: for debugging we print the number of data points returned from storage
     var segmentDebugCount = 0L
-    storage.getSegments.forEach(new Consumer[SegmentGroup] {
-      override def accept(sg: SegmentGroup): Unit = {
-        val segments = sg.toSegments(storage)
-        for (segment: Segment <- segments) {
-          segmentDebugCount += segment.grid().count()
-        }
+    storage.getSegments.forEach((sg: SegmentGroup) => {
+      val segments = sg.toSegments(storage)
+      for (segment: Segment <- segments) {
+        segmentDebugCount += segment.grid().count()
       }
     })
     println(

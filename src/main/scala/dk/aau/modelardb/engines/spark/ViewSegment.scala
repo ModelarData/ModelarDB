@@ -27,7 +27,7 @@ class ViewSegment(dimensions: Array[StructField]) (@transient val sqlContext: SQ
   extends BaseRelation with PrunedFilteredScan {
 
   /** Public Methods **/
-  override def schema = StructType(Seq(
+  override def schema: StructType = StructType(Seq(
     StructField("sid", IntegerType, nullable = false),
     StructField("st", TimestampType, nullable = false),
     StructField("et", TimestampType, nullable = false),
@@ -69,7 +69,7 @@ class ViewSegment(dimensions: Array[StructField]) (@transient val sqlContext: SQ
       case sources.IsNull("sid") => sources.IsNull("gid")
       case sources.IsNotNull("sid") => sources.IsNotNull("gid")
       case sources.EqualTo(column: String, value: Any) if idc.containsKey(column) =>
-        sources.In("gid", idc.get(column).getOrDefault(value, Array(new Integer(-1))).asInstanceOf[Array[Any]])
+        sources.In("gid", idc.get(column).getOrDefault(value, Array(Integer.valueOf(-1))).asInstanceOf[Array[Any]])
       case f => f
     }
 

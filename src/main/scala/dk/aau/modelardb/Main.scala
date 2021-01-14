@@ -75,17 +75,20 @@ object Main {
 
 
     //The information about dimensions are extracted first so correlation objects can depends on it being available
-    val dimensionLines = Source.fromFile(configPath).getLines().map(_.trim).filter(_.startsWith("modelardb.dimensions"))
-    val dimensions: Dimensions = if (dimensionLines.nonEmpty) {
-      val lineSplit = dimensionLines.toStream.last.trim().split(" ", 2)
+    val configDimensionsSource = Source.fromFile(configPath)
+    val dimensionLine = configDimensionsSource.getLines().map(_.trim).filter(_.startsWith("modelardb.dimensions"))
+    val dimensions: Dimensions = if (dimensionLine.nonEmpty) {
+      val lineSplit = dimensionLine.toStream.last.trim().split(" ", 2)
       configuration.add("modelardb.dimensions", readDimensionsFile(lineSplit(1)))
       configuration.getDimensions
     } else {
       null
     }
+    configDimensionsSource.close()
 
     //Parses everything but modelardb.dimensions as dimensions are already initialized
-    for (line <- Source.fromFile(configPath).getLines().filter(_.nonEmpty)) {
+    val configFullSource = Source.fromFile(configPath)
+    for (line <- configFullSource.getLines().filter(_.nonEmpty)) {
       //Parsing is performed naively and will terminate if the config is malformed
       val lineSplit = line.trim().split(" ", 2)
       lineSplit(0) match {
@@ -104,9 +107,11 @@ object Main {
           //If the value is a file each line is considered a clause
           val tls = lineSplit(1).trim
           if (new File(tls).exists()) {
-            for (line <- Source.fromFile(tls).getLines()) {
+            val correlationSource = Source.fromFile(tls)
+            for (line <- correlationSource.getLines()) {
               correlations.append(parseCorrelation(line, dimensions))
             }
+            correlationSource.close()
           } else {
             correlations.append(parseCorrelation(tls, dimensions))
           }
@@ -124,6 +129,7 @@ object Main {
           }
       }
     }
+    configFullSource.close()
 
     configuration.add("modelardb.model", models.toArray)
     configuration.add("modelardb.source", sources.toArray)
@@ -180,7 +186,8 @@ object Main {
     }
 
     //Parses a dimensions file with the format (Dimension Definition+, Empty Line, Row+)
-    val lines = Source.fromFile(dimensionPath).getLines()
+    val dimensionSource = Source.fromFile(dimensionPath)
+    val lines = dimensionSource.getLines()
     var line: String = " "
 
     //Parses each dimension definition in the dimensions file
@@ -204,6 +211,7 @@ object Main {
         dimensions.add(line)
       }
     }
+    dimensionSource.close()
     dimensions
   }
 

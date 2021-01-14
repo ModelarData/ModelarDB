@@ -135,12 +135,12 @@ public class Configuration {
 
         try {
             return Integer.parseInt(value);
-        } catch (Exception e) {
+        } catch (Exception ignored) {
         }
 
         try {
             return Float.parseFloat(value);
-        } catch (Exception e) {
+        } catch (Exception ignored) {
         }
 
         return value;
