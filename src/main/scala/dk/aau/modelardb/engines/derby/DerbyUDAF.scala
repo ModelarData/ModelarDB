@@ -38,7 +38,7 @@ class Segment(val gid: Int, val start_time: Long, val end_time: Long, val mid: I
 }
 
 //Count
-class COUNT_S extends Aggregator[Segment, Long, COUNT_S] {
+class CountS extends Aggregator[Segment, Long, CountS] {
 
   /** Public Methods  **/
   override def init(): Unit = {
@@ -50,7 +50,7 @@ class COUNT_S extends Aggregator[Segment, Long, COUNT_S] {
     this.count = this.count + ((v.end_time - v.start_time) / res) + 1
   }
 
-  override def merge(a: COUNT_S): Unit = {
+  override def merge(a: CountS): Unit = {
     this.count = this.count + a.count
   }
 
