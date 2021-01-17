@@ -98,7 +98,8 @@ public class Dimensions {
         return this.types;
     }
 
-    public String getSchema() {
+    public String getSchema(String textType) {
+        //TODO: should getSchema should be in the storage backends so each can use the syntax and types it prefers?
         if (this.types.length == 0) {
             return "";
         }
@@ -110,7 +111,11 @@ public class Dimensions {
         for (int i = 0; i <  withPunctuation; i++) {
             sb.append(this.columns[i]);
             sb.append(' ');
-            sb.append(this.types[i].toString());
+            if (this.types[i] == Types.TEXT) {
+                sb.append(textType);
+            } else {
+                sb.append(this.types[i].toString());
+            }
             sb.append(", ");
         }
         sb.append(this.columns[withPunctuation]);

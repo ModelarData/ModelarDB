@@ -28,6 +28,7 @@ object EngineFactory {
     //Extracts the name of the system from the engine connection string
     engine.takeWhile(_ != ':') match {
       case "local" => startLocal(storage, models, batchSize)
+      case "derby" => startDerby(interface, engine, storage, models, batchSize)
       case "spark" => startSpark(interface, engine, storage, models, batchSize)
       case _ =>
         throw new java.lang.UnsupportedOperationException("ModelarDB: unknown value for modelardb.engine in the config file")
@@ -90,6 +91,13 @@ object EngineFactory {
     })
     println(
       s"Gridded: $segmentDebugCount\n=========================================================")
+  }
+
+  private def startDerby(interface: String, engine: String, storage: Storage,
+                         models: Array[String], segmentBatchSize: Int): Unit = {
+    val configuration = Configuration.get()
+    val dimensions = configuration.getDimensions
+    new dk.aau.modelardb.engines.derby.Derby(interface, engine, storage, dimensions, models).start()
   }
 
   private def startSpark(interface: String, engine: String, storage: Storage,

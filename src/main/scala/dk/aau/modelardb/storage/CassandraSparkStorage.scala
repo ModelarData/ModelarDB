@@ -274,7 +274,7 @@ class CassandraSparkStorage(connectionString: String) extends Storage with Spark
     createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.model(mid VARINT, name TEXT, PRIMARY KEY (mid));")
     session.execute(createTable)
 
-    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.source(sid VARINT, scaling FLOAT, resolution VARINT, gid VARINT ${dimensions.getSchema}, PRIMARY KEY (sid));")
+    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.source(sid VARINT, scaling FLOAT, resolution VARINT, gid VARINT ${dimensions.getSchema("TEXT")}, PRIMARY KEY (sid));")
     session.execute(createTable)
 
     //The insert statement will be used for every batch of segments

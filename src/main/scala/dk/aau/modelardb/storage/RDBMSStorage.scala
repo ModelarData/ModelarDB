@@ -25,7 +25,7 @@ import dk.aau.modelardb.core.utility.ValueFunction
 
 import scala.collection.JavaConverters._
 
-class RDBMSStorage(connectionString: String) extends Storage {
+class RDBMSStorage(connectionString: String, textType: String, blobType: String) extends Storage {
 
   /** Public Methods **/
   override def open(dimensions: Dimensions): Unit = {
@@ -36,13 +36,13 @@ class RDBMSStorage(connectionString: String) extends Storage {
     //Checks if the tables exist and create them if necessary
     val metadata = this.connection.getMetaData
     val tableType = Array("TABLE")
-    val tables = metadata.getTables(null, null, "segment", tableType)
+    val tables = metadata.getTables(null, null, "SEGMENT", tableType)
 
     if ( ! tables.next()) {
       val stmt = this.connection.createStatement()
-      stmt.executeUpdate("CREATE TABLE model(mid INTEGER, name TEXT)")
-      stmt.executeUpdate("CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mid INTEGER, params BYTEA, gaps BYTEA)")
-      stmt.executeUpdate("CREATE TABLE source(sid INTEGER, scaling FLOAT, resolution INTEGER, gid INTEGER" + dimensions.getSchema + ")")
+      stmt.executeUpdate(s"CREATE TABLE model(mid INTEGER, name $textType)")
+      stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mid INTEGER, params $blobType, gaps $blobType)")
+      stmt.executeUpdate(s"CREATE TABLE source(sid INTEGER, scaling FLOAT, resolution INTEGER, gid INTEGER${dimensions.getSchema(textType)})")
     }
 
     //Prepares the necessary statements
@@ -148,6 +148,8 @@ class RDBMSStorage(connectionString: String) extends Storage {
   }
 
   override def close(): Unit = {
+    //Connection cannot be closed while a transaction is running
+    this.connection.commit()
     this.connection.close()
   }
 
