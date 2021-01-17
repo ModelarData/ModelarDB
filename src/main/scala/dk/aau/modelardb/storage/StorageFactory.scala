@@ -28,6 +28,8 @@ object StorageFactory {
       } else if (connectionString.startsWith("derby:")) {
         System.setSecurityManager(null) //HACK: security manager is disabled during development
         new dk.aau.modelardb.storage.RDBMSStorage("jdbc:" + connectionString, "LONG VARCHAR", "BLOB")
+      } else if (connectionString.startsWith("hsqldb:")) { //TODO: Determine if the storage usage of HyperSQL can be significantly improved
+        new dk.aau.modelardb.storage.RDBMSStorage("jdbc:" + connectionString, "LONGVARCHAR", "BLOB")
       } else if (connectionString.startsWith("postgresql:")) {
         Class.forName("org.postgresql.Driver")
         new dk.aau.modelardb.storage.RDBMSStorage("jdbc:" + connectionString, "TEXT", "BYTEA")
