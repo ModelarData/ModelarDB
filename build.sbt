@@ -11,6 +11,7 @@ libraryDependencies ++= Seq(
   "org.xerial" % "sqlite-jdbc" % "3.34.0",
   "org.apache.derby" % "derby" % "10.15.2.0",
   "org.hsqldb" % "hsqldb" % "2.5.1",
+  "com.h2database" % "h2" % "1.4.200",
   "com.datastax.spark" %% "spark-cassandra-connector" % "3.0.0",
   "amplab" % "spark-indexedrdd" % "0.4.0",
   "org.apache.spark" %% "spark-core" % "3.0.1" % "provided",

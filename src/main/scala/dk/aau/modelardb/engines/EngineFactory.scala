@@ -29,6 +29,7 @@ object EngineFactory {
     engine.takeWhile(_ != ':') match {
       case "local" => startLocal(storage, models, batchSize)
       case "derby" => startDerby(interface, engine, storage, models, batchSize)
+      case "h2" => startH2(interface, engine, storage, models)
       case "spark" => startSpark(interface, engine, storage, models, batchSize)
       case _ =>
         throw new java.lang.UnsupportedOperationException("ModelarDB: unknown value for modelardb.engine in the config file")
@@ -98,6 +99,13 @@ object EngineFactory {
     val configuration = Configuration.get()
     val dimensions = configuration.getDimensions
     new dk.aau.modelardb.engines.derby.Derby(interface, engine, storage, dimensions, models).start()
+  }
+
+  private def startH2(interface: String, engine: String, storage: Storage, models: Array[String]): Unit = {
+    val configuration = Configuration.get()
+    val dimensions = configuration.getDimensions
+    new dk.aau.modelardb.engines.h2.H2(interface, engine, storage, dimensions, models).start()
+
   }
 
   private def startSpark(interface: String, engine: String, storage: Storage,
