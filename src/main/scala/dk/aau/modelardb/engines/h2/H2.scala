@@ -1,12 +1,9 @@
 package dk.aau.modelardb.engines.h2
 
-import java.sql.{Connection, DriverManager}
-
+import java.sql.DriverManager
 import dk.aau.modelardb.Interface
 import dk.aau.modelardb.core.{Dimensions, Storage}
-
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
+import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
 class H2(interface: String, engine: String, storage: Storage, dimensions: Dimensions, models: Array[String]) {
   /** Public Methods **/
@@ -28,31 +25,11 @@ class H2(interface: String, engine: String, storage: Storage, dimensions: Dimens
     //Interface
     Interface.start(
       interface,
-      q => this.sql(connection, q)
+      q => RDBMSEngineUtilities.sql(connection, q)
     )
 
     //Shutdown
     connection.close()
-  }
-
-  /** Private Methods */
-  private def sql(connection: Connection, query: String): Array[String] = {
-    val stmt = connection.createStatement()
-    stmt.execute(query)
-    val rs = stmt.getResultSet
-    val md = rs.getMetaData
-
-    val result = ArrayBuffer[String]()
-    while (rs.next()) {
-      val row = mutable.HashMap[String, String]()
-      for (i <- 1 to md.getColumnCount) {
-        row(md.getColumnName(i)) = rs.getString(i)
-      }
-      result.append(row.toString())
-    }
-    rs.close()
-    stmt.close()
-    result.toArray
   }
 }
 
