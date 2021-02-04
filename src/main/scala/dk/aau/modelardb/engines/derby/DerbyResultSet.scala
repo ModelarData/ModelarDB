@@ -5,12 +5,12 @@ import java.net.URL
 import java.sql
 import java.sql.{Blob, Clob, Date, NClob, Ref, ResultSet, ResultSetMetaData, RowId, SQLWarning, SQLXML, Statement, Time, Timestamp}
 import java.util.Calendar
+
 import org.apache.derby.vti.{RestrictedVTI, Restriction}
 
 import dk.aau.modelardb.core.DataPoint
 import dk.aau.modelardb.core.utility.Static
-
-import collection.JavaConverters._
+import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
 class DerbyResultSet() extends ResultSet with RestrictedVTI {
 
@@ -50,7 +50,7 @@ class DerbyResultSet() extends ResultSet with RestrictedVTI {
   }
 
   override def getDouble(columnIndex: Int): Double = {
-    //TODO: why is getDouble called instead of get getFloat?
+    //TODO: why is getDouble executed instead of get getFloat?
     this.dataPoint.value //HACK: skips column check as only vals are double
   }
 
@@ -423,11 +423,6 @@ class DerbyResultSet() extends ResultSet with RestrictedVTI {
   }
 
   /** Instance Variables **/
-  private val storage = Derby.getStorage
-  private val segments = storage.getSegments.iterator().asScala
-
-  //TODO: create a getSegments and a getDataPoints method in Storage so all engines need not implement them?
-  private val dataPoints = segments.flatMap(sg => sg.toSegments(storage))
-    .flatMap(segment => segment.grid().iterator().asScala)
+  private val dataPoints = RDBMSEngineUtilities.getUtilities.getDataPoints()
   private var dataPoint: DataPoint = null
 }

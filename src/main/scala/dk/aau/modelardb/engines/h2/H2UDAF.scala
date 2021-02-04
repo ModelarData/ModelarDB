@@ -4,11 +4,13 @@ import java.sql.Connection
 
 import org.h2.api.AggregateFunction
 
-//TODO: should we create another view for the segment view or just assume that H2 is used for storage?
+import dk.aau.modelardb.engines.RDBMSEngineUtilities
+
 class CountS extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
+    this.cache = RDBMSEngineUtilities.getStorage.getGroupMetadataCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -30,5 +32,5 @@ class CountS extends AggregateFunction {
 
   /** Instance Variables **/
   private var count: Long = 0
-  private val cache = H2.getStorage.getGroupMetadataCache
+  private var cache: Array[Array[Int]] = null
 }

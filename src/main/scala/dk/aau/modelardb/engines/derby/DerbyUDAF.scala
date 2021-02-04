@@ -5,7 +5,8 @@ import java.io.{Externalizable, ObjectInput, ObjectOutput}
 
 import org.apache.derby.agg.Aggregator
 
-//TODO: should we create another view for the segment view or just assume that Derby is used for storage?
+import dk.aau.modelardb.engines.RDBMSEngineUtilities
+
 object Segment {
 
   /** Public Methods  **/
@@ -42,11 +43,11 @@ class CountS extends Aggregator[Segment, Long, CountS] {
 
   /** Public Methods  **/
   override def init(): Unit = {
-    this.count = 0
+    this.cache = RDBMSEngineUtilities.getStorage.getGroupMetadataCache
   }
 
   override def accumulate(v: Segment): Unit = {
-    val res = this.gmc(v.gid)(0)
+    val res = this.cache(v.gid)(0)
     this.count = this.count + ((v.end_time - v.start_time) / res) + 1
   }
 
@@ -64,5 +65,5 @@ class CountS extends Aggregator[Segment, Long, CountS] {
 
   /** Instance Variables **/
   var count: Long = 0
-  val gmc = Derby.getStorage.getGroupMetadataCache
+  var cache: Array[Array[Int]] = null
 }

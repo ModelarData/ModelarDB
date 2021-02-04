@@ -1,9 +1,6 @@
 package dk.aau.modelardb.engines.h2
 
 import java.{lang, util}
-
-import collection.JavaConverters._
-
 import org.h2.api.TableEngine
 import org.h2.command.ddl.CreateTableData
 import org.h2.command.dml.AllColumnsForPlan
@@ -14,8 +11,8 @@ import org.h2.schema.Schema
 import org.h2.store.Data
 import org.h2.table.{Column, IndexColumn, Table, TableBase, TableFilter, TableType}
 import org.h2.value.{Value, ValueFloat, ValueInt, ValueTimestamp}
-
 import dk.aau.modelardb.core.DataPoint
+import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
 class ViewDataPoint extends TableEngine {
   override def createTable(data: CreateTableData): TableBase = {
@@ -122,7 +119,7 @@ class ViewDataIndex(table: Table) extends Index {
   override def compareRows(rowData: SearchRow, compare: SearchRow): Int = ???
 
   override def getColumnIndex(col: Column): Int = {
-    -1 //HACK: -1 seems to be mean no index for that column
+    -1 //HACK: -1 seems to indicate that no index exists for that column
   }
 
   override def isFirstColumn(column: Column): Boolean = ???
@@ -211,10 +208,7 @@ class ViewDataCursor() extends Cursor {
   override def previous(): Boolean = false
 
   /** Instance Variables **/
-  private val storage = H2.getStorage
-  private val segments = storage.getSegments.iterator().asScala
-  private val dataPoints = segments.flatMap(sg => sg.toSegments(storage))
-    .flatMap(segment => segment.grid().iterator().asScala)
+  private val dataPoints = RDBMSEngineUtilities.getUtilities.getDataPoints()
   private var dataPoint: DataPoint = null
 }
 
