@@ -120,7 +120,11 @@ public class Dimensions {
         }
         sb.append(this.columns[withPunctuation]);
         sb.append(' ');
-        sb.append(this.types[withPunctuation].toString());
+        if (this.types[withPunctuation] == Types.TEXT) {
+            sb.append(textType);
+        } else {
+            sb.append(this.types[withPunctuation].toString());
+        }
         return sb.toString();
     }
 
