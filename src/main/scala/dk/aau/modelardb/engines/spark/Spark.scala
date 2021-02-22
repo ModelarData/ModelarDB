@@ -16,11 +16,14 @@ package dk.aau.modelardb.engines.spark
 
 import dk.aau.modelardb.Interface
 import dk.aau.modelardb.core._
-import dk.aau.modelardb.core.utility.Static
+import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
 import org.apache.spark.SparkConf
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrameReader, SparkSession}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
+
+import java.util
 
 class Spark(interface: String, engine: String, storage: Storage, dimensions: Dimensions,
             models: Array[String], receiverCount: Int, microBatchSize: Int, maxSegmentsCached: Int) {
@@ -67,7 +70,11 @@ class Spark(interface: String, engine: String, storage: Storage, dimensions: Dim
 
     //Initializes storage and Spark with any new time series that the system must ingest
     val ssc = if (receiverCount == 0) {
-      storage.initialize(Array(), dimensions, models)
+      val configuration = Configuration.get()
+      Partitioner.initializeTimeSeries(configuration, storage.getMaxSID)
+      val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
+        .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
+      storage.initialize(Array(), derivedTimeSeries, dimensions, models)
       Spark.initialize(spark, Range(0,0), storage, maxSegmentsCached)
       null
     } else {
@@ -75,7 +82,9 @@ class Spark(interface: String, engine: String, storage: Storage, dimensions: Dim
       val newGID = storage.getMaxGID + 1
       val timeSeries = Partitioner.initializeTimeSeries(configuration, storage.getMaxSID)
       val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, storage.getMaxGID)
-      storage.initialize(timeSeriesGroups, dimensions, models)
+      val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
+        .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
+      storage.initialize(timeSeriesGroups, derivedTimeSeries, dimensions, models)
       Spark.initialize(spark, Range(newGID, newGID + timeSeriesGroups.size), storage, maxSegmentsCached)
       setupStream(spark, timeSeriesGroups)
     }
@@ -131,6 +140,7 @@ object Spark {
     this.relations = spark.read.format("dk.aau.modelardb.engines.spark.ViewProvider")
     this.storage = storage
     this.sparkStorage = null
+    this.broadcastedSTC = spark.sparkContext.broadcast(storage.getSourceTransformationCache)
 
     //The methods in the SparkStorage trait provides deeper integration with Apache Spark
     if (storage.isInstanceOf[SparkStorage]) {
@@ -144,6 +154,7 @@ object Spark {
   def getStorage: Storage = Spark.storage
   def getViewProvider: DataFrameReader = Spark.relations
   def getSparkStorage: SparkStorage = Spark.sparkStorage
+  def getBroadcastedSourceTransformationCache: Broadcast[Array[ValueFunction]] = Spark.broadcastedSTC
 
   def isDataSetSmall(rows: RDD[_]): Boolean = {
     rows.partitions.length <= parallelism
@@ -155,4 +166,5 @@ object Spark {
   private var relations: DataFrameReader = _
   private var storage: Storage = _
   private var sparkStorage: SparkStorage = _
+  private var broadcastedSTC: Broadcast[Array[ValueFunction]] = _
 }

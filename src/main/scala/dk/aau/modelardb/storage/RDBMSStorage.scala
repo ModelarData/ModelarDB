@@ -17,8 +17,11 @@ package dk.aau.modelardb.storage
 import java.sql.{Array => _, _}
 import java.util
 import java.util.stream.Stream
+import java.util.HashMap
 
 import dk.aau.modelardb.core._
+import dk.aau.modelardb.core.utility.Pair
+import dk.aau.modelardb.core.utility.ValueFunction
 
 import scala.collection.JavaConverters._
 
@@ -57,7 +60,9 @@ class RDBMSStorage(connectionString: String) extends Storage {
     getFirstInteger(this.getMaxGidStmt)
   }
 
-  override def initialize(timeSeriesGroups: Array[TimeSeriesGroup], dimensions: Dimensions, modelNames: Array[String]): Unit = {
+  override def initialize(timeSeriesGroups: Array[TimeSeriesGroup],
+                          derivedTimeSeries: HashMap[Integer, Array[Pair[String, ValueFunction]]],
+                          dimensions: Dimensions, modelNames: Array[String]): Unit = {
     //Inserts the metadata for the sources defined in the configuration file (Sid, Resolution, Gid, Dimensions)
     val sourceDimensions = dimensions.getColumns.length
     val columns = "?, " * (sourceDimensions + 3) + "?"
@@ -110,7 +115,7 @@ class RDBMSStorage(connectionString: String) extends Storage {
     }
 
     //Initializes the caches managed by Storage
-    val modelsToInsert = super.initializeCaches(modelNames, dimensions, modelsInStorage, sourcesInStorage)
+    val modelsToInsert = super.initializeCaches(modelNames, dimensions, modelsInStorage, sourcesInStorage, derivedTimeSeries)
 
     //Inserts the name of each model in the configuration file but not in the model table
     val insertModelStmt = connection.prepareStatement("INSERT INTO model VALUES(?, ?)")

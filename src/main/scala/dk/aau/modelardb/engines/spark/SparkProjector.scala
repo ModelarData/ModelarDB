@@ -15,6 +15,8 @@
 package dk.aau.modelardb.engines.spark
 
 import dk.aau.modelardb.core.DataPoint
+import dk.aau.modelardb.core.utility.ValueFunction
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.Row
 
 //Abstract classes that projections generated at run-time using the ToolBox APIs can derive from
@@ -23,10 +25,10 @@ abstract class SparkSegmentProjector extends Serializable {
 }
 
 abstract class SparkDataPointProjector extends Serializable {
-  def project(dp: DataPoint, dmc: Array[Array[Object]], sc: Array[Float]): Row
+  def project(dp: DataPoint, dmc: Array[Array[Object]], sc: Array[Float], btc: Broadcast[Array[ValueFunction]]): Row
 }
 
-object SparkProjection {
+object SparkProjector {
 
   def getSegmentProjection(requiredColumns: Array[String], segmentViewNameToIndex: Map[String, Int]): String = {
     val columns = requiredColumns.map(column => {
@@ -50,11 +52,10 @@ object SparkProjection {
   }
 
   def compileSegmentProjection(code: String): SparkSegmentProjector = {
-    compileProjection(code).asInstanceOf[SparkSegmentProjector]
+    compileCode(code).asInstanceOf[SparkSegmentProjector]
   }
 
   def getDataPointProjection(requiredColumns: Array[String], dataPointViewNameToIndex: Map[String, Int]): String = {
-
     val columns = requiredColumns.map(column => {
       val index = dataPointViewNameToIndex(column)
       if (index <= 3) dataPointProjectionFragments(index - 1) else "dmc(dp.sid)(" + (index - 4) + ")"
@@ -64,10 +65,12 @@ object SparkProjection {
         import dk.aau.modelardb.engines.spark.SparkDataPointProjector
         import dk.aau.modelardb.core.DataPoint
         import java.sql.Timestamp
+        import dk.aau.modelardb.core.utility.ValueFunction
+        import org.apache.spark.broadcast.Broadcast
         import org.apache.spark.sql.Row
 
         new SparkDataPointProjector {
-            override def project(dp: DataPoint, dmc: Array[Array[Object]], sc: Array[Float]): Row = {
+            override def project(dp: DataPoint, dmc: Array[Array[Object]], sc: Array[Float], btc: Broadcast[Array[ValueFunction]]): Row = {
                 ${columns.mkString("Row(", ",", ")")}
             }
         }
@@ -76,22 +79,35 @@ object SparkProjection {
   }
 
   def compileDataPointProjection(code: String): SparkDataPointProjector = {
-    compileProjection(code).asInstanceOf[SparkDataPointProjector]
+    compileCode(code).asInstanceOf[SparkDataPointProjector]
+  }
+
+  def getValueFunction(transformation: String): ValueFunction = {
+    val code = s"""
+    import dk.aau.modelardb.core.utility.ValueFunction
+    import scala.math._
+    new ValueFunction() {
+      override def transform(value: Float, scalingFactor: Float): Float = {
+        return ($transformation).asInstanceOf[Float]
+      }
+    }"""
+    compileCode(code).asInstanceOf[ValueFunction]
   }
 
   /** Private Methods **/
-  private def compileProjection(code: String): Any = {
+  private def compileCode(code: String): Any = {
     //Imports the packages required to construct the toolbox
     import scala.reflect.runtime.currentMirror
     import scala.tools.reflect.ToolBox
     val toolBox = currentMirror.mkToolBox()
 
-    //Parses and compiles the code before constructing a projector object
+    //Parses and compiles the code before constructing an object
     val ast = toolBox.parse(code)
     val compiled = toolBox.compile(ast)
     compiled()
   }
 
   /** Instance Variables **/
-  private val dataPointProjectionFragments = Array("dp.sid", "new Timestamp(dp.timestamp)", "dp.value / sc(dp.sid)")
+  private val dataPointProjectionFragments = Array("dp.sid", "new Timestamp(dp.timestamp)",
+    "btc.value(dp.sid).transform(dp.value, sc(dp.sid))")
 }

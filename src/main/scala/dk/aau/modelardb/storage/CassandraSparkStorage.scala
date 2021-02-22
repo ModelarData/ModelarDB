@@ -19,12 +19,11 @@ import java.nio.ByteBuffer
 import java.sql.Timestamp
 import java.util
 import java.util.stream.Stream
-
 import com.datastax.driver.core._
 import com.datastax.spark.connector._
 import com.datastax.spark.connector.cql.CassandraConnector
 import com.datastax.spark.connector.rdd.CassandraTableScanRDD
-import dk.aau.modelardb.core.utility.Static
+import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
 import dk.aau.modelardb.core.{Dimensions, SegmentGroup, Storage, TimeSeriesGroup}
 import dk.aau.modelardb.engines.spark.{Spark, SparkStorage}
 import org.apache.spark.SparkConf
@@ -54,7 +53,9 @@ class CassandraSparkStorage(connectionString: String) extends Storage with Spark
     getMaxID(s"SELECT gid FROM ${this.keyspace}.source")
   }
 
-  override def initialize(timeSeriesGroups: Array[TimeSeriesGroup], dimensions: Dimensions, modelNames: Array[String]): Unit = {
+  override def initialize(timeSeriesGroups: Array[TimeSeriesGroup],
+                          derivedTimeSeries: util.HashMap[Integer, Array[Pair[String, ValueFunction]]],
+                          dimensions: Dimensions, modelNames: Array[String]): Unit = {
     val session = this.connector.openSession()
 
     //Gaps are encoded using 64 bits integers so groups cannot consist of more than 64 time series
@@ -116,7 +117,7 @@ class CassandraSparkStorage(connectionString: String) extends Storage with Spark
     }
 
     //Initializes the caches managed by Storage
-    val modelsToInsert = super.initializeCaches(modelNames, dimensions, modelsInStorage, sourcesInStorage)
+    val modelsToInsert = super.initializeCaches(modelNames, dimensions, modelsInStorage, sourcesInStorage, derivedTimeSeries)
 
     //Inserts the name of each model in the configuration file but not in the model table
     val insertStmt = session.prepare(s"INSERT INTO ${this.keyspace}.model(mid, name) VALUES(?, ?)")

@@ -47,12 +47,16 @@ public class Configuration {
         this.values.merge(name, values, this::mergeArrays);
     }
 
+    public Object[] remove(String value) {
+        return this.values.remove(value);
+    }
+
     public boolean contains(String value) {
         return this.values.containsKey(value);
     }
 
     //Generic Getters
-    public Object get(String name) {
+    public Object[] get(String name) {
         return this.values.get(name);
     }
 

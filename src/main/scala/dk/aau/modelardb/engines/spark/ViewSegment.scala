@@ -111,10 +111,11 @@ class ViewSegment(dimensions: Array[StructField]) (@transient val sqlContext: SQ
   private def getSegmentGroupRowToSegmentRows: Row => Array[Row] = {
     val storage = Spark.getStorage
     val gmdc = storage.getGroupMetadataCache
+    val gdc = storage.getGroupDerivedCache
     row =>
       val sg = new SegmentGroup(row.getInt(0), row.getTimestamp(1).getTime, row.getTimestamp(2).getTime,
         row.getInt(3), row.getAs[Array[Byte]](4), row.getAs[Array[Byte]](5))
-      val exploded = sg.explode(gmdc)
+      val exploded = sg.explode(gmdc, gdc)
       val resolution = gmdc(sg.gid)(0)
       exploded.map(e =>
         Row(e.gid, new Timestamp(e.startTime), new Timestamp(e.endTime), resolution, e.mid, e.parameters, e.offsets))

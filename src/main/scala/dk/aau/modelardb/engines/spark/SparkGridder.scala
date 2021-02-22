@@ -60,10 +60,10 @@ object SparkGridder {
         if (Spark.isDataSetSmall(rows)) {
           rows.map(SparkGridder.getSegmentGridFunctionFallback(requiredColumns))
         } else {
-          val code = SparkProjection.getSegmentProjection(requiredColumns, this.segmentViewNameToIndex)
+          val code = SparkProjector.getSegmentProjection(requiredColumns, this.segmentViewNameToIndex)
           val dmc = dk.aau.modelardb.engines.spark.Spark.getStorage.getDimensionsCache
           rows.mapPartitions(it => {
-            val projector = SparkProjection.compileSegmentProjection(code)
+            val projector = SparkProjector.compileSegmentProjection(code)
             it.map(row => projector.project(row, dmc))
           })
         }
@@ -89,12 +89,14 @@ object SparkGridder {
       if (Spark.isDataSetSmall(rows)) {
         dataPoints.map(SparkGridder.getDataPointGridFunctionFallback(requiredColumns))
       } else {
-        val code = SparkProjection.getDataPointProjection(requiredColumns, this.dataPointViewNameToIndex)
-        val dmc = dk.aau.modelardb.engines.spark.Spark.getStorage.getDimensionsCache
-        val sc = dk.aau.modelardb.engines.spark.Spark.getStorage.getSourceScalingFactorCache
+        val code = SparkProjector.getDataPointProjection(requiredColumns, this.dataPointViewNameToIndex)
+        val storage = dk.aau.modelardb.engines.spark.Spark.getStorage
+        val dmc = storage.getDimensionsCache
+        val sc = storage.getSourceScalingFactorCache
+        val btc = Spark.getBroadcastedSourceTransformationCache
         dataPoints.mapPartitions(it => {
-          val projector = SparkProjection.compileDataPointProjection(code)
-          it.map(row => projector.project(row, dmc, sc))
+          val projector = SparkProjector.compileDataPointProjection(code)
+          it.map(row => projector.project(row, dmc, sc, btc))
         })
       }
     }
@@ -127,6 +129,7 @@ object SparkGridder {
 
   def getDataPointGridFunction(requiredColumns: Array[String]): DataPoint => Row = {
     val sc = Spark.getStorage.getSourceScalingFactorCache
+    val btc = Spark.getBroadcastedSourceTransformationCache
     val target = computeJumpTarget(requiredColumns, SparkGridder.dataPointViewNameToIndex, 3)
     (target: @switch) match {
       //Permutations of ('sid')
@@ -134,23 +137,23 @@ object SparkGridder {
       //Permutations of ('ts')
       case 2 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp))
       //Permutations of ('val')
-      case 3 => (dp: DataPoint) => Row(dp.value / sc(dp.sid))
+      case 3 => (dp: DataPoint) => Row(btc.value(dp.sid).transform(dp.value, sc(dp.sid)))
       //Permutations of ('sid', 'ts')
       case 12 => (dp: DataPoint) => Row(dp.sid, new Timestamp(dp.timestamp))
       case 21 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp), dp.sid)
       //Permutations of ('sid', 'val')
-      case 13 => (dp: DataPoint) => Row(dp.sid, dp.value / sc(dp.sid))
-      case 31 => (dp: DataPoint) => Row(dp.value / sc(dp.sid), dp.sid)
+      case 13 => (dp: DataPoint) => Row(dp.sid, btc.value(dp.sid).transform(dp.value, sc(dp.sid)))
+      case 31 => (dp: DataPoint) => Row(btc.value(dp.sid).transform(dp.value, sc(dp.sid)), dp.sid)
       //Permutations of ('ts', 'val')
-      case 23 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp), dp.value / sc(dp.sid))
-      case 32 => (dp: DataPoint) => Row(dp.value / sc(dp.sid), new Timestamp(dp.timestamp))
+      case 23 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp), btc.value(dp.sid).transform(dp.value, sc(dp.sid)))
+      case 32 => (dp: DataPoint) => Row(btc.value(dp.sid).transform(dp.value, sc(dp.sid)), new Timestamp(dp.timestamp))
       //Permutations of ('sid', 'ts', 'val')
-      case 123 => (dp: DataPoint) => Row(dp.sid, new Timestamp(dp.timestamp), dp.value / sc(dp.sid))
-      case 132 => (dp: DataPoint) => Row(dp.sid, dp.value / sc(dp.sid), new Timestamp(dp.timestamp))
-      case 213 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp), dp.sid, dp.value / sc(dp.sid))
-      case 231 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp), dp.value / sc(dp.sid), dp.sid)
-      case 312 => (dp: DataPoint) => Row(dp.value / sc(dp.sid), dp.sid, new Timestamp(dp.timestamp))
-      case 321 => (dp: DataPoint) => Row(dp.value / sc(dp.sid), new Timestamp(dp.timestamp), dp.sid)
+      case 123 => (dp: DataPoint) => Row(dp.sid, new Timestamp(dp.timestamp), btc.value(dp.sid).transform(dp.value, sc(dp.sid)))
+      case 132 => (dp: DataPoint) => Row(dp.sid, btc.value(dp.sid).transform(dp.value, sc(dp.sid)), new Timestamp(dp.timestamp))
+      case 213 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp), dp.sid, btc.value(dp.sid).transform(dp.value, sc(dp.sid)))
+      case 231 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp), btc.value(dp.sid).transform(dp.value, sc(dp.sid)), dp.sid)
+      case 312 => (dp: DataPoint) => Row(btc.value(dp.sid).transform(dp.value, sc(dp.sid)), dp.sid, new Timestamp(dp.timestamp))
+      case 321 => (dp: DataPoint) => Row(btc.value(dp.sid).transform(dp.value, sc(dp.sid)), new Timestamp(dp.timestamp), dp.sid)
       //Static projections cannot be used for rows with dimensions
       case _ => null
     }
@@ -159,11 +162,12 @@ object SparkGridder {
   def getDataPointGridFunctionFallback(requiredColumns: Array[String]): DataPoint => Row = {
     val dmc = Spark.getStorage.getDimensionsCache
     val sc = Spark.getStorage.getSourceScalingFactorCache
+    val btc = Spark.getBroadcastedSourceTransformationCache
     val columns = requiredColumns.map(this.dataPointViewNameToIndex)
     dp => Row.fromSeq(columns.map({
       case 1 => dp.sid
       case 2 => new Timestamp(dp.timestamp)
-      case 3 => dp.value / sc(dp.sid) //Applies the scaling factor
+      case 3 => btc.value(dp.sid).transform(dp.value, sc(dp.sid))
       case index => dmc(dp.sid)(index - 4)
     }))
   }

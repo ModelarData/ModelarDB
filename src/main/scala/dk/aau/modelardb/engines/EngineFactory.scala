@@ -15,10 +15,11 @@
 package dk.aau.modelardb.engines
 
 import java.util.function.Consumer
-
 import dk.aau.modelardb.core.models.Segment
-import dk.aau.modelardb.core.utility.SegmentFunction
+import dk.aau.modelardb.core.utility.{Pair, SegmentFunction, ValueFunction}
 import dk.aau.modelardb.core.{Configuration, Partitioner, SegmentGroup, Storage}
+
+import java.util
 
 object EngineFactory {
 
@@ -64,7 +65,9 @@ object EngineFactory {
 
     val timeSeries = Partitioner.initializeTimeSeries(configuration, storage.getMaxSID)
     val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, storage.getMaxGID)
-    storage.initialize(timeSeriesGroups, dimensions, models)
+    val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
+      .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
+    storage.initialize(timeSeriesGroups, derivedTimeSeries, dimensions, models)
 
     val midCache = storage.getMidCache
     val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, midCache, 1)

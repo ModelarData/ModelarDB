@@ -16,6 +16,7 @@ package dk.aau.modelardb.core;
 
 import dk.aau.modelardb.core.utility.Pair;
 import dk.aau.modelardb.core.utility.Static;
+import dk.aau.modelardb.core.utility.ValueFunction;
 
 import java.util.*;
 import java.util.stream.IntStream;
@@ -39,6 +40,11 @@ public class Partitioner {
         //HACK: Resolution is one argument as all time series used for evaluation has exhibits the same sampling interval
         int resolution = configuration.getResolution();
 
+        //Derived data sources are normalized so all use sids to simply processing in Storage
+        HashMap<String, Pair<String, ValueFunction>[]> derivedDataSources =
+                (HashMap<String, Pair<String, ValueFunction>[]>) configuration.remove("modelardb.source.derived")[0];
+        HashMap<Integer, Pair<String, ValueFunction>[]> derivedTimeSeries = new HashMap<>();
+
         //Initializes all time series, both bounded (files) and unbounded (sockets)
         for (String source : sources) {
             cms += 1;
@@ -55,8 +61,32 @@ public class Partitioner {
                         timestamps, dateFormat, timezone, values, locale);
             }
             tss.add(ts);
+
+            //If any derived time series are defined for the source they must be mapped to its sid
+            if (derivedDataSources.containsKey(ts.source)) {
+                derivedTimeSeries.put(cms, derivedDataSources.get(ts.source));
+                derivedDataSources.remove(ts.source);
+            }
         }
-        Static.info(String.format("CORE: initialized %d time series", tss.size()));
+
+        //All derived data sources that do not map to a new data source must map to a sid
+        try {
+            final int finalCMS = cms;
+            derivedDataSources.entrySet().forEach(e -> {
+                int sid = Integer.parseInt(e.getKey());
+                if (sid < 1 || sid > finalCMS) {
+                    throw new IllegalArgumentException("CORE: sid " + sid + " in modelardb.source.derived is out of range");
+                }
+                derivedTimeSeries.put(sid, e.getValue());
+            });
+        } catch (NumberFormatException nfe) {
+            String valueBeingParsed = nfe.getMessage().substring(18);
+            throw new IllegalArgumentException("CORE: error parsing " + valueBeingParsed  + " specified in modelardb.source.derived");
+        }
+        configuration.add("modelardb.source.derived", derivedTimeSeries);
+
+        int dtsc = derivedTimeSeries.entrySet().stream().mapToInt(e -> e.getValue().length).sum();
+        Static.info(String.format("CORE: initialized %d time series and %d derived time series", tss.size(), dtsc));
         return tss.toArray(new TimeSeries[0]);
     }
 

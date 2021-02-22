@@ -16,6 +16,8 @@ package dk.aau.modelardb.core;
 
 import dk.aau.modelardb.core.models.Model;
 import dk.aau.modelardb.core.models.ModelFactory;
+import dk.aau.modelardb.core.utility.Pair;
+import dk.aau.modelardb.core.utility.ValueFunction;
 import dk.aau.modelardb.core.utility.Static;
 
 import java.util.*;
@@ -28,7 +30,9 @@ public abstract class Storage {
     abstract public void open(Dimensions dimensions);
     abstract public int getMaxSID();
     abstract public int getMaxGID();
-    abstract public void initialize(TimeSeriesGroup[] timeSeriesGroups, Dimensions dimensions, String[] modelNames);
+    abstract public void initialize(TimeSeriesGroup[] timeSeriesGroups,
+                                    HashMap<Integer, Pair<String, ValueFunction>[]> derivedTimeSeries,
+                                    Dimensions dimensions, String[] modelNames);
     abstract public void close();
     abstract public void insert(SegmentGroup[] segments, int length);
     abstract public Stream<SegmentGroup> getSegments();
@@ -45,8 +49,16 @@ public abstract class Storage {
         return this.sourceGroupCache;
     }
 
+    public HashMap<Integer, int[]> getGroupDerivedCache() {
+        return this.groupDerivedCache;
+    }
+
     public float[] getSourceScalingFactorCache() {
         return this.sourceScalingFactorCache;
+    }
+
+    public ValueFunction[] getSourceTransformationCache() {
+        return this.sourceTransformationCache;
     }
 
     public Dimensions getDimensions() {
@@ -69,7 +81,8 @@ public abstract class Storage {
     protected HashMap<String, Integer> initializeCaches(String[] modelNames,
                                                         Dimensions dimensions,
                                                         HashMap<String, Integer> modelsInStorage,
-                                                        HashMap<Integer, Object[]> sourcesInStorage) {
+                                                        HashMap<Integer, Object[]> sourcesInStorage,
+                                                        HashMap<Integer, Pair<String, ValueFunction>[]> derivedTimeSeries) {
 
         //The Dimensions object is stored so the schema can be retrieved later
         this.dimensions = dimensions;
@@ -98,14 +111,22 @@ public abstract class Storage {
             this.midCache.put(model.getClass().getName(), mid);
         }
 
-        //Creates the sourceGroupCache, the dimensionsCache, and the inverseDimensionsCache
-        int sourcesCachesSize = getMaxSID() + 1;
-        this.sourceGroupCache = new int[sourcesCachesSize];
-        this.sourceScalingFactorCache = new float[sourcesCachesSize];
-        this.dimensionsCache = new Object[sourcesCachesSize][];
+        //Creates the sourceGroupCache, derivedSourceCache, the dimensionsCache, and the inverseDimensionsCache
+        int nextSID = getMaxSID() + 1;
+        int totalNumberOfSources = nextSID + derivedTimeSeries.entrySet().stream().mapToInt(e -> e.getValue().length).sum();
+        this.sourceGroupCache = new int[totalNumberOfSources];
+        this.sourceScalingFactorCache = new float[totalNumberOfSources];
+        this.dimensionsCache = new Object[totalNumberOfSources][];
         HashMap<Integer, ArrayList<Integer>> gsc = new HashMap<>();
-        sourcesInStorage.forEach((sid, metadata) -> {
+        ValueFunction scalingTransformation = new ValueFunction();
+        this.sourceTransformationCache = new ValueFunction[totalNumberOfSources];
+        HashMap<Integer, ArrayList<Integer>> groupDerivedCacheBuilder = new HashMap<>();
+        for (Entry<Integer, Object[]> entry : sourcesInStorage.entrySet()) {
             //Metadata is a mapping from Sid to Scaling, Resolution, Gid, and Dimensions
+            Integer sid = entry.getKey();
+            Object[] metadata = entry.getValue();
+
+            //Creates mappings from sid -> gid (sgc), from sid -> scaling factor (sc), and from sid -> dimensions (dmc)
             int gid = (int) metadata[2];
             this.sourceGroupCache[sid] = gid;
             this.sourceScalingFactorCache[sid] = (float) metadata[0];
@@ -124,7 +145,26 @@ public abstract class Storage {
                 dim++;
             }
             this.dimensionsCache[sid] = columns;
-        });
+            this.sourceTransformationCache[sid] = scalingTransformation;
+
+            //Creates mappings from gid -> pair of sids for original and derived (gdc), and from sid -> to transformation (tc)
+            if (derivedTimeSeries.containsKey(sid)) {
+                //All sources that are derived should transformed by their user-defined function
+                Pair<String, ValueFunction>[] sourcesAndTransformations = derivedTimeSeries.get(sid);
+                ArrayList<Integer> gdcb = groupDerivedCacheBuilder.computeIfAbsent(gid, g -> new ArrayList<>());
+                for (Pair<String, ValueFunction> sat : sourcesAndTransformations) {
+                    int dsid = nextSID++;
+                    this.sourceGroupCache[dsid] = gid;
+                    this.sourceScalingFactorCache[dsid] = 1.0F; //HACK: scaling is assumed to be part of the transformation
+                    this.dimensionsCache[dsid] = dimensions.get(sat._1);
+                    this.sourceTransformationCache[dsid] = sat._2;
+                    gdcb.add(sid);
+                    gdcb.add(dsid);
+                }
+            }
+        }
+        this.groupDerivedCache = new HashMap<>();
+        groupDerivedCacheBuilder.forEach((k, v) -> this.groupDerivedCache.put(k, v.stream().mapToInt(i -> i).toArray()));
 
         //The inverseDimensionsCache is constructed from the dimensions cache
         String[] columns = this.dimensions.getColumns();
@@ -169,7 +209,7 @@ public abstract class Storage {
     /** Instance Variables **/
     protected Dimensions dimensions;
 
-    //Model Construction Cache: Maps the name of a model to the corresponding mid used in the data store
+    //Write Cache: Maps the name of a model to the corresponding mid used in the data store
     protected HashMap<String, Integer> midCache;
 
     //Read Cache: Maps the mid of a model to an instance of the model so a segment can be constructed
@@ -178,8 +218,14 @@ public abstract class Storage {
     //Read Cache: Maps the sid of a source to the gid of the group that the source is a member of
     protected int[] sourceGroupCache;
 
+    //Read Cache: Maps the gid of a group to pairs of sids for time series with derived time series
+    protected HashMap<Integer, int[]> groupDerivedCache;
+
     //Read Cache: Maps the sid of a source to the scaling factor specified for that source
     protected float[] sourceScalingFactorCache;
+
+    //Read Cache: Maps the sid of a source to the scaling factor specified for that source
+    protected ValueFunction[] sourceTransformationCache;
 
     //Read Cache: Maps the sid of a source to the members provided for that data source
     protected Object[][] dimensionsCache;

@@ -16,10 +16,12 @@ package dk.aau.modelardb
 
 import java.io.File
 import java.nio.file.{FileSystems, Paths}
+import java.util.HashMap
 
 import dk.aau.modelardb.core._
-import dk.aau.modelardb.core.utility.Static
+import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
 import dk.aau.modelardb.engines.EngineFactory
+import dk.aau.modelardb.engines.spark.SparkProjector
 import dk.aau.modelardb.storage.StorageFactory
 
 import scala.collection.mutable
@@ -68,6 +70,7 @@ object Main {
     val configuration = new Configuration()
     val models = ArrayBuffer[String]()
     val sources = ArrayBuffer[String]()
+    val derivedSources = new HashMap[String, ArrayBuffer[Pair[String, ValueFunction]]]()
     val correlations = ArrayBuffer[Correlation]()
 
 
@@ -88,6 +91,14 @@ object Main {
       lineSplit(0) match {
         case "modelardb.model" => models.append(lineSplit(1))
         case "modelardb.source" => appendSources(lineSplit(1), sources)
+        case "modelardb.source.derived" =>
+          //Store a mapping from the original source to the derived source and the function to map over its values
+          val derived = lineSplit(1).split(' ').map(_.trim)
+          val transformation = SparkProjector.getValueFunction(derived(2)) //HACK: reuses the engines dynamic codegen
+          if ( ! derivedSources.containsKey(derived(0))) {
+            derivedSources.put(derived(0), ArrayBuffer[Pair[String, ValueFunction]]())
+          }
+          derivedSources.get(derived(0)).append(new Pair(derived(1), transformation))
         case "modelardb.dimensions" => //Purposely empty as modelardb.dimensions have already been parsed
         case "modelardb.correlation" =>
           //If the value is a file each line is considered a clause
@@ -116,6 +127,13 @@ object Main {
 
     configuration.add("modelardb.model", models.toArray)
     configuration.add("modelardb.source", sources.toArray)
+    val finalDerivedSources = new HashMap[String, Array[Pair[String, ValueFunction]]]()
+    val dsIter = derivedSources.entrySet().iterator()
+    while (dsIter.hasNext) {
+      val entry = dsIter.next()
+      finalDerivedSources.put(entry.getKey, entry.getValue.toArray)
+    }
+    configuration.add("modelardb.source.derived", finalDerivedSources)
     configuration.add("modelardb.correlation", correlations.toArray)
     configuration
   }
