@@ -1,13 +1,14 @@
 package dk.aau.modelardb.engines
 
 import java.sql.Connection
+import java.util
 import java.util.function.BooleanSupplier
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
 import scala.collection.mutable
 import scala.collection.JavaConverters._
 
-import dk.aau.modelardb.core.utility.{SegmentFunction, Static}
+import dk.aau.modelardb.core.utility.{SegmentFunction, Pair, Static, ValueFunction}
 import dk.aau.modelardb.core.{Configuration, DataPoint, Dimensions, Partitioner, SegmentGroup, Storage, WorkingSet}
 
 //TODO: Use parameters and Configuration uniformly. Maybe remove get() and pass the configuration object around?
@@ -26,7 +27,9 @@ class RDBMSEngineUtilities(storage: Storage, models: Array[String], batchSize: I
     storage.open(dimensions)
     val timeSeries = Partitioner.initializeTimeSeries(configuration, storage.getMaxSID)
     val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, storage.getMaxGID)
-    storage.initialize(timeSeriesGroups, dimensions, models)
+    val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
+      .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
+    storage.initialize(timeSeriesGroups, derivedTimeSeries, dimensions, models)
     if (timeSeriesGroups.isEmpty) {
       //There are no time series to ingest
       return

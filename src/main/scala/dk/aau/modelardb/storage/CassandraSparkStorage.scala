@@ -19,20 +19,22 @@ import java.nio.ByteBuffer
 import java.sql.Timestamp
 import java.time.Instant
 import java.util
-import java.util.stream.Stream
-import com.datastax.driver.core._
+
+import scala.collection.JavaConverters._
+
+import com.datastax.oss.driver.api.core.cql.{SimpleStatement, BatchStatement, PreparedStatement, BatchType}
 import com.datastax.spark.connector._
 import com.datastax.spark.connector.cql.CassandraConnector
 import com.datastax.spark.connector.rdd.CassandraTableScanRDD
-import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
-import dk.aau.modelardb.core.{Dimensions, SegmentGroup, Storage, TimeSeriesGroup}
-import dk.aau.modelardb.engines.spark.{Spark, SparkStorage}
+
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{Row, SparkSession, sources}
 
-import scala.collection.JavaConverters._
+import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
+import dk.aau.modelardb.core.{Dimensions, SegmentGroup, Storage, TimeSeriesGroup}
+import dk.aau.modelardb.engines.spark.{Spark, SparkStorage}
 
 class CassandraSparkStorage(connectionString: String) extends Storage with SparkStorage {
 
@@ -172,11 +174,11 @@ class CassandraSparkStorage(connectionString: String) extends Storage with Spark
     session.close()
   }
 
-  override def getSegments: Stream[SegmentGroup] = {
+  override def getSegments: util.stream.Stream[SegmentGroup] = {
     val results = this.connector.openSession().execute(s"SELECT * FROM ${this.keyspace}.segment")
     val gmdc = this.groupMetadataCache
 
-    java.util.stream.StreamSupport.stream(results.spliterator(), false).map(
+    util.stream.StreamSupport.stream(results.spliterator(), false).map(
       (row: com.datastax.oss.driver.api.core.cql.Row) => {
         val gid = row.getBigInteger("gid").intValue()
         val gaps = row.getBigInteger("gaps").longValue()
