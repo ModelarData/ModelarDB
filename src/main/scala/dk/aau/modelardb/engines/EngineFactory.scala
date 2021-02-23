@@ -30,6 +30,7 @@ object EngineFactory {
       case "local" => startLocal(storage, models, batchSize)
       case "derby" => startDerby(interface, engine, storage, models, batchSize)
       case "h2" => startH2(interface, engine, storage, models, batchSize)
+      case "hsqldb" => startHSQLDB(interface, engine, storage, models, batchSize)
       case "spark" => startSpark(interface, engine, storage, models, batchSize)
       case _ =>
         throw new java.lang.UnsupportedOperationException("ModelarDB: unknown value for modelardb.engine in the config file")
@@ -105,6 +106,12 @@ object EngineFactory {
     val configuration = Configuration.get()
     val dimensions = configuration.getDimensions
     new dk.aau.modelardb.engines.h2.H2(interface, engine, storage, dimensions, models, batchSize).start()
+  }
+
+  private def startHSQLDB(interface: String, engine: String, storage: Storage, models: Array[String], batchSize: Int): Unit = {
+    val configuration = Configuration.get()
+    val dimensions = configuration.getDimensions
+    new dk.aau.modelardb.engines.hsqldb.HSQLDB(interface, engine, storage, dimensions, models, batchSize).start()
 
   }
 
