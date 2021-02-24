@@ -12,7 +12,7 @@ import dk.aau.modelardb.core.DataPoint
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
-class ViewDataPoint() extends ResultSet with RestrictedVTI {
+class ViewDataPoint extends ResultSet with RestrictedVTI {
 
   /** Public Methods **/
   override def next(): Boolean = {
