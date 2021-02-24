@@ -12,7 +12,7 @@ class HSQLDB(interface: String, engine: String, storage: Storage, dimensions: Di
     //Engine
     val connection = DriverManager.getConnection("jdbc:hsqldb:mem:memdb")
     val stmt = connection.createStatement()
-    stmt.execute("CREATE FUNCTION DataPoint() RETURNS TABLE(i INTEGER) READS SQL DATA LANGUAGE JAVA EXTERNAL NAME 'CLASSPATH:dk.aau.modelardb.engines.hsqldb.ViewDataPoint.queryView'")
+    stmt.execute("CREATE FUNCTION DataPoint() RETURNS TABLE(sid INT, ts TIMESTAMP, val REAL) READS SQL DATA LANGUAGE JAVA EXTERNAL NAME 'CLASSPATH:dk.aau.modelardb.engines.hsqldb.ViewDataPoint.queryView'")
     stmt.execute("CREATE VIEW DataPoint as SELECT * FROM TABLE(DataPoint())")
     stmt.close()
 
