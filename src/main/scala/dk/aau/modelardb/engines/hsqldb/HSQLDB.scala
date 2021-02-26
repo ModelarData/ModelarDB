@@ -14,6 +14,8 @@ class HSQLDB(interface: String, engine: String, storage: Storage, dimensions: Di
     val stmt = connection.createStatement()
     stmt.execute("CREATE FUNCTION DataPoint() RETURNS TABLE(sid INT, ts TIMESTAMP, val REAL) READS SQL DATA LANGUAGE JAVA EXTERNAL NAME 'CLASSPATH:dk.aau.modelardb.engines.hsqldb.ViewDataPoint.queryView'")
     stmt.execute("CREATE VIEW DataPoint as SELECT * FROM TABLE(DataPoint())")
+    stmt.execute("DROP FUNCTION COUNT_S")
+    stmt.execute("CREATE AGGREGATE FUNCTION COUNT_S(IN stet INT, IN finalize BOOLEAN, INOUT total INT, INOUT ignore INT) RETURNS INT NO SQL LANGUAGE JAVA EXTERNAL NAME 'CLASSPATH:dk.aau.modelardb.engines.hsqldb.UDAF.countS'")
     stmt.close()
 
     //Ingestion
@@ -31,5 +33,3 @@ class HSQLDB(interface: String, engine: String, storage: Storage, dimensions: Di
     connection.close()
   }
 }
-
-
