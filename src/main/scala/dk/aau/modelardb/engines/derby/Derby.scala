@@ -16,7 +16,7 @@ class Derby(interface: String, engine: String, storage: Storage, dimensions: Dim
     val stmt = connection.createStatement()
     //https://db.apache.org/derby/docs/10.15/ref/rrefcreatefunctionstatement.html
     //https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
-    stmt.execute("CREATE FUNCTION DataPoint() RETURNS TABLE (sid INT, ts TIMESTAMP, val FLOAT) LANGUAGE JAVA PARAMETER STYLE DERBY_JDBC_RESULT_SET READS SQL DATA EXTERNAL NAME 'dk.aau.modelardb.engines.derby.Derby.dataPointView'")
+    stmt.execute("CREATE FUNCTION DataPoint() RETURNS TABLE (sid INT, ts TIMESTAMP, val FLOAT) LANGUAGE JAVA PARAMETER STYLE DERBY_JDBC_RESULT_SET READS SQL DATA EXTERNAL NAME 'dk.aau.modelardb.engines.derby.ViewDataPoint.dataPointView'")
     //https://db.apache.org/derby/docs/10.15/ref/rrefsqlj15446.html
     stmt.execute("CREATE VIEW DataPoint as SELECT s.* FROM TABLE(DataPoint()) s")
 
@@ -44,13 +44,5 @@ class Derby(interface: String, engine: String, storage: Storage, dimensions: Dim
 
     //Shutdown
     connection.close()
-  }
-}
-
-object Derby {
-  //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfbasic.html
-  //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfexample.html
-  def dataPointView: ResultSet = {
-    new ViewDataPoint()
   }
 }

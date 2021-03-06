@@ -12,6 +12,15 @@ import dk.aau.modelardb.core.DataPoint
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
+
+object ViewDataPoint {
+  //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfbasic.html
+  //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfexample.html
+  def dataPointView: ResultSet = {
+    new ViewDataPoint()
+  }
+}
+
 //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtabfuncs.html
 //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfbasic.html
 class ViewDataPoint extends ResultSet with RestrictedVTI {
