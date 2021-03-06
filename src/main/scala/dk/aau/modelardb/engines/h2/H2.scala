@@ -10,9 +10,12 @@ class H2(interface: String, engine: String, storage: Storage, dimensions: Dimens
   /** Public Methods **/
   def start(): Unit = {
     //Engine
+    //http://www.h2database.com/html/features.html#in_memory_databases
     val connection = DriverManager.getConnection("jdbc:h2:mem:")
     val stmt = connection.createStatement()
+    //https://www.h2database.com/html/commands.html#create_table
     stmt.execute("CREATE TABLE DataPoint(sid INT, ts TIMESTAMP, val REAL) ENGINE \"dk.aau.modelardb.engines.h2.ViewDataPoint\";")
+    //https://www.h2database.com/html/commands.html#create_aggregate
     stmt.execute("CREATE AGGREGATE COUNT_S FOR \"dk.aau.modelardb.engines.h2.CountS\";")
     stmt.close()
 

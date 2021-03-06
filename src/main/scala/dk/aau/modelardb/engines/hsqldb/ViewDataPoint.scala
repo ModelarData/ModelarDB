@@ -8,6 +8,9 @@ import org.hsqldb.result.{Result, ResultMetaData}
 import org.hsqldb.rowio.{RowInputInterface, RowOutputInterface}
 import org.hsqldb.types.{TimestampData, Type}
 
+//TODO: Double check that predicate push-down is not supported http://hsqldb.org/doc/2.0/guide/sqlroutines-chapt.html
+//http://hsqldb.org/doc/2.0/guide/sqlroutines-chapt.html#src_psm_return_statement
+//http://hsqldb.org/doc/2.0/guide/sqlroutines-chapt.html#src_jrt_routines
 object ViewDataPoint {
   //The JDBCConnection used can be specified as the first argument like this (connection: Connection)
   def queryView: JDBCResultSet = {

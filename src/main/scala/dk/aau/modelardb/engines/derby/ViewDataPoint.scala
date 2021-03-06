@@ -12,6 +12,8 @@ import dk.aau.modelardb.core.DataPoint
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
+//https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtabfuncs.html
+//https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfbasic.html
 class ViewDataPoint extends ResultSet with RestrictedVTI {
 
   /** Public Methods **/
@@ -418,6 +420,9 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
 
   override def isWrapperFor(iface: Class[_]): Boolean = ???
 
+  //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfrestr.html
+  //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfcontext.html
+  //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfoptimizer.html
   override def initScan(strings: Array[String], restriction: Restriction): Unit = {
     Static.warn("projection and predicate push-down is not yet implemented")
   }

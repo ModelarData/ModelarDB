@@ -6,6 +6,8 @@ import org.h2.api.AggregateFunction
 
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
+//http://www.h2database.com/javadoc/org/h2/api/Aggregate.html
+//http://www.h2database.com/javadoc/org/h2/api/AggregateFunction.html
 class CountS extends AggregateFunction {
 
   /** Public Methods **/
