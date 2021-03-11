@@ -1,6 +1,6 @@
 package dk.aau.modelardb.engines.derby
 
-import java.sql.{DriverManager, ResultSet}
+import java.sql.DriverManager
 
 import dk.aau.modelardb.Interface
 import dk.aau.modelardb.core.{Dimensions, Storage}

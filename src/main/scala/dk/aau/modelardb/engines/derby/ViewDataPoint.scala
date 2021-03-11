@@ -432,7 +432,7 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
   //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfrestr.html
   //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfcontext.html
   //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfoptimizer.html
-  override def initScan(strings: Array[String], restriction: Restriction): Unit = {
+  override def initScan(columns: Array[String], filter: Restriction): Unit = {
     Static.warn("projection and predicate push-down is not yet implemented")
   }
 

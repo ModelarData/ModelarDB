@@ -51,7 +51,7 @@ object EngineFactory {
         batch(batchIndex) = new SegmentGroup(gid, startTime, endTime, mid, parameters, gaps)
         batchIndex += 1
         if (batchIndex == batchSize) {
-          storage.insert(batch, batchIndex)
+          storage.storeSegmentGroups(batch, batchIndex)
           batchIndex = 0
         }
       }
@@ -80,19 +80,19 @@ object EngineFactory {
     val workingSet = workingSets(0)
     println(workingSet)
     workingSet.process(consumeTemporary, consumeFinalized, isTerminated)
-    storage.insert(batch, batchIndex)
+    storage.storeSegmentGroups(batch, batchIndex)
     workingSet.logger.printWorkingSetResult()
 
     //DEBUG: for debugging we print the number of data points returned from storage
     var segmentDebugCount = 0L
-    storage.getSegments.forEach((sg: SegmentGroup) => {
-      val segments = sg.toSegments(storage)
+    val sgit = storage.getSegmentGroups
+    while(sgit.hasNext) {
+      val segments = sgit.next().toSegments(storage)
       for (segment: Segment <- segments) {
         segmentDebugCount += segment.grid().count()
       }
-    })
-    println(
-      s"Gridded: $segmentDebugCount\n=========================================================")
+    }
+    println(s"Gridded: $segmentDebugCount\n=========================================================")
   }
 
   private def startDerby(interface: String, engine: String, storage: Storage,

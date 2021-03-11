@@ -22,20 +22,19 @@ import dk.aau.modelardb.core.utility.Static;
 
 import java.util.*;
 import java.util.Map.Entry;
-import java.util.stream.Stream;
 
 public abstract class Storage {
 
     /** Public Methods **/
     abstract public void open(Dimensions dimensions);
-    abstract public int getMaxSID();
-    abstract public int getMaxGID();
     abstract public void initialize(TimeSeriesGroup[] timeSeriesGroups,
                                     HashMap<Integer, Pair<String, ValueFunction>[]> derivedTimeSeries,
                                     Dimensions dimensions, String[] modelNames);
+    abstract public void storeSegmentGroups(SegmentGroup[] segments, int length);
+    abstract public Iterator<SegmentGroup> getSegmentGroups();
+    abstract public int getMaxSID();
+    abstract public int getMaxGID();
     abstract public void close();
-    abstract public void insert(SegmentGroup[] segments, int length);
-    abstract public Stream<SegmentGroup> getSegments();
 
     public HashMap<String, Integer> getMidCache() {
         return this.midCache;

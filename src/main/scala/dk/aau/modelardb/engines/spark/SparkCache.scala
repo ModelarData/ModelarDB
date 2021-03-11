@@ -117,9 +117,9 @@ class SparkCache(spark: SparkSession, newGids: Range, maxSegmentsCached: Int) ex
     if (ss == null) {
       val groups = microBatch.collect.map(row => new SegmentGroup(row.getInt(0), row.getTimestamp(1).getTime,
         row.getTimestamp(2).getTime, row.getInt(3), row.getAs[Array[Byte]](4), row.getAs[Array[Byte]](5)))
-      Spark.getStorage.insert(groups, groups.length)
+      Spark.getStorage.storeSegmentGroups(groups, groups.length)
     } else {
-      ss.writeRDD(microBatch)
+      ss.storeSegmentGroups(microBatch)
     }
   }
 
@@ -127,11 +127,11 @@ class SparkCache(spark: SparkSession, newGids: Range, maxSegmentsCached: Int) ex
   private def getStorageRDDFromDisk(filters: Array[Filter]): RDD[Row] = {
     val ss = Spark.getSparkStorage
     if (ss == null) {
-      val rows = Spark.getStorage.getSegments.iterator().asScala.map(sg =>
+      val rows = Spark.getStorage.getSegmentGroups.asScala.map(sg =>
         Row(sg.gid, new Timestamp(sg.startTime), new Timestamp(sg.endTime), sg.mid, sg.parameters, sg.offsets))
       spark.sparkContext.parallelize(rows.toSeq)
     } else {
-      ss.getRDD(filters)
+      ss.getSegmentGroups(filters)
     }
   }
 

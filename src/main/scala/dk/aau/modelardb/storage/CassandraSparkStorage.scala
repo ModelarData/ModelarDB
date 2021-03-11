@@ -48,11 +48,11 @@ class CassandraSparkStorage(connectionString: String) extends Storage with Spark
     createTables(dimensions)
   }
 
-  override def getMaxSID: Int = {
+  override def getMaxSID(): Int = {
     getMaxID(s"SELECT DISTINCT sid FROM ${this.keyspace}.source")
   }
 
-  override def getMaxGID: Int = {
+  override def getMaxGID(): Int = {
     getMaxID(s"SELECT gid FROM ${this.keyspace}.source")
   }
 
@@ -139,11 +139,7 @@ class CassandraSparkStorage(connectionString: String) extends Storage with Spark
     this.currentMaxSID = getMaxSID
   }
 
-  override def close(): Unit = {
-    //NOTE: the Cassandra connector need not be closed explicitly as it is managed by the Spark Session
-  }
-
-  override def insert(segments: Array[SegmentGroup], size: Int): Unit = {
+  override def storeSegmentGroups(segments: Array[SegmentGroup], size: Int): Unit = {
     val session = this.connector.openSession()
 
     var batch = BatchStatement.newInstance(BatchType.LOGGED)
@@ -174,12 +170,17 @@ class CassandraSparkStorage(connectionString: String) extends Storage with Spark
     session.close()
   }
 
-  override def getSegments: util.stream.Stream[SegmentGroup] = {
-    val results = this.connector.openSession().execute(s"SELECT * FROM ${this.keyspace}.segment")
+  override def getSegmentGroups(): util.Iterator[SegmentGroup] = {
+    val session = this.connector.openSession()
+    val results = session.execute(s"SELECT * FROM ${this.keyspace}.segment").iterator()
+    session.close()
     val gmdc = this.groupMetadataCache
 
-    util.stream.StreamSupport.stream(results.spliterator(), false).map(
-      (row: com.datastax.oss.driver.api.core.cql.Row) => {
+    new util.Iterator[SegmentGroup] {
+      override def hasNext(): Boolean = results.hasNext
+
+      override def next(): SegmentGroup = {
+        val row = results.next()
         val gid = row.getBigInteger("gid").intValue()
         val gaps = row.getBigInteger("gaps").longValue()
         val size: Long = row.getBigInteger("size").longValue()
@@ -193,7 +194,12 @@ class CassandraSparkStorage(connectionString: String) extends Storage with Spark
         //Reconstructs the start time from the end time and length
         val startTime = endTime - (size * gmdc(gid)(0))
         new SegmentGroup(gid, startTime, endTime, mid, params.array, gapsArray)
-      })
+      }
+    }
+  }
+
+  override def close(): Unit = {
+    //NOTE: the Cassandra connector need not be closed explicitly as it is managed by the Spark Session
   }
 
   override def open(ssb: SparkSession.Builder, dimensions: Dimensions): SparkSession = {
@@ -208,7 +214,7 @@ class CassandraSparkStorage(connectionString: String) extends Storage with Spark
     this.sparkSession
   }
 
-  override def writeRDD(rdd: RDD[Row]): Unit = {
+  override def storeSegmentGroups(rdd: RDD[Row]): Unit = {
     val gmdc = this.groupMetadataCache
     rdd.map(row => {
       val gid = row.getInt(0)
@@ -223,7 +229,7 @@ class CassandraSparkStorage(connectionString: String) extends Storage with Spark
     }).saveToCassandra(this.keyspace, "segment", SomeColumns("gid", "gaps", "size", "end_time", "mid", "parameters"))
   }
 
-  override def getRDD(filters: Array[Filter]): RDD[Row] = {
+  override def getSegmentGroups(filters: Array[Filter]): RDD[Row] = {
     //The function mapping from Cassandra to Spark rows must be stored in a local variable to not serialize the object
     val rowsToRows = getRowsToRows
     val rdd = this.sparkSession.sparkContext.cassandraTable(this.keyspace, "segment")
@@ -369,7 +375,7 @@ class CassandraSparkStorage(connectionString: String) extends Storage with Spark
       })
   }
 
-  private def getRowsToRows: CassandraRow => Row = {
+  private def getRowsToRows(): CassandraRow => Row = {
     val gmdc = this.groupMetadataCache
 
     //Converts the Cassandra rows to Spark rows and reconstructs start_time from length

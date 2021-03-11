@@ -16,7 +16,6 @@ package dk.aau.modelardb.storage
 
 import java.sql.{Array => _, _}
 import java.util
-import java.util.stream.Stream
 import java.util.HashMap
 
 import dk.aau.modelardb.core._
@@ -52,11 +51,11 @@ class RDBMSStorage(connectionString: String, textType: String, blobType: String)
     this.getMaxGidStmt = this.connection.prepareStatement("SELECT MAX(gid) FROM source")
   }
 
-  override def getMaxSID: Int = {
+  override def getMaxSID(): Int = {
     getFirstInteger(this.getMaxSidStmt)
   }
 
-  override def getMaxGID: Int = {
+  override def getMaxGID(): Int = {
     getFirstInteger(this.getMaxGidStmt)
   }
 
@@ -127,7 +126,7 @@ class RDBMSStorage(connectionString: String, textType: String, blobType: String)
     }
   }
 
-  override def insert(segments: Array[SegmentGroup], size: Int): Unit = {
+  override def storeSegmentGroups(segments: Array[SegmentGroup], size: Int): Unit = {
     try {
       for (segmentGroup <- segments.take(size)) {
         this.insertStmt.setInt(1, segmentGroup.gid)
@@ -147,35 +146,36 @@ class RDBMSStorage(connectionString: String, textType: String, blobType: String)
     }
   }
 
+  override def getSegmentGroups(): util.Iterator[SegmentGroup] = {
+    val results = this.getSegmentsStmt.executeQuery()
+    new util.Iterator[SegmentGroup] {
+      override def hasNext(): Boolean = {
+        if (results.next()) {
+          true
+        } else {
+          results.close()
+          false
+        }
+      }
+
+      override def next(): SegmentGroup = resultSetToSegmentGroup(results)
+    }
+  }
+
   override def close(): Unit = {
     //Connection cannot be closed while a transaction is running
     this.connection.commit()
     this.connection.close()
   }
 
-  override def getSegments: Stream[SegmentGroup] = {
-    try {
-      val results = this.getSegmentsStmt.executeQuery()
-      val segments = new util.ArrayList[SegmentGroup]()
-      while (results.next()) {
-        segments.add(resultToSegmentData(results))
-      }
-      segments.stream()
-    } catch {
-      case se: SQLException =>
-        close()
-        throw new java.lang.RuntimeException(se)
-    }
-  }
-
   /** Private Methods **/
-  private def resultToSegmentData(result: ResultSet): SegmentGroup = {
-    val gid = result.getInt(1)
-    val startTime = result.getLong(2)
-    val endTime = result.getLong(3)
-    val mid = result.getInt(4)
-    val params = result.getBytes(5)
-    val gaps = result.getBytes(6)
+  private def resultSetToSegmentGroup(resultSet: ResultSet): SegmentGroup = {
+    val gid = resultSet.getInt(1)
+    val startTime = resultSet.getLong(2)
+    val endTime = resultSet.getLong(3)
+    val mid = resultSet.getInt(4)
+    val params = resultSet.getBytes(5)
+    val gaps = resultSet.getBytes(6)
     new SegmentGroup(gid, startTime, endTime, mid, params, gaps)
   }
 

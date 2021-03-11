@@ -52,18 +52,18 @@ class RDBMSEngineUtilities(storage: Storage, models: Array[String], batchSize: I
     }
   }
 
-  def getSegments(): Iterator[SegmentGroup] = {
+  def getSegmentGroups(): Iterator[SegmentGroup] = {
     //The cache is copied to not block ingestion while the query is executed, we assume storage provides a snapshot
     this.cacheLock.readLock().lock()
     val cachedTemporarySegments = this.temporarySegments.values.flatMap(sg => sg).toArray
     val cachedFinalizedSegments = this.finalizedSegments.take(this.finalizedSegmentsIndex)
-    val storedFinalizedSegments = storage.getSegments.iterator().asScala
+    val storedFinalizedSegments = storage.getSegmentGroups.asScala
     this.cacheLock.readLock().unlock()
     cachedTemporarySegments.iterator ++ cachedFinalizedSegments.iterator ++ storedFinalizedSegments
   }
 
   def getDataPoints(): Iterator[DataPoint] = {
-    RDBMSEngineUtilities.getUtilities.getSegments.flatMap(sg =>
+    RDBMSEngineUtilities.getUtilities.getSegmentGroups.flatMap(sg =>
       sg.toSegments(RDBMSEngineUtilities.getStorage))
       .flatMap(segment => segment.grid().iterator().asScala)
   }
@@ -116,7 +116,7 @@ class RDBMSEngineUtilities(storage: Storage, models: Array[String], batchSize: I
         finalizedSegments(finalizedSegmentsIndex) = new SegmentGroup(gid, startTime, endTime, mid, parameters, gaps)
         finalizedSegmentsIndex += 1
         if (finalizedSegmentsIndex == batchSize) {
-          storage.insert(finalizedSegments, finalizedSegmentsIndex)
+          storage.storeSegmentGroups(finalizedSegments, finalizedSegmentsIndex)
           finalizedSegmentsIndex = 0
         }
         cacheLock.writeLock().unlock()
@@ -133,7 +133,7 @@ class RDBMSEngineUtilities(storage: Storage, models: Array[String], batchSize: I
 
     //Write remaining finalized segments
     cacheLock.writeLock().lock()
-    storage.insert(finalizedSegments, finalizedSegmentsIndex)
+    storage.storeSegmentGroups(finalizedSegments, finalizedSegmentsIndex)
     finalizedSegmentsIndex = 0
     cacheLock.writeLock().unlock()
     workingSet.logger.printWorkingSetResult()

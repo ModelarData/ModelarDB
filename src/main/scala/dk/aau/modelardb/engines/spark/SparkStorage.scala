@@ -20,12 +20,7 @@ import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{Row, SparkSession}
 
 trait SparkStorage {
-  //Opens a connection to a segment group store with Spark integration
   def open(ssb: SparkSession.Builder, dimensions: Dimensions): SparkSession
-
-  //Writes an RDD of segments to the segment group store
-  def writeRDD(rdd: RDD[Row]): Unit
-
-  //Reads an RDD of segments from the segment group store
-  def getRDD(filters: Array[Filter]): RDD[Row]
+  def storeSegmentGroups(rdd: RDD[Row]): Unit
+  def getSegmentGroups(filters: Array[Filter]): RDD[Row]
 }
