@@ -14,8 +14,8 @@
  */
 package dk.aau.modelardb.core.models
 
-class PMC_MeanModelTest extends AbstractModelTest {
+class UncompressedModelTest extends AbstractModelTest {
   override protected def getModel(mid: Int, error: Float, limit: Int): Model = {
-    new PMC_MeanModel(mid, error, limit)
+    new UncompressedModel(mid, error, limit)
   }
 }

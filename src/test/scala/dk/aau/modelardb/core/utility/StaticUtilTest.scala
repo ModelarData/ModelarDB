@@ -26,7 +26,7 @@ class StaticUtilTest extends AnyFlatSpec with Matchers {
     Static.outsidePercentageErrorBound(10.0f, 2.0, 4.0) should be (true)
   }
 
-  it should "should return false when error is larger than bound" in {
+  it should "should return false when error is smaller than bound" in {
     Static.outsidePercentageErrorBound(3.0f, 102.0, 100.0) should be (false)
   }
 
