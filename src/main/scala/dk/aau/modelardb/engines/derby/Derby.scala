@@ -9,7 +9,7 @@ class Derby(configuration: Configuration, storage: Storage) {
   /** Public Methods **/
   def start(): Unit = {
     //Initialize
-    System.setSecurityManager(null) //HACK: security manager is disabled during development
+    //https://db.apache.org/derby/docs/10.15/security/rsecpolicysample.html
     //https://db.apache.org/derby/docs/10.15/devguide/cdevdvlpinmemdb.html
     val connection = DriverManager.getConnection("jdbc:derby:memory:tempdb;create=true")
     val stmt = connection.createStatement()
