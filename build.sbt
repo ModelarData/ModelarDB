@@ -16,6 +16,19 @@ libraryDependencies ++= Seq(
   "amplab" % "spark-indexedrdd" % "0.4.0",
   "org.apache.spark" %% "spark-core" % "3.1.1" % "provided",
   "org.apache.spark" %% "spark-streaming" % "3.1.1" % "provided",
-  "org.apache.spark" %% "spark-sql" % "3.1.1" % "provided")
+  "org.apache.spark" %% "spark-sql" % "3.1.1" % "provided",
+
+  "org.scalatest" %% "scalatest" % "3.2.5" % Test,
+  "org.scalacheck" %% "scalacheck" % "1.14.1" % Test,
+  "org.scalamock" %% "scalamock" % "5.1.0" % Test
+)
+
+/* To avoid assembly conflict with Derby classes */
+assemblyMergeStrategy in assembly := {
+  case PathList("module-info.class") => MergeStrategy.first
+  case x =>
+    val oldStrategy = (assemblyMergeStrategy in assembly).value
+    oldStrategy(x)
+}
 
 run in Compile := Defaults.runTask(fullClasspath in Compile, mainClass in (Compile, run), runner in (Compile, run)).evaluated
