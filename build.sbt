@@ -8,7 +8,6 @@ resolvers += "Spark Packages Repo" at "https://dl.bintray.com/spark-packages/mav
 
 libraryDependencies ++= Seq(
   "org.scala-lang" % "scala-compiler" % scalaVersion.value,
-  "org.xerial" % "sqlite-jdbc" % "3.34.0",
   "org.apache.derby" % "derby" % "10.15.2.0",
   "org.hsqldb" % "hsqldb" % "2.5.1",
   "com.h2database" % "h2" % "1.4.200",
