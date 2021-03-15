@@ -1,12 +1,11 @@
 package dk.aau.modelardb.engines.derby
 
 import java.sql.DriverManager
-
 import dk.aau.modelardb.Interface
-import dk.aau.modelardb.core.{Dimensions, Storage}
+import dk.aau.modelardb.core.{Configuration, Storage}
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
-class Derby(interface: String, engine: String, storage: Storage, dimensions: Dimensions, models: Array[String], batchSize: Int) {
+class Derby(configuration: Configuration, storage: Storage) {
   /** Public Methods **/
   def start(): Unit = {
     //Initialize
@@ -32,13 +31,13 @@ class Derby(interface: String, engine: String, storage: Storage, dimensions: Dim
     stmt.close()
 
     //Ingestion
-    RDBMSEngineUtilities.initialize(storage, models, batchSize)
+    RDBMSEngineUtilities.initialize(configuration, storage)
     val utilities = RDBMSEngineUtilities.getUtilities
-    utilities.startIngestion(dimensions)
+    utilities.startIngestion()
 
     //Interface
     Interface.start(
-      interface,
+      configuration.getString("modelardb.interface"),
       q => utilities.executeQuery(connection, q)
     )
 

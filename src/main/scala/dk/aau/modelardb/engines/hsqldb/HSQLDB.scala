@@ -1,12 +1,11 @@
 package dk.aau.modelardb.engines.hsqldb
 
 import java.sql.DriverManager
-
 import dk.aau.modelardb.Interface
-import dk.aau.modelardb.core.{Dimensions, Storage}
+import dk.aau.modelardb.core.{Configuration, Storage}
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
-class HSQLDB(interface: String, engine: String, storage: Storage, dimensions: Dimensions, models: Array[String], batchSize: Int) {
+class HSQLDB(configuration: Configuration, storage: Storage) {
   /** Public Methods **/
   def start(): Unit = {
     //Engine
@@ -22,13 +21,13 @@ class HSQLDB(interface: String, engine: String, storage: Storage, dimensions: Di
     stmt.close()
 
     //Ingestion
-    RDBMSEngineUtilities.initialize(storage, models, batchSize)
+    RDBMSEngineUtilities.initialize(configuration, storage)
     val utilities = RDBMSEngineUtilities.getUtilities
-    utilities.startIngestion(dimensions)
+    utilities.startIngestion()
 
     //Interface
     Interface.start(
-      interface,
+      configuration.getString("modelardb.interface"),
       q => utilities.executeQuery(connection, q)
     )
 

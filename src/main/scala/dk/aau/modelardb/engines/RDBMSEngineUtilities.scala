@@ -9,7 +9,7 @@ import scala.collection.mutable
 import scala.collection.JavaConverters._
 
 import dk.aau.modelardb.core.utility.{SegmentFunction, Pair, Static, ValueFunction}
-import dk.aau.modelardb.core.{Configuration, DataPoint, Dimensions, Partitioner, SegmentGroup, Storage, WorkingSet}
+import dk.aau.modelardb.core.{Configuration, DataPoint, Partitioner, SegmentGroup, Storage, WorkingSet}
 
 //TODO: Use parameters and Configuration uniformly. Maybe remove get() and pass the configuration object around?
 //TODO: Implement a proper cache for segments retrieved from storage. Maybe store them as Gid, ST, ET intervals?
@@ -18,18 +18,18 @@ import dk.aau.modelardb.core.{Configuration, DataPoint, Dimensions, Partitioner,
 //TODO: Merge the loggers from each thread before printing them to make them easier to read the results.
 //TODO: Make the two gridding methods used by the SparkEngine generic enough that all engines can use them.
 //TODO: Remove resolution from Segment View so RDBMSs can run UDAFs on the stored rows if they are also used for storage.
-class RDBMSEngineUtilities(storage: Storage, models: Array[String], batchSize: Int) {
+class RDBMSEngineUtilities(configuration: Configuration, storage: Storage) {
 
   /** Public methods **/
-  def startIngestion(dimensions: Dimensions): Unit = {
+  def startIngestion(): Unit = {
     //Initialize Storage
-    val configuration = Configuration.get()
+    val dimensions = configuration.getDimensions
     storage.open(dimensions)
     val timeSeries = Partitioner.initializeTimeSeries(configuration, storage.getMaxSID)
     val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, storage.getMaxGID)
     val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
       .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
-    storage.initialize(timeSeriesGroups, derivedTimeSeries, dimensions, models)
+    storage.initialize(timeSeriesGroups, derivedTimeSeries, dimensions, configuration.getModels)
     if (timeSeriesGroups.isEmpty) {
       //There are no time series to ingest
       return
@@ -115,7 +115,7 @@ class RDBMSEngineUtilities(storage: Storage, models: Array[String], batchSize: I
         cacheLock.writeLock().lock()
         finalizedSegments(finalizedSegmentsIndex) = new SegmentGroup(gid, startTime, endTime, mid, parameters, gaps)
         finalizedSegmentsIndex += 1
-        if (finalizedSegmentsIndex == batchSize) {
+        if (finalizedSegmentsIndex == configuration.getInteger("modelardb.batch")) {
           storage.storeSegmentGroups(finalizedSegments, finalizedSegmentsIndex)
           finalizedSegmentsIndex = 0
         }
@@ -203,7 +203,7 @@ class RDBMSEngineUtilities(storage: Storage, models: Array[String], batchSize: I
 
   /** Instance Variables **/
   private var finalizedSegmentsIndex = 0
-  private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](batchSize)
+  private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](configuration.getInteger("modelardb.batch"))
   private val cacheLock = new ReentrantReadWriteLock()
   private val temporarySegments = mutable.HashMap[Int, Array[SegmentGroup]]()
 }
@@ -211,9 +211,12 @@ class RDBMSEngineUtilities(storage: Storage, models: Array[String], batchSize: I
 object RDBMSEngineUtilities {
 
   /** Public Methods **/
-  def initialize(storage: Storage, models: Array[String], batchSize: Int): Unit = {
+  def initialize(configuration: Configuration, storage: Storage): Unit = {
+    //Ensures the necessary parameters are available before starting the engine
+    configuration.contains("modelardb.batch")
+
     RDBMSEngineUtilities.storage = storage
-    RDBMSEngineUtilities.utilities = new RDBMSEngineUtilities(storage, models, batchSize)
+    RDBMSEngineUtilities.utilities = new RDBMSEngineUtilities(configuration, storage)
   }
 
   def getStorage: Storage = RDBMSEngineUtilities.storage

@@ -3,10 +3,10 @@ package dk.aau.modelardb.engines.h2
 import java.sql.DriverManager
 
 import dk.aau.modelardb.Interface
-import dk.aau.modelardb.core.{Dimensions, Storage}
+import dk.aau.modelardb.core.{Configuration, Storage}
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
-class H2(interface: String, engine: String, storage: Storage, dimensions: Dimensions, models: Array[String], batchSize: Int) {
+class H2(configuration: Configuration, storage: Storage) {
   /** Public Methods **/
   def start(): Unit = {
     //Engine
@@ -20,13 +20,13 @@ class H2(interface: String, engine: String, storage: Storage, dimensions: Dimens
     stmt.close()
 
     //Ingestion
-    RDBMSEngineUtilities.initialize(storage, models, batchSize)
+    RDBMSEngineUtilities.initialize(configuration, storage)
     val utilities = RDBMSEngineUtilities.getUtilities
-    utilities.startIngestion(dimensions)
+    utilities.startIngestion()
 
     //Interface
     Interface.start(
-      interface,
+      configuration.getString("modelardb.interface"),
       q => utilities.executeQuery(connection, q)
     )
 

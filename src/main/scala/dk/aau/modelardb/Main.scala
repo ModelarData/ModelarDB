@@ -53,9 +53,7 @@ object Main {
     val storage = StorageFactory.getStorage(configuration.getString("modelardb.storage"))
 
     /* Engine */
-    EngineFactory.startEngine(
-      configuration.getString("modelardb.interface"), configuration.getString("modelardb.engine"),
-      storage, configuration.getModels, configuration.getInteger("modelardb.batch"))
+    EngineFactory.startEngine(configuration, storage)
 
     /* Cleanup */
     storage.close()
@@ -141,7 +139,7 @@ object Main {
     }
     configuration.add("modelardb.source.derived", finalDerivedSources)
     configuration.add("modelardb.correlation", correlations.toArray)
-    configuration
+    validate(configuration)
   }
 
   private def appendSources(pathName: String, sources: ArrayBuffer[String]): Unit = {
@@ -257,5 +255,17 @@ object Main {
       }
     }
     correlation
+  }
+
+  private def validate(configuration: Configuration): Configuration = {
+    //Settings used outside core are checked to ensure their values are within the expected range
+    if (configuration.getInteger("modelardb.spark.streaming") <= 0) {
+      throw new UnsupportedOperationException ("ModelarDB: modelardb.spark.streaming must be a positive number of seconds between micro-batches")
+    }
+
+    if (configuration.getInteger("modelardb.spark.receivers") < 0) {
+      throw new UnsupportedOperationException ("ModelarDB: modelardb.spark.receiver must be a positive number of receivers or zero to disable")
+    }
+    configuration
   }
 }

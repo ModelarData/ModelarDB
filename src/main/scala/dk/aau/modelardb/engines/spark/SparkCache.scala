@@ -27,7 +27,7 @@ import org.apache.spark.sql.{Row, SparkSession}
 
 import scala.collection.JavaConverters._
 
-class SparkCache(spark: SparkSession, newGids: Range, maxSegmentsCached: Int) extends Serializable {
+class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) extends Serializable {
 
   /** Public Methods **/
   def update(microBatch: RDD[Row]): Unit = {
