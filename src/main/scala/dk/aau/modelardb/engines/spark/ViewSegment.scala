@@ -54,8 +54,8 @@ class ViewSegment(dimensions: Array[StructField]) (@transient val sqlContext: SQ
   /** Private Methods **/
   private def getSegmentGroupRDD(filters: Array[Filter]): RDD[Row] = {
     //Sids and members are mapped to Gids so only segments from the necessary groups are retrieved
-    val sgc = Spark.getStorage.getSourceGroupCache
-    val idc = Spark.getStorage.getInverseDimensionsCache
+    val sgc = Spark.getStorage.sourceGroupCache
+    val idc = Spark.getStorage.inverseDimensionsCache
 
     val maxSid = sgc.length
     val gidFilters: Array[Filter] = filters.map {
@@ -110,8 +110,8 @@ class ViewSegment(dimensions: Array[StructField]) (@transient val sqlContext: SQ
 
   private def getSegmentGroupRowToSegmentRows: Row => Array[Row] = {
     val storage = Spark.getStorage
-    val gmdc = storage.getGroupMetadataCache
-    val gdc = storage.getGroupDerivedCache
+    val gmdc = storage.groupMetadataCache
+    val gdc = storage.groupDerivedCache
     row =>
       val sg = new SegmentGroup(row.getInt(0), row.getTimestamp(1).getTime, row.getTimestamp(2).getTime,
         row.getInt(3), row.getAs[Array[Byte]](4), row.getAs[Array[Byte]](5))

@@ -110,7 +110,7 @@ class Spark(configuration: Configuration, storage: Storage) {
   private def setupStream(spark: SparkSession, timeSeriesGroups: Array[TimeSeriesGroup]): StreamingContext = {
     //Creates receiverCount receivers with each receiving a working set created by Partitioner.partitionTimeSeries
     val ssc = new StreamingContext(spark.sparkContext, Seconds(configuration.getInteger("modelardb.spark.streaming")))
-    val midCache = Spark.getStorage.getMidCache
+    val midCache = Spark.getStorage.midCache
     val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, midCache,
       configuration.getInteger("modelardb.spark.receivers"))
     if (workingSets.length != configuration.getInteger("modelardb.spark.receivers")) {
@@ -144,7 +144,7 @@ object Spark {
     this.relations = spark.read.format("dk.aau.modelardb.engines.spark.ViewProvider")
     this.storage = storage
     this.sparkStorage = null
-    this.broadcastedSTC = spark.sparkContext.broadcast(storage.getSourceTransformationCache)
+    this.broadcastedSTC = spark.sparkContext.broadcast(storage.sourceTransformationCache)
 
     //The methods in the SparkStorage trait provides deeper integration with Apache Spark
     if (storage.isInstanceOf[SparkStorage]) {

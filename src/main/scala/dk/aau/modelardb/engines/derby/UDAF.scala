@@ -46,7 +46,7 @@ class CountS extends Aggregator[Segment, Long, CountS] {
 
   /** Public Methods  **/
   override def init(): Unit = {
-    this.cache = RDBMSEngineUtilities.getStorage.getGroupMetadataCache
+    this.cache = RDBMSEngineUtilities.getStorage.groupMetadataCache
   }
 
   override def accumulate(v: Segment): Unit = {

@@ -71,7 +71,7 @@ object EngineFactory {
     val models = configuration.getModels
     storage.initialize(timeSeriesGroups, derivedTimeSeries, dimensions, models)
 
-    val midCache = storage.getMidCache
+    val midCache = storage.midCache
     val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, midCache, 1)
 
     if (workingSets.length != 1) {

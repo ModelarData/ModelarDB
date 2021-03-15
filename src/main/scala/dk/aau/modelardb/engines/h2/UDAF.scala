@@ -12,7 +12,7 @@ class CountS extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
-    this.cache = RDBMSEngineUtilities.getStorage.getGroupMetadataCache
+    this.cache = RDBMSEngineUtilities.getStorage.groupMetadataCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {

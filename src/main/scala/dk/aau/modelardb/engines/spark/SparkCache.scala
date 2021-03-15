@@ -209,7 +209,7 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) ex
   /** Instance Variables **/
   private var checkpointCounter = 10
   private val emptyRDD = spark.sparkContext.emptyRDD[Row]
-  private val groupMetadataCache = Spark.getStorage.getGroupMetadataCache
+  private val groupMetadataCache = Spark.getStorage.groupMetadataCache
   private val cacheLock = new ReentrantReadWriteLock()
   private var lastFlush = 0
 

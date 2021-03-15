@@ -61,7 +61,7 @@ object SparkGridder {
           rows.map(SparkGridder.getSegmentGridFunctionFallback(requiredColumns))
         } else {
           val code = SparkProjector.getSegmentProjection(requiredColumns, this.segmentViewNameToIndex)
-          val dmc = dk.aau.modelardb.engines.spark.Spark.getStorage.getDimensionsCache
+          val dmc = dk.aau.modelardb.engines.spark.Spark.getStorage.dimensionsCache
           rows.mapPartitions(it => {
             val projector = SparkProjector.compileSegmentProjection(code)
             it.map(row => projector.project(row, dmc))
@@ -91,8 +91,8 @@ object SparkGridder {
       } else {
         val code = SparkProjector.getDataPointProjection(requiredColumns, this.dataPointViewNameToIndex)
         val storage = dk.aau.modelardb.engines.spark.Spark.getStorage
-        val dmc = storage.getDimensionsCache
-        val sc = storage.getSourceScalingFactorCache
+        val dmc = storage.dimensionsCache
+        val sc = storage.sourceScalingFactorCache
         val btc = Spark.getBroadcastedSourceTransformationCache
         dataPoints.mapPartitions(it => {
           val projector = SparkProjector.compileDataPointProjection(code)
@@ -103,7 +103,7 @@ object SparkGridder {
   }
 
   def getRowToSegment: Row => Segment = {
-    val mc = Spark.getStorage.getModelCache
+    val mc = Spark.getStorage.modelCache
     row => {
       val model = mc(row.getInt(4))
       model.get(row.getInt(0), row.getTimestamp(1).getTime, row.getTimestamp(2).getTime,
@@ -113,7 +113,7 @@ object SparkGridder {
 
   /** Private Functions **/
   private def getSegmentGridFunctionFallback(requiredColumns: Array[String]): Row => Row = {
-    val dmc = Spark.getStorage.getDimensionsCache
+    val dmc = Spark.getStorage.dimensionsCache
     val columns = requiredColumns.map(this.segmentViewNameToIndex)
     row => Row.fromSeq(columns.map({
       case 1 => row.getInt(0)
@@ -128,7 +128,7 @@ object SparkGridder {
   }
 
   def getDataPointGridFunction(requiredColumns: Array[String]): DataPoint => Row = {
-    val sc = Spark.getStorage.getSourceScalingFactorCache
+    val sc = Spark.getStorage.sourceScalingFactorCache
     val btc = Spark.getBroadcastedSourceTransformationCache
     val target = computeJumpTarget(requiredColumns, SparkGridder.dataPointViewNameToIndex, 3)
     (target: @switch) match {
@@ -160,8 +160,8 @@ object SparkGridder {
   }
 
   def getDataPointGridFunctionFallback(requiredColumns: Array[String]): DataPoint => Row = {
-    val dmc = Spark.getStorage.getDimensionsCache
-    val sc = Spark.getStorage.getSourceScalingFactorCache
+    val dmc = Spark.getStorage.dimensionsCache
+    val sc = Spark.getStorage.sourceScalingFactorCache
     val btc = Spark.getBroadcastedSourceTransformationCache
     val columns = requiredColumns.map(this.dataPointViewNameToIndex)
     dp => Row.fromSeq(columns.map({

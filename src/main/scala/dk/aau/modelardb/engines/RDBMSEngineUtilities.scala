@@ -35,7 +35,7 @@ class RDBMSEngineUtilities(configuration: Configuration, storage: Storage) {
       return
     }
 
-    val midCache = storage.getMidCache
+    val midCache = storage.midCache
     //TODO: What name should be used for this parameter so all ingestions can use it, modelardb.ingestors?
     val threads = configuration.getInteger("modelardb.spark.receivers")
     val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, midCache, threads)
@@ -161,7 +161,7 @@ class RDBMSEngineUtilities(configuration: Configuration, storage: Storage) {
     val inputGaps = Static.bytesToInts(inputSG.offsets)
 
     //Extracts the metadata for the group of time series being updated
-    val groupMetadataCache = storage.getGroupMetadataCache
+    val groupMetadataCache = storage.groupMetadataCache
     val group = groupMetadataCache(inputSG.gid).drop(1)
     val resolution = groupMetadataCache(inputSG.gid)(0)
     val inputIngested = group.toSet.diff(inputGaps.toSet)
