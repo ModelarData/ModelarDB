@@ -16,7 +16,6 @@ package dk.aau.modelardb.storage
 
 import java.sql.{Array => _, _}
 import java.util
-import java.util.HashMap
 
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.Pair
@@ -24,7 +23,7 @@ import dk.aau.modelardb.core.utility.ValueFunction
 
 import scala.collection.JavaConverters._
 
-class RDBMSStorage(connectionString: String, textType: String, blobType: String) extends Storage {
+class JDBCStorage(connectionStringAndTypes: String) extends Storage {
 
   /** Public Methods **/
   override def open(dimensions: Dimensions): Unit = {
@@ -39,9 +38,9 @@ class RDBMSStorage(connectionString: String, textType: String, blobType: String)
 
     if ( ! tables.next()) {
       val stmt = this.connection.createStatement()
-      stmt.executeUpdate(s"CREATE TABLE model(mid INTEGER, name $textType)")
-      stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mid INTEGER, params $blobType, gaps $blobType)")
-      stmt.executeUpdate(s"CREATE TABLE source(sid INTEGER, scaling FLOAT, resolution INTEGER, gid INTEGER${dimensions.getSchema(textType)})")
+      stmt.executeUpdate(s"CREATE TABLE model(mid INTEGER, name ${this.textType})")
+      stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mid INTEGER, params ${this.blobType}, gaps ${this.blobType})")
+      stmt.executeUpdate(s"CREATE TABLE source(sid INTEGER, scaling FLOAT, resolution INTEGER, gid INTEGER${dimensions.getSchema(this.textType)})")
     }
 
     //Prepares the necessary statements
@@ -60,7 +59,7 @@ class RDBMSStorage(connectionString: String, textType: String, blobType: String)
   }
 
   override def initialize(timeSeriesGroups: Array[TimeSeriesGroup],
-                          derivedTimeSeries: HashMap[Integer, Array[Pair[String, ValueFunction]]],
+                          derivedTimeSeries: util.HashMap[Integer, Array[Pair[String, ValueFunction]]],
                           dimensions: Dimensions, modelNames: Array[String]): Unit = {
     //Inserts the metadata for the sources defined in the configuration file (Sid, Resolution, Gid, Dimensions)
     val sourceDimensions = dimensions.getColumns.length
@@ -169,6 +168,25 @@ class RDBMSStorage(connectionString: String, textType: String, blobType: String)
   }
 
   /** Private Methods **/
+   private def splitConnectionStringAndTypes(connectionStringWithArguments: String): (String, String, String) = {
+     val split = connectionStringWithArguments.split(" ")
+     if (split.length == 3) {
+       (split(0), split(1), split(2))
+     } else {
+       val rdbms = connectionStringWithArguments.split(":")(1)
+       val defaults = Map(
+         "sqlite" -> Tuple3(connectionStringWithArguments, "TEXT", "BYTEA"),
+         "postgresql" -> Tuple3(connectionStringWithArguments, "TEXT", "BYTEA"),
+         "derby" -> Tuple3(connectionStringWithArguments, "LONG VARCHAR", "BLOB"),
+         "h2" -> Tuple3(connectionStringWithArguments, "TEXT", "BYTEA"),
+         "hsqldb" -> Tuple3(connectionStringWithArguments, "LONGVARCHAR", "LONGVARBINARY"))
+       if ( ! defaults.contains(rdbms)) {
+         throw new IllegalArgumentException("ModelarDB: the string and binary type must also be specified for " + rdbms)
+       }
+       defaults(rdbms)
+     }
+   }
+
   private def resultSetToSegmentGroup(resultSet: ResultSet): SegmentGroup = {
     val gid = resultSet.getInt(1)
     val startTime = resultSet.getLong(2)
@@ -197,4 +215,5 @@ class RDBMSStorage(connectionString: String, textType: String, blobType: String)
   private var getSegmentsStmt: PreparedStatement = _
   private var getMaxSidStmt: PreparedStatement = _
   private var getMaxGidStmt: PreparedStatement = _
+  private val (connectionString, textType, blobType) = splitConnectionStringAndTypes(connectionStringAndTypes)
 }

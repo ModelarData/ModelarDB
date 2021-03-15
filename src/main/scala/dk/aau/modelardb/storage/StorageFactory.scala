@@ -22,19 +22,8 @@ object StorageFactory {
   def getStorage(connectionString: String): Storage = {
     //Selects the correct storage backend based on the connection string provided
     try {
-      if (connectionString.startsWith("sqlite:")) {
-        Class.forName("org.sqlite.JDBC")
-        new RDBMSStorage("jdbc:" + connectionString, "TEXT", "BYTEA")
-      } else if (connectionString.startsWith("derby:")) {
-        System.setSecurityManager(null) //HACK: security manager is disabled during development
-        new dk.aau.modelardb.storage.RDBMSStorage("jdbc:" + connectionString, "LONG VARCHAR", "BLOB")
-      } else if (connectionString.startsWith("hsqldb:")) {
-        new dk.aau.modelardb.storage.RDBMSStorage("jdbc:" + connectionString, "LONGVARCHAR", "LONGVARBINARY")
-      } else if (connectionString.startsWith("h2:")) {
-        new dk.aau.modelardb.storage.RDBMSStorage("jdbc:" + connectionString, "TEXT", "BYTEA")
-      } else if (connectionString.startsWith("postgresql:")) {
-        Class.forName("org.postgresql.Driver")
-        new dk.aau.modelardb.storage.RDBMSStorage("jdbc:" + connectionString, "TEXT", "BYTEA")
+      if (connectionString.startsWith("jdbc:")) {
+        new JDBCStorage(connectionString)
       } else if (connectionString.startsWith("cassandra:")) {
         new CassandraSparkStorage(connectionString.split("://")(1))
       } else {
