@@ -15,8 +15,9 @@
 package dk.aau.modelardb.engines.derby
 
 import org.apache.derby.vti.Restriction
-import dk.aau.modelardb.core.SegmentGroup
+import dk.aau.modelardb.core.{SegmentGroup, Storage}
 
-trait DerbyStorage {
+trait DerbyStorage extends Storage {
+  def storeSegmentGroups(segments: Array[SegmentGroup], length: Int): Unit
   def getSegmentGroups(filter: Restriction): Iterator[SegmentGroup]
 }

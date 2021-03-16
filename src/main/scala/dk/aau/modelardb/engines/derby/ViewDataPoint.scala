@@ -9,7 +9,6 @@ import java.util.Calendar
 import org.apache.derby.vti.{RestrictedVTI, Restriction}
 
 import dk.aau.modelardb.core.DataPoint
-import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
 
@@ -433,7 +432,6 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
   //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfcontext.html
   //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfoptimizer.html
   override def initScan(columns: Array[String], filter: Restriction): Unit = {
-    Static.warn("projection and predicate push-down is not yet implemented")
   }
 
   /** Instance Variables **/

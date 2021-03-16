@@ -80,7 +80,7 @@ class MinS extends Aggregator[Input, Float, Option[Float]] {
 
   /** Instance Variables **/
   protected val inputToSegment: Input => Segment = SparkUDAF.getInputToSegment
-  protected val scalingCache: Array[Float] = Spark.getStorage.sourceScalingFactorCache
+  protected val scalingCache: Array[Float] = Spark.getSparkStorage.sourceScalingFactorCache
 }
 
 //Max
@@ -111,7 +111,7 @@ class MaxS extends Aggregator[Input, Float, Option[Float]] {
 
   /** Instance Variables **/
   protected val inputToSegment: Input => Segment = SparkUDAF.getInputToSegment
-  protected val scalingCache: Array[Float] = Spark.getStorage.sourceScalingFactorCache
+  protected val scalingCache: Array[Float] = Spark.getSparkStorage.sourceScalingFactorCache
 }
 
 //Sum
@@ -146,7 +146,7 @@ class SumS extends Aggregator[Input, Option[Double], Option[Double]] {
 
   /** Instance Variables **/
   protected val inputToSegment: Input => Segment = SparkUDAF.getInputToSegment
-  protected val scalingCache: Array[Float] = Spark.getStorage.sourceScalingFactorCache
+  protected val scalingCache: Array[Float] = Spark.getSparkStorage.sourceScalingFactorCache
 }
 
 //Avg
@@ -178,7 +178,7 @@ class AvgS extends Aggregator[Input, (Double, Long), Option[Double]] {
 
   /** Instance Variables **/
   protected val inputToSegment: Input => Segment = SparkUDAF.getInputToSegment
-  protected val scalingCache: Array[Float] = Spark.getStorage.sourceScalingFactorCache
+  protected val scalingCache: Array[Float] = Spark.getSparkStorage.sourceScalingFactorCache
 }
 
 //Implementation of user-defined aggregate functions in the time dimension on top of the Segment View
@@ -209,7 +209,7 @@ abstract class TimeUDAF[OUT](val size: Int) extends Aggregator[Input, Array[Doub
   protected val level: Int
   protected val default: Double = 0.0
   protected val aggregate: CubeFunction
-  protected val scalingCache: Array[Float] = Spark.getStorage.sourceScalingFactorCache
+  protected val scalingCache: Array[Float] = Spark.getSparkStorage.sourceScalingFactorCache
 }
 
 class TimeCount(override val level: Int, override val size: Int) extends TimeUDAF[Map[Int, Long]](size) {
@@ -419,7 +419,7 @@ object SparkUDAF {
   }
 
   def getInputToSegment: Input => Segment = {
-    val mc = Spark.getStorage.modelCache
+    val mc = Spark.getSparkStorage.modelCache
     input => {
       val model = mc(input.mid)
       model.get(input.sid, input.st.getTime, input.et.getTime, input.res, input.param, input.gaps)

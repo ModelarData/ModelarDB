@@ -30,8 +30,6 @@ public abstract class Storage {
     abstract public void initialize(TimeSeriesGroup[] timeSeriesGroups,
                                     HashMap<Integer, Pair<String, ValueFunction>[]> derivedTimeSeries,
                                     Dimensions dimensions, String[] modelNames);
-    abstract public void storeSegmentGroups(SegmentGroup[] segments, int length);
-    abstract public Iterator<SegmentGroup> getSegmentGroups();
     abstract public int getMaxSID();
     abstract public int getMaxGID();
     abstract public void close();

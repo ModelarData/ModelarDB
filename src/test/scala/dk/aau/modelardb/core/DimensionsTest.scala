@@ -14,7 +14,7 @@
  */
 package dk.aau.modelardb.core
 
-import dk.aau.modelardb.core.timeseries.TimeSeries
+import dk.aau.modelardb.core.timeseries.{TimeSeries, TimeSeriesCSV}
 import org.scalatest.wordspec.AnyWordSpec
 
 //TODO: split this into tests for Dimension, Correlation, and Partitioner instead of testing all three here
@@ -49,7 +49,8 @@ class DimensionsTest extends AnyWordSpec {
       assert(dimensions.getSources.length == 10)
     }
 
-    val timeSeries = dimensions.getSources.map(source => new TimeSeries(source, 1, 1000, " ", false,
+    //TODO: Create a proper test time series that can generate N data points based on a function, .e.g, a sine curve
+    val timeSeries: Array[TimeSeries] = dimensions.getSources.map(source => new TimeSeriesCSV(source, 1, 1000, " ", false,
       0, "unix", "UTC", 1, "en"))
 
     "create nine time series groups based on correlation by source" in {

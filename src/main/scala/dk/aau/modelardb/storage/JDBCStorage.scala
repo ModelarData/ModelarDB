@@ -17,15 +17,28 @@ package dk.aau.modelardb.storage
 import java.sql.{Array => _, _}
 import java.util
 
-import dk.aau.modelardb.core._
-import dk.aau.modelardb.core.utility.Pair
-import dk.aau.modelardb.core.utility.ValueFunction
-
 import scala.collection.JavaConverters._
 
-class JDBCStorage(connectionStringAndTypes: String) extends Storage {
+import dk.aau.modelardb.core._
+import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
+
+import dk.aau.modelardb.engines.derby.DerbyStorage
+import org.apache.derby.vti.Restriction
+
+import dk.aau.modelardb.engines.h2.H2Storage
+import org.h2.table.TableFilter
+
+import dk.aau.modelardb.engines.hsqldb.HSQLDBStorage
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.{Row, SparkSession}
+import dk.aau.modelardb.engines.spark.SparkStorage
+
+class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbyStorage with H2Storage with HSQLDBStorage with SparkStorage {
 
   /** Public Methods **/
+  //Storage
   override def open(dimensions: Dimensions): Unit = {
     //Initializes the RDBMS connection
     this.connection = DriverManager.getConnection(connectionString)
@@ -48,14 +61,6 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage {
     this.getSegmentsStmt = this.connection.prepareStatement("SELECT * FROM segment")
     this.getMaxSidStmt = this.connection.prepareStatement("SELECT MAX(sid) FROM source")
     this.getMaxGidStmt = this.connection.prepareStatement("SELECT MAX(gid) FROM source")
-  }
-
-  override def getMaxSID(): Int = {
-    getFirstInteger(this.getMaxSidStmt)
-  }
-
-  override def getMaxGID(): Int = {
-    getFirstInteger(this.getMaxGidStmt)
   }
 
   override def initialize(timeSeriesGroups: Array[TimeSeriesGroup],
@@ -125,6 +130,21 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage {
     }
   }
 
+  override def getMaxSID(): Int = {
+    getFirstInteger(this.getMaxSidStmt)
+  }
+
+  override def getMaxGID(): Int = {
+    getFirstInteger(this.getMaxGidStmt)
+  }
+
+  override def close(): Unit = {
+    //Connection cannot be closed while a transaction is running
+    this.connection.commit()
+    this.connection.close()
+  }
+
+  //DerbyStorage
   override def storeSegmentGroups(segments: Array[SegmentGroup], size: Int): Unit = {
     try {
       for (segmentGroup <- segments.take(size)) {
@@ -145,10 +165,21 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage {
     }
   }
 
-  override def getSegmentGroups(): util.Iterator[SegmentGroup] = {
+  override def getSegmentGroups(filter: Restriction): Iterator[SegmentGroup] = {
+    getSegmentGroups
+  }
+
+  //H2Storage
+  override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
+    getSegmentGroups
+  }
+
+  //HSQLDBStorage
+  override def getSegmentGroups(): Iterator[SegmentGroup] = {
+    Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
     val results = this.getSegmentsStmt.executeQuery()
-    new util.Iterator[SegmentGroup] {
-      override def hasNext(): Boolean = {
+    new Iterator[SegmentGroup] {
+      override def hasNext: Boolean = {
         if (results.next()) {
           true
         } else {
@@ -156,15 +187,27 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage {
           false
         }
       }
-
       override def next(): SegmentGroup = resultSetToSegmentGroup(results)
     }
   }
 
-  override def close(): Unit = {
-    //Connection cannot be closed while a transaction is running
-    this.connection.commit()
-    this.connection.close()
+  //SparkStorage
+  override def open(ssb: SparkSession.Builder, dimensions: Dimensions): SparkSession = {
+    ssb.getOrCreate()
+  }
+
+  override def storeSegmentGroups(sparkSession: SparkSession, rdd: RDD[Row]): Unit = {
+    val groups = rdd.map(row => new SegmentGroup(row.getInt(0), row.getTimestamp(1).getTime,
+      row.getTimestamp(2).getTime, row.getInt(3), row.getAs[Array[Byte]](4), row.getAs[Array[Byte]](5))).collect()
+    storeSegmentGroups(groups, groups.length)
+  }
+
+  override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): RDD[Row] = {
+    Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
+    val rows = getSegmentGroups().map(sg => {
+      Row(sg.gid, new Timestamp(sg.startTime), new Timestamp(sg.endTime), sg.mid, sg.parameters, sg.offsets)
+    })
+    sparkSession.sparkContext.parallelize(rows.toSeq)
   }
 
   /** Private Methods **/

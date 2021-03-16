@@ -25,7 +25,7 @@ object StorageFactory {
       if (connectionString.startsWith("jdbc:")) {
         new JDBCStorage(connectionString)
       } else if (connectionString.startsWith("cassandra:")) {
-        new CassandraSparkStorage(connectionString.split("://")(1))
+        new CassandraStorage(connectionString.split("://")(1))
       } else {
         throw new java.lang.IllegalArgumentException("ModelarDB: unknown value for modelardb.storage in the config file")
       }

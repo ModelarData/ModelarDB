@@ -4,12 +4,11 @@ import java.sql.Connection
 import java.util
 import java.util.function.BooleanSupplier
 import java.util.concurrent.locks.ReentrantReadWriteLock
-
 import scala.collection.mutable
 import scala.collection.JavaConverters._
-
-import dk.aau.modelardb.core.utility.{SegmentFunction, Pair, Static, ValueFunction}
+import dk.aau.modelardb.core.utility.{Pair, SegmentFunction, Static, ValueFunction}
 import dk.aau.modelardb.core.{Configuration, DataPoint, Partitioner, SegmentGroup, Storage, WorkingSet}
+import dk.aau.modelardb.engines.hsqldb.HSQLDBStorage
 
 //TODO: Use parameters and Configuration uniformly. Maybe remove get() and pass the configuration object around?
 //TODO: Implement a proper cache for segments retrieved from storage. Maybe store them as Gid, ST, ET intervals?
@@ -18,7 +17,8 @@ import dk.aau.modelardb.core.{Configuration, DataPoint, Partitioner, SegmentGrou
 //TODO: Merge the loggers from each thread before printing them to make them easier to read the results.
 //TODO: Make the two gridding methods used by the SparkEngine generic enough that all engines can use them.
 //TODO: Remove resolution from Segment View so RDBMSs can run UDAFs on the stored rows if they are also used for storage.
-class RDBMSEngineUtilities(configuration: Configuration, storage: Storage) {
+//TODO: Move get segments groups and data points to each of the three RDBMSs storage interface so predicate push-down is used.
+class RDBMSEngineUtilities(configuration: Configuration, storage: HSQLDBStorage) { //HACK: HSQLDBStorage matches the old Storage class
 
   /** Public methods **/
   def startIngestion(): Unit = {
@@ -57,7 +57,7 @@ class RDBMSEngineUtilities(configuration: Configuration, storage: Storage) {
     this.cacheLock.readLock().lock()
     val cachedTemporarySegments = this.temporarySegments.values.flatMap(sg => sg).toArray
     val cachedFinalizedSegments = this.finalizedSegments.take(this.finalizedSegmentsIndex)
-    val storedFinalizedSegments = storage.getSegmentGroups.asScala
+    val storedFinalizedSegments = storage.getSegmentGroups
     this.cacheLock.readLock().unlock()
     cachedTemporarySegments.iterator ++ cachedFinalizedSegments.iterator ++ storedFinalizedSegments
   }
@@ -216,7 +216,7 @@ object RDBMSEngineUtilities {
     configuration.contains("modelardb.batch")
 
     RDBMSEngineUtilities.storage = storage
-    RDBMSEngineUtilities.utilities = new RDBMSEngineUtilities(configuration, storage)
+    RDBMSEngineUtilities.utilities = new RDBMSEngineUtilities(configuration, storage.asInstanceOf[HSQLDBStorage])
   }
 
   def getStorage: Storage = RDBMSEngineUtilities.storage

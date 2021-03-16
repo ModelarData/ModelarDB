@@ -17,15 +17,12 @@ package dk.aau.modelardb.engines.spark
 import java.sql.Timestamp
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
-import dk.aau.modelardb.core.SegmentGroup
 import dk.aau.modelardb.core.utility.Static
 import edu.berkeley.cs.amplab.spark.indexedrdd.IndexedRDD
 import edu.berkeley.cs.amplab.spark.indexedrdd.IndexedRDD.intSet
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{Row, SparkSession}
-
-import scala.collection.JavaConverters._
 
 class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) extends Serializable {
 
@@ -113,29 +110,15 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) ex
   /** Private[spark] Methods **/
   private[spark] def write(microBatch: RDD[Row]): Unit = {
     //This method is not completely private so Spark can write RDDs directly to storage when bulk-loading
-    val ss = Spark.getSparkStorage
-    if (ss == null) {
-      val groups = microBatch.collect.map(row => new SegmentGroup(row.getInt(0), row.getTimestamp(1).getTime,
-        row.getTimestamp(2).getTime, row.getInt(3), row.getAs[Array[Byte]](4), row.getAs[Array[Byte]](5)))
-      Spark.getStorage.storeSegmentGroups(groups, groups.length)
-    } else {
-      ss.storeSegmentGroups(microBatch)
-    }
+    Spark.getSparkStorage.storeSegmentGroups(spark, microBatch)
   }
 
   /** Private Methods **/
   private def getStorageRDDFromDisk(filters: Array[Filter]): RDD[Row] = {
-    val ss = Spark.getSparkStorage
-    if (ss == null) {
-      val rows = Spark.getStorage.getSegmentGroups.asScala.map(sg =>
-        Row(sg.gid, new Timestamp(sg.startTime), new Timestamp(sg.endTime), sg.mid, sg.parameters, sg.offsets))
-      spark.sparkContext.parallelize(rows.toSeq)
-    } else {
-      ss.getSegmentGroups(filters)
-    }
+    Spark.getSparkStorage.getSegmentGroups(spark, filters)
   }
 
-  private def getIndexedRDD = {
+  private def getIndexedRDD(): IndexedRDD[Int, Array[Row]] = {
     //The IndexedRDD is populated with empty arrays for each new gid so that the merge function is always executed
     val initialData: Array[(Int, Array[Row])] = if (newGids.isEmpty) {
       Array()
@@ -146,7 +129,7 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) ex
     IndexedRDD(rdd)
   }
 
-  private def checkpointOrPersist(indexedRDD: IndexedRDD[Int, Array[Row]]) = {
+  private def checkpointOrPersist(indexedRDD: IndexedRDD[Int, Array[Row]]): IndexedRDD[Int, Array[Row]] = {
     if (checkpointCounter == 0) {
       //HACK: allows IndexedRDDs to be checkpointed so its linage can be cleared
       val checkpointableRDD = indexedRDD.mapPartitions(x => x)
@@ -209,7 +192,7 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) ex
   /** Instance Variables **/
   private var checkpointCounter = 10
   private val emptyRDD = spark.sparkContext.emptyRDD[Row]
-  private val groupMetadataCache = Spark.getStorage.groupMetadataCache
+  private val groupMetadataCache = Spark.getSparkStorage.groupMetadataCache
   private val cacheLock = new ReentrantReadWriteLock()
   private var lastFlush = 0
 

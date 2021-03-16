@@ -17,6 +17,7 @@ package dk.aau.modelardb.engines
 import dk.aau.modelardb.core.models.Segment
 import dk.aau.modelardb.core.utility.{Pair, SegmentFunction, ValueFunction}
 import dk.aau.modelardb.core.{Configuration, Partitioner, SegmentGroup, Storage}
+import dk.aau.modelardb.engines.hsqldb.HSQLDBStorage
 
 import java.util
 
@@ -26,7 +27,7 @@ object EngineFactory {
   def startEngine(configuration: Configuration, storage: Storage): Unit = {
     //Extracts the name of the system from the engine connection string
     configuration.getString("modelardb.engine").takeWhile(_ != ':') match {
-      case "local" => startLocal(configuration, storage)
+      case "local" => startLocal(configuration, storage.asInstanceOf[HSQLDBStorage]) //HACK: HSQLDBStorage matches the old Storage class
       case "derby" => new dk.aau.modelardb.engines.derby.Derby(configuration, storage).start()
       case "h2" => new dk.aau.modelardb.engines.h2.H2(configuration, storage).start()
       case "hsqldb" => new dk.aau.modelardb.engines.hsqldb.HSQLDB(configuration, storage).start()
@@ -37,7 +38,8 @@ object EngineFactory {
   }
 
   /** Private Methods **/
-  private def startLocal(configuration: Configuration, storage: Storage): Unit = {
+  //TODO: Replace local with one of the three RDBMSs for single node testing
+  private def startLocal(configuration: Configuration, storage: HSQLDBStorage): Unit = { //HACK: HSQLDBStorage matches the old Storage class
     //Creates a method that drops temporary segments and one that store finalized segments in batches
     val consumeTemporary = new SegmentFunction {
       override def emit(gid: Int, startTime: Long, endTime: Long, mid: Int, parameters: Array[Byte], gaps: Array[Byte]): Unit = ()

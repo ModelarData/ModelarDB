@@ -79,7 +79,7 @@ class Spark(configuration: Configuration, storage: Storage) {
       val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
         .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
       storage.initialize(Array(), derivedTimeSeries, dimensions, configuration.getModels)
-      Spark.initialize(spark, configuration, storage, Range(0,0))
+      Spark.initialize(spark, configuration, storage.asInstanceOf[SparkStorage], Range(0,0))
       null
     } else {
       val newGID = storage.getMaxGID + 1
@@ -88,7 +88,7 @@ class Spark(configuration: Configuration, storage: Storage) {
       val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
         .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
       storage.initialize(timeSeriesGroups, derivedTimeSeries, dimensions, configuration.getModels)
-      Spark.initialize(spark, configuration, storage, Range(newGID, newGID + timeSeriesGroups.size))
+      Spark.initialize(spark, configuration, storage.asInstanceOf[SparkStorage], Range(newGID, newGID + timeSeriesGroups.size))
       setupStream(spark, timeSeriesGroups)
     }
 
@@ -110,7 +110,7 @@ class Spark(configuration: Configuration, storage: Storage) {
   private def setupStream(spark: SparkSession, timeSeriesGroups: Array[TimeSeriesGroup]): StreamingContext = {
     //Creates receiverCount receivers with each receiving a working set created by Partitioner.partitionTimeSeries
     val ssc = new StreamingContext(spark.sparkContext, Seconds(configuration.getInteger("modelardb.spark.streaming")))
-    val midCache = Spark.getStorage.midCache
+    val midCache = Spark.getSparkStorage.midCache
     val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, midCache,
       configuration.getInteger("modelardb.spark.receivers"))
     if (workingSets.length != configuration.getInteger("modelardb.spark.receivers")) {
@@ -139,23 +139,17 @@ class Spark(configuration: Configuration, storage: Storage) {
 object Spark {
 
   /** Constructors **/
-  def initialize(spark: SparkSession, configuration: Configuration, storage: Storage, newGids: Range): Unit = {
+  def initialize(spark: SparkSession, configuration: Configuration, storage: SparkStorage, newGids: Range): Unit = {
     this.parallelism = spark.sparkContext.defaultParallelism
     this.relations = spark.read.format("dk.aau.modelardb.engines.spark.ViewProvider")
-    this.storage = storage
     this.sparkStorage = null
     this.broadcastedSTC = spark.sparkContext.broadcast(storage.sourceTransformationCache)
-
-    //The methods in the SparkStorage trait provides deeper integration with Apache Spark
-    if (storage.isInstanceOf[SparkStorage]) {
-      this.sparkStorage = storage.asInstanceOf[SparkStorage]
-    }
+    this.sparkStorage = storage.asInstanceOf[SparkStorage]
     this.cache = new SparkCache(spark, configuration.getInteger("modelardb.batch"), newGids)
   }
 
   /** Public Methods **/
   def getCache: SparkCache = Spark.cache
-  def getStorage: Storage = Spark.storage
   def getViewProvider: DataFrameReader = Spark.relations
   def getSparkStorage: SparkStorage = Spark.sparkStorage
   def getBroadcastedSourceTransformationCache: Broadcast[Array[ValueFunction]] = Spark.broadcastedSTC
@@ -168,7 +162,6 @@ object Spark {
   private var parallelism: Int = _
   private var cache: SparkCache = _
   private var relations: DataFrameReader = _
-  private var storage: Storage = _
   private var sparkStorage: SparkStorage = _
   private var broadcastedSTC: Broadcast[Array[ValueFunction]] = _
 }
