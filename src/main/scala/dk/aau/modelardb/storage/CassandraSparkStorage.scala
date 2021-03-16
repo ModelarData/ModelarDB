@@ -76,7 +76,7 @@ class CassandraSparkStorage(connectionString: String) extends Storage with Spark
         var stmt = SimpleStatement.builder(insertString)
           .addPositionalValues(
             BigInteger.valueOf(ts.sid.toLong), //Sid
-            ts.getScalingFactor.asInstanceOf[Object], //Scaling
+            ts.scalingFactor.asInstanceOf[Object], //Scaling
             BigInteger.valueOf(ts.resolution), //Resolution
             BigInteger.valueOf(tsg.gid)) //Gid
 

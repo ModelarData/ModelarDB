@@ -69,7 +69,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage {
       for (ts <- tsg.getTimeSeries) {
         insertSourceStmt.clearParameters()
         insertSourceStmt.setInt(1, ts.sid)
-        insertSourceStmt.setFloat(2, ts.getScalingFactor)
+        insertSourceStmt.setFloat(2, ts.scalingFactor)
         insertSourceStmt.setInt(3, ts.resolution)
         insertSourceStmt.setInt(4, tsg.gid)
 

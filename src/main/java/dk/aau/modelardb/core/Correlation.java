@@ -14,6 +14,7 @@
  */
 package dk.aau.modelardb.core;
 
+import dk.aau.modelardb.core.timeseries.TimeSeries;
 import dk.aau.modelardb.core.utility.Pair;
 
 import java.util.Arrays;
@@ -47,7 +48,7 @@ public class Correlation {
             //Sets the scaling factor for specific time series
             for (HashMap.Entry<String, Float> ls : this.scalingFactorForSource.entrySet()) {
                 if (ls.getKey().equals(ts.source)) {
-                    ts.setScalingFactor(ls.getValue());
+                    ts.scalingFactor = ls.getValue();
                 }
             }
 
@@ -56,7 +57,7 @@ public class Correlation {
                 for (HashMap.Entry<Object, Float> member : level.getValue().entrySet()) {
                     Object tsMember = dimensions.get(ts.source)[level.getKey()];
                     if (tsMember.equals(member.getKey())) {
-                        ts.setScalingFactor(member.getValue());
+                        ts.scalingFactor = member.getValue();
                     }
                 }
             }

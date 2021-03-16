@@ -14,6 +14,7 @@
  */
 package dk.aau.modelardb.core
 
+import dk.aau.modelardb.core.timeseries.TimeSeries
 import org.scalatest.wordspec.AnyWordSpec
 
 //TODO: split this into tests for Dimension, Correlation, and Partitioner instead of testing all three here

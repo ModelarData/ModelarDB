@@ -14,6 +14,7 @@
  */
 package dk.aau.modelardb.core;
 
+import dk.aau.modelardb.core.timeseries.TimeSeries;
 import dk.aau.modelardb.core.utility.Pair;
 
 import java.util.ArrayList;

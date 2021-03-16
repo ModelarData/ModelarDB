@@ -12,12 +12,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package dk.aau.modelardb.core;
+package dk.aau.modelardb.core.timeseries;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.Serializable;
-import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.nio.charset.StandardCharsets;
@@ -26,143 +24,22 @@ import java.text.NumberFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.Iterator;
 import java.util.Locale;
 import java.util.zip.GZIPInputStream;
 
-public class TimeSeries implements Serializable, Iterator<DataPoint> {
+import dk.aau.modelardb.core.DataPoint;
+
+public class TimeSeriesCSV extends TimeSeries {
 
     /** Constructors **/
     //Comma Separated Values
-    public TimeSeries(String stringPath, int sid, int resolution,
-                      String splitString, boolean hasHeader,
-                      int timestampColumn, String dateFormat, String timeZone,
-                      int valueColumn, String locale) {
+    public TimeSeriesCSV(String stringPath, int sid, int resolution,
+                         String splitString, boolean hasHeader,
+                         int timestampColumn, String dateFormat, String timeZone,
+                         int valueColumn, String localeString) {
+        super(stringPath.substring(stringPath.lastIndexOf('/') + 1), sid, resolution);
+        this.stringPath = stringPath;
 
-        //Values are set in the constructor to allow the fields to be final and exported as public
-        this.source = stringPath.substring(stringPath.lastIndexOf('/') + 1);
-        this.sid = sid;
-        this.resolution = resolution;
-        this.isBounded = true;
-        this.initialize = (Runnable & Serializable) () -> initFileChannel(stringPath);
-        setSerializable(splitString, hasHeader, timestampColumn, dateFormat, timeZone, valueColumn, locale);
-    }
-
-    //Socket
-    public TimeSeries(String host, int port, int sid, int resolution, String splitString, int timestampColumn,
-                      String dateFormat, String timeZone, int valueColumn, String locale) {
-
-        //Values are set in the constructor to allow the fields to be final and exported as public
-        this.source = host + " : " + port;
-        this.sid = sid;
-        this.resolution = resolution;
-        this.isBounded = false;
-        this.initialize = (Runnable & Serializable) () -> initSocketChannel(host, port);
-        setSerializable(splitString, false, timestampColumn, dateFormat, timeZone, valueColumn, locale);
-    }
-
-    /** Public Methods **/
-    public DataPoint next() {
-        try {
-            if (this.nextBuffer.length() == 0) {
-                readLines();
-            }
-            return nextDataPoint();
-        } catch (IOException ioe) {
-            close();
-            throw new java.lang.RuntimeException(ioe);
-        }
-    }
-
-    public boolean hasNext() {
-        try {
-            if (this.nextBuffer.length() == 0) {
-                readLines();
-            }
-            return this.nextBuffer.length() != 0;
-        } catch (IOException ioe) {
-            close();
-            throw new java.lang.RuntimeException(ioe);
-        }
-    }
-
-    public void close() {
-        //If the channel was never initialized there is nothing to close
-        if (this.channel == null) {
-            return;
-        }
-
-        try {
-            this.channel.close();
-            //Clears all references to channels and buffers to enable garbage collection
-            this.byteBuffer = null;
-            this.nextBuffer = null;
-            this.channel = null;
-        } catch (IOException ioe) {
-            throw new java.lang.RuntimeException(ioe);
-        }
-    }
-
-    public void setScalingFactor(float scalingFactor) {
-        this.scalingFactor = scalingFactor;
-    }
-
-    public float getScalingFactor() {
-        return this.scalingFactor;
-    }
-
-    public void attachToSelector(Selector s, SegmentGenerator mg) throws IOException {
-        SelectableChannel sc = (SelectableChannel) this.channel;
-        sc.configureBlocking(false);
-        sc.register(s, SelectionKey.OP_READ, mg);
-    }
-
-    public String toString() {
-        return "Time Series: [" + this.sid + " | " + this.source + " | " + this.resolution + "]";
-    }
-
-    /** Private Methods **/
-    private void initFileChannel(String stringPath) throws RuntimeException {
-        try {
-            FileChannel fc = FileChannel.open(Paths.get(stringPath));
-
-            //Wraps the channel in a stream if the data is compressed
-            String suffix = "";
-            int lastIndexOfDot = stringPath.lastIndexOf('.');
-            if (lastIndexOfDot > -1) {
-                suffix = stringPath.substring(lastIndexOfDot);
-            }
-
-            if (".gz".equals(suffix)) {
-                InputStream is = Channels.newInputStream(fc);
-                GZIPInputStream gis = new GZIPInputStream(is);
-                this.channel = Channels.newChannel(gis);
-            } else {
-                this.channel = fc;
-            }
-            this.byteBuffer = ByteBuffer.allocate(this.bufferSize);
-            if (this.hasHeader) {
-                readLines();
-            }
-        } catch (IOException ioe) {
-            //An unchecked exception is used so the function can be called in a lambda function
-            throw new RuntimeException(ioe);
-        }
-    }
-
-    private void initSocketChannel(String host, int port) throws RuntimeException {
-        try {
-            this.channel = SocketChannel.open(new InetSocketAddress(host, port));
-            this.byteBuffer = ByteBuffer.allocate(this.bufferSize);
-        } catch (IOException ioe) {
-            //An unchecked exception is used so the function can be called in a lambda function
-            throw new RuntimeException(ioe);
-        }
-    }
-
-    private void setSerializable(String splitString, boolean hasHeader,
-                                 int timestampColumn, String dateFormat, String timeZone,
-                                 int valueColumn, String localeString) {
         //A small buffer is used so more time series can be ingested in parallel
         this.bufferSize = 1024;
         this.hasHeader = hasHeader;
@@ -192,6 +69,82 @@ public class TimeSeries implements Serializable, Iterator<DataPoint> {
         this.nextBuffer = new StringBuffer();
     }
 
+    /** Public Methods **/
+    public void open() throws RuntimeException {
+        try {
+            FileChannel fc = FileChannel.open(Paths.get(this.stringPath));
+
+            //Wraps the channel in a stream if the data is compressed
+            String suffix = "";
+            int lastIndexOfDot = this.stringPath.lastIndexOf('.');
+            if (lastIndexOfDot > -1) {
+                suffix = this.stringPath.substring(lastIndexOfDot);
+            }
+            stringPath = null;
+
+            if (".gz".equals(suffix)) {
+                InputStream is = Channels.newInputStream(fc);
+                GZIPInputStream gis = new GZIPInputStream(is);
+                this.channel = Channels.newChannel(gis);
+            } else {
+                this.channel = fc;
+            }
+            this.byteBuffer = ByteBuffer.allocate(this.bufferSize);
+            if (this.hasHeader) {
+                readLines();
+            }
+        } catch (IOException ioe) {
+            //An unchecked exception is used so the function can be called in a lambda function
+            throw new RuntimeException(ioe);
+        }
+    }
+
+    public DataPoint next() {
+        try {
+            if (this.nextBuffer.length() == 0) {
+                readLines();
+            }
+            return nextDataPoint();
+        } catch (IOException ioe) {
+            close();
+            throw new java.lang.RuntimeException(ioe);
+        }
+    }
+
+    public boolean hasNext() {
+        try {
+            if (this.nextBuffer.length() == 0) {
+                readLines();
+            }
+            return this.nextBuffer.length() != 0;
+        } catch (IOException ioe) {
+            close();
+            throw new java.lang.RuntimeException(ioe);
+        }
+    }
+
+    public String toString() {
+        return "Time Series: [" + this.sid + " | " + this.source + " | " + this.resolution + "]";
+    }
+
+    public void close() {
+        //If the channel was never initialized there is nothing to close
+        if (this.channel == null) {
+            return;
+        }
+
+        try {
+            this.channel.close();
+            //Clears all references to channels and buffers to enable garbage collection
+            this.byteBuffer = null;
+            this.nextBuffer = null;
+            this.channel = null;
+        } catch (IOException ioe) {
+            throw new java.lang.RuntimeException(ioe);
+        }
+    }
+
+    /** Private Methods **/
     private void readLines() throws IOException {
         int lastChar;
 
@@ -248,12 +201,7 @@ public class TimeSeries implements Serializable, Iterator<DataPoint> {
     }
 
     /** Instance Variables **/
-    public final String source;
-    public final int sid;
-    public final int resolution;
-    public final boolean isBounded;
-    public final Runnable initialize;
-
+    private String stringPath;
     private boolean hasHeader;
     private float scalingFactor;
     private int bufferSize;

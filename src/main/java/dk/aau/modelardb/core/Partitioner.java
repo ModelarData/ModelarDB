@@ -14,6 +14,9 @@
  */
 package dk.aau.modelardb.core;
 
+import dk.aau.modelardb.core.timeseries.AsyncTimeSeriesSocket;
+import dk.aau.modelardb.core.timeseries.TimeSeries;
+import dk.aau.modelardb.core.timeseries.TimeSeriesCSV;
 import dk.aau.modelardb.core.utility.Pair;
 import dk.aau.modelardb.core.utility.Static;
 import dk.aau.modelardb.core.utility.ValueFunction;
@@ -50,14 +53,10 @@ public class Partitioner {
             cms += 1;
             TimeSeries ts;
             if (source.contains(":")) {
-                //The source is a socket
-                String[] ipSplitPort = source.split(":");
-                int port = Integer.parseInt(ipSplitPort[1]);
-                ts = new TimeSeries(ipSplitPort[0], port, cms, resolution, separator,
+                ts = new AsyncTimeSeriesSocket(source, cms, resolution, separator,
                         timestamps, dateFormat, timezone, values, locale);
             } else {
-                //The source is a csv file
-                ts = new TimeSeries(source, cms, resolution, separator, header,
+                ts = new TimeSeriesCSV(source, cms, resolution, separator, header,
                         timestamps, dateFormat, timezone, values, locale);
             }
             tss.add(ts);

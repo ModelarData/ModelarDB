@@ -14,6 +14,9 @@
  */
 package dk.aau.modelardb.core;
 
+import dk.aau.modelardb.core.timeseries.AsyncTimeSeries;
+import dk.aau.modelardb.core.timeseries.TimeSeries;
+
 import java.io.IOException;
 import java.io.Serializable;
 import java.nio.channels.Selector;
@@ -30,10 +33,10 @@ public class TimeSeriesGroup implements Serializable {
         }
 
         //Each time series is assumed to have the same sampling interval, alignment, and boundness
-        this.isBounded = timeSeries[0].isBounded;
+        this.isAsync = timeSeries[0] instanceof AsyncTimeSeries;
         this.resolution = timeSeries[0].resolution;
         for (TimeSeries ts : timeSeries) {
-            if (this.isBounded != ts.isBounded) {
+            if (this.isAsync != ts instanceof AsyncTimeSeries) {
                 throw new UnsupportedOperationException("CORE: All time series in a group must be bounded or unbounded");
             }
 
@@ -65,7 +68,7 @@ public class TimeSeriesGroup implements Serializable {
             this.timeSeries[j] = tsg.timeSeries[i];
             j++;
         }
-        this.isBounded = this.timeSeries[0].isBounded;
+        this.isAsync = this.timeSeries[0] instanceof AsyncTimeSeries;
         this.resolution = this.timeSeries[0].resolution;
         tsg.timeSeriesHasNext = 0;
     }
@@ -90,7 +93,7 @@ public class TimeSeriesGroup implements Serializable {
             }
             tsg.timeSeriesHasNext = 0;
         }
-        this.isBounded = this.timeSeries[0].isBounded;
+        this.isAsync = this.timeSeries[0] instanceof AsyncTimeSeries;
         this.resolution = this.timeSeries[0].resolution;
     }
 
@@ -98,7 +101,7 @@ public class TimeSeriesGroup implements Serializable {
     public void initialize() {
         for (int i = 0; i < this.timeSeries.length; i++) {
             TimeSeries ts = this.timeSeries[i];
-            ts.initialize.run();
+            ts.open();
 
             //Stores the first data point from each time series to track when a gap occurs
             if (ts.hasNext()) {
@@ -113,7 +116,9 @@ public class TimeSeriesGroup implements Serializable {
 
     public void attachToSelector(Selector s, SegmentGenerator mg) throws IOException {
         for(TimeSeries ts : this.timeSeries) {
-            ts.attachToSelector(s, mg);
+            if (ts instanceof AsyncTimeSeries) {
+                ((AsyncTimeSeries) ts).attachToSelector(s, mg);
+            }
         }
     }
 
@@ -174,7 +179,7 @@ public class TimeSeriesGroup implements Serializable {
 
     /** Instance Variables **/
     public final int gid;
-    public final boolean isBounded;
+    public final boolean isAsync;
     public final int resolution;
 
     private int timeSeriesActive;

@@ -15,6 +15,7 @@
 package dk.aau.modelardb.core;
 
 import dk.aau.modelardb.core.models.Model;
+import dk.aau.modelardb.core.timeseries.TimeSeries;
 import dk.aau.modelardb.core.utility.Logger;
 import dk.aau.modelardb.core.utility.ReverseBufferIterator;
 import dk.aau.modelardb.core.utility.SegmentFunction;
@@ -25,7 +26,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-class SegmentGenerator {
+public class SegmentGenerator {
 
     /** Constructors **/
     SegmentGenerator(TimeSeriesGroup timeSeriesGroup, Supplier<Model[]> modelsInitializer, Model fallbackModel, List<Integer> sids,

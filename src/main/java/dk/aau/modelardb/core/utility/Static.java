@@ -15,6 +15,7 @@
 package dk.aau.modelardb.core.utility;
 
 import dk.aau.modelardb.core.*;
+import dk.aau.modelardb.core.timeseries.TimeSeries;
 
 import java.io.IOException;
 import java.net.Inet6Address;
