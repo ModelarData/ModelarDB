@@ -38,6 +38,20 @@ Test / testOptions += Tests.Setup(() => System.setSecurityManager(null))
 /* Disable log buffering when running tests for nicer output */
 logBuffered in Test := false
 
-githubOwner := "modelardata"
-githubRepository := "modelardb"
-githubTokenSource := TokenSource.Environment("GITHUB_TOKEN")
+/* Github Package Repo */
+val owner = "modelardata"
+val repo = "modelardb"
+publishMavenStyle := true
+publishTo := Some("GitHub Package Registry" at s"https://maven.pkg.github.com/$owner/$repo")
+
+credentials +=
+  Credentials(
+    "GitHub Package Registry",
+    "maven.pkg.github.com",
+    "_", // Username is ignored when using a token
+    sys.env.getOrElse("GITHUB_TOKEN", "") // Just use an empty string when no ENV VAR found to allow SBT to work locally
+  )
+
+
+jacocoReportSettings := JacocoReportSettings(formats = Seq(JacocoReportFormats.ScalaHTML))
+
