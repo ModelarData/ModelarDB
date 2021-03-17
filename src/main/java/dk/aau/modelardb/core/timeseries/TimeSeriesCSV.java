@@ -26,17 +26,15 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 import java.util.zip.GZIPInputStream;
-
 import dk.aau.modelardb.core.DataPoint;
 
 public class TimeSeriesCSV extends TimeSeries {
 
-    /** Constructors **/
-    //Comma Separated Values
+    /** Public Methods **/
     public TimeSeriesCSV(String stringPath, int sid, int resolution,
                          String splitString, boolean hasHeader,
-                         int timestampColumn, String dateFormat, String timeZone,
-                         int valueColumn, String localeString) {
+                         int timestampColumnIndex, String dateFormat, String timeZone,
+                         int valueColumnIndex, String localeString) {
         super(stringPath.substring(stringPath.lastIndexOf('/') + 1), sid, resolution);
         this.stringPath = stringPath;
 
@@ -46,7 +44,7 @@ public class TimeSeriesCSV extends TimeSeries {
         this.splitString = splitString;
         this.scalingFactor = 1.0F;
 
-        this.timestampColumn = timestampColumn;
+        this.timestampColumnIndex = timestampColumnIndex;
         switch (dateFormat) {
             case "unix":
                 this.dateParserType = 1;
@@ -62,14 +60,13 @@ public class TimeSeriesCSV extends TimeSeries {
                 break;
         }
 
-        this.valueColumn = valueColumn;
+        this.valueColumnIndex = valueColumnIndex;
         Locale locale = new Locale(localeString);
         this.valueParser = NumberFormat.getInstance(locale);
         this.decodeBuffer = new StringBuffer();
         this.nextBuffer = new StringBuffer();
     }
 
-    /** Public Methods **/
     public void open() throws RuntimeException {
         try {
             FileChannel fc = FileChannel.open(Paths.get(this.stringPath));
@@ -180,18 +177,18 @@ public class TimeSeriesCSV extends TimeSeries {
             switch (this.dateParserType) {
                 case 1:
                     //Unix time
-                    timestamp = new Date(Long.parseLong(split[timestampColumn]) * 1000).getTime();
+                    timestamp = new Date(Long.parseLong(split[timestampColumnIndex]) * 1000).getTime();
                     break;
                 case 2:
                     //Java time
-                    timestamp = new Date(Long.parseLong(split[timestampColumn])).getTime();
+                    timestamp = new Date(Long.parseLong(split[timestampColumnIndex])).getTime();
                     break;
                 case 3:
                     //Human readable timestamp
-                    timestamp = dateParser.parse(split[timestampColumn]).getTime();
+                    timestamp = dateParser.parse(split[timestampColumnIndex]).getTime();
                     break;
             }
-            float value = valueParser.parse(split[valueColumn]).floatValue();
+            float value = valueParser.parse(split[valueColumnIndex]).floatValue();
             return new DataPoint(this.sid, timestamp, this.scalingFactor * value);
         } catch (ParseException pe) {
             //If the input cannot be parsed the stream is considered empty
@@ -210,9 +207,9 @@ public class TimeSeriesCSV extends TimeSeries {
     private StringBuffer nextBuffer;
     private ReadableByteChannel channel;
     private String splitString;
-    private int timestampColumn;
+    private int timestampColumnIndex;
     private SimpleDateFormat dateParser;
     private int dateParserType;
-    private int valueColumn;
+    private int valueColumnIndex;
     private NumberFormat valueParser;
 }
