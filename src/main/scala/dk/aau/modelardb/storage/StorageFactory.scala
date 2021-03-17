@@ -22,14 +22,10 @@ object StorageFactory {
   def getStorage(connectionString: String): Storage = {
     //Selects the correct storage backend based on the connection string provided
     try {
-      if (connectionString.startsWith("sqlite:")) {
-        Class.forName("org.sqlite.JDBC")
-        new RDBMSStorage("jdbc:" + connectionString)
-      } else if (connectionString.startsWith("postgresql:")) {
-        Class.forName("org.postgresql.Driver")
-        new dk.aau.modelardb.storage.RDBMSStorage("jdbc:" + connectionString)
+      if (connectionString.startsWith("jdbc:")) {
+        new JDBCStorage(connectionString)
       } else if (connectionString.startsWith("cassandra:")) {
-        new CassandraSparkStorage(connectionString.split("://")(1))
+        new CassandraStorage(connectionString.split("://")(1))
       } else {
         throw new java.lang.IllegalArgumentException("ModelarDB: unknown value for modelardb.storage in the config file")
       }

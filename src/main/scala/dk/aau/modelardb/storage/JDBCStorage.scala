@@ -16,18 +16,29 @@ package dk.aau.modelardb.storage
 
 import java.sql.{Array => _, _}
 import java.util
-import java.util.stream.Stream
-import java.util.HashMap
-
-import dk.aau.modelardb.core._
-import dk.aau.modelardb.core.utility.Pair
-import dk.aau.modelardb.core.utility.ValueFunction
 
 import scala.collection.JavaConverters._
 
-class RDBMSStorage(connectionString: String) extends Storage {
+import dk.aau.modelardb.core._
+import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
+
+import dk.aau.modelardb.engines.derby.DerbyStorage
+import org.apache.derby.vti.Restriction
+
+import dk.aau.modelardb.engines.h2.H2Storage
+import org.h2.table.TableFilter
+
+import dk.aau.modelardb.engines.hsqldb.HSQLDBStorage
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.{Row, SparkSession}
+import dk.aau.modelardb.engines.spark.SparkStorage
+
+class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbyStorage with H2Storage with HSQLDBStorage with SparkStorage {
 
   /** Public Methods **/
+  //Storage
   override def open(dimensions: Dimensions): Unit = {
     //Initializes the RDBMS connection
     this.connection = DriverManager.getConnection(connectionString)
@@ -36,13 +47,13 @@ class RDBMSStorage(connectionString: String) extends Storage {
     //Checks if the tables exist and create them if necessary
     val metadata = this.connection.getMetaData
     val tableType = Array("TABLE")
-    val tables = metadata.getTables(null, null, "segment", tableType)
+    val tables = metadata.getTables(null, null, "SEGMENT", tableType)
 
     if ( ! tables.next()) {
       val stmt = this.connection.createStatement()
-      stmt.executeUpdate("CREATE TABLE model(mid INTEGER, name TEXT)")
-      stmt.executeUpdate("CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mid INTEGER, params BYTEA, gaps BYTEA)")
-      stmt.executeUpdate("CREATE TABLE source(sid INTEGER, scaling FLOAT, resolution INTEGER, gid INTEGER" + dimensions.getSchema + ")")
+      stmt.executeUpdate(s"CREATE TABLE model(mid INTEGER, name ${this.textType})")
+      stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mid INTEGER, params ${this.blobType}, gaps ${this.blobType})")
+      stmt.executeUpdate(s"CREATE TABLE source(sid INTEGER, scaling FLOAT, resolution INTEGER, gid INTEGER${dimensions.getSchema(this.textType)})")
     }
 
     //Prepares the necessary statements
@@ -52,16 +63,8 @@ class RDBMSStorage(connectionString: String) extends Storage {
     this.getMaxGidStmt = this.connection.prepareStatement("SELECT MAX(gid) FROM source")
   }
 
-  override def getMaxSID: Int = {
-    getFirstInteger(this.getMaxSidStmt)
-  }
-
-  override def getMaxGID: Int = {
-    getFirstInteger(this.getMaxGidStmt)
-  }
-
   override def initialize(timeSeriesGroups: Array[TimeSeriesGroup],
-                          derivedTimeSeries: HashMap[Integer, Array[Pair[String, ValueFunction]]],
+                          derivedTimeSeries: util.HashMap[Integer, Array[Pair[String, ValueFunction]]],
                           dimensions: Dimensions, modelNames: Array[String]): Unit = {
     //Inserts the metadata for the sources defined in the configuration file (Sid, Resolution, Gid, Dimensions)
     val sourceDimensions = dimensions.getColumns.length
@@ -71,7 +74,7 @@ class RDBMSStorage(connectionString: String) extends Storage {
       for (ts <- tsg.getTimeSeries) {
         insertSourceStmt.clearParameters()
         insertSourceStmt.setInt(1, ts.sid)
-        insertSourceStmt.setFloat(2, ts.getScalingFactor)
+        insertSourceStmt.setFloat(2, ts.scalingFactor)
         insertSourceStmt.setInt(3, ts.resolution)
         insertSourceStmt.setInt(4, tsg.gid)
 
@@ -127,7 +130,22 @@ class RDBMSStorage(connectionString: String) extends Storage {
     }
   }
 
-  override def insert(segments: Array[SegmentGroup], size: Int): Unit = {
+  override def getMaxSID(): Int = {
+    getFirstInteger(this.getMaxSidStmt)
+  }
+
+  override def getMaxGID(): Int = {
+    getFirstInteger(this.getMaxGidStmt)
+  }
+
+  override def close(): Unit = {
+    //Connection cannot be closed while a transaction is running
+    this.connection.commit()
+    this.connection.close()
+  }
+
+  //DerbyStorage
+  override def storeSegmentGroups(segments: Array[SegmentGroup], size: Int): Unit = {
     try {
       for (segmentGroup <- segments.take(size)) {
         this.insertStmt.setInt(1, segmentGroup.gid)
@@ -147,33 +165,78 @@ class RDBMSStorage(connectionString: String) extends Storage {
     }
   }
 
-  override def close(): Unit = {
-    this.connection.close()
+  override def getSegmentGroups(filter: Restriction): Iterator[SegmentGroup] = {
+    getSegmentGroups
   }
 
-  override def getSegments: Stream[SegmentGroup] = {
-    try {
-      val results = this.getSegmentsStmt.executeQuery()
-      val segments = new util.ArrayList[SegmentGroup]()
-      while (results.next()) {
-        segments.add(resultToSegmentData(results))
+  //H2Storage
+  override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
+    getSegmentGroups
+  }
+
+  //HSQLDBStorage
+  override def getSegmentGroups(): Iterator[SegmentGroup] = {
+    Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
+    val results = this.getSegmentsStmt.executeQuery()
+    new Iterator[SegmentGroup] {
+      override def hasNext: Boolean = {
+        if (results.next()) {
+          true
+        } else {
+          results.close()
+          false
+        }
       }
-      segments.stream()
-    } catch {
-      case se: SQLException =>
-        close()
-        throw new java.lang.RuntimeException(se)
+      override def next(): SegmentGroup = resultSetToSegmentGroup(results)
     }
   }
 
+  //SparkStorage
+  override def open(ssb: SparkSession.Builder, dimensions: Dimensions): SparkSession = {
+    ssb.getOrCreate()
+  }
+
+  override def storeSegmentGroups(sparkSession: SparkSession, rdd: RDD[Row]): Unit = {
+    val groups = rdd.map(row => new SegmentGroup(row.getInt(0), row.getTimestamp(1).getTime,
+      row.getTimestamp(2).getTime, row.getInt(3), row.getAs[Array[Byte]](4), row.getAs[Array[Byte]](5))).collect()
+    storeSegmentGroups(groups, groups.length)
+  }
+
+  override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): RDD[Row] = {
+    Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
+    val rows = getSegmentGroups().map(sg => {
+      Row(sg.gid, new Timestamp(sg.startTime), new Timestamp(sg.endTime), sg.mid, sg.parameters, sg.offsets)
+    })
+    sparkSession.sparkContext.parallelize(rows.toSeq)
+  }
+
   /** Private Methods **/
-  private def resultToSegmentData(result: ResultSet): SegmentGroup = {
-    val gid = result.getInt(1)
-    val startTime = result.getLong(2)
-    val endTime = result.getLong(3)
-    val mid = result.getInt(4)
-    val params = result.getBytes(5)
-    val gaps = result.getBytes(6)
+   private def splitConnectionStringAndTypes(connectionStringWithArguments: String): (String, String, String) = {
+     val split = connectionStringWithArguments.split(" ")
+     if (split.length == 3) {
+       (split(0), split(1), split(2))
+     } else {
+       val rdbms = connectionStringWithArguments.split(":")(1)
+       val defaults = Map(
+         "sqlite" -> Tuple3(connectionStringWithArguments, "TEXT", "BYTEA"),
+         "postgresql" -> Tuple3(connectionStringWithArguments, "TEXT", "BYTEA"),
+         "derby" -> Tuple3(connectionStringWithArguments, "LONG VARCHAR", "BLOB"),
+         "h2" -> Tuple3(connectionStringWithArguments, "TEXT", "BYTEA"),
+         "hsqldb" -> Tuple3(connectionStringWithArguments, "LONGVARCHAR", "LONGVARBINARY"))
+       if ( ! defaults.contains(rdbms)) {
+         throw new IllegalArgumentException("ModelarDB: the string and binary type must also be specified for " + rdbms)
+       }
+       defaults(rdbms)
+     }
+   }
+
+  private def resultSetToSegmentGroup(resultSet: ResultSet): SegmentGroup = {
+    val gid = resultSet.getInt(1)
+    val startTime = resultSet.getLong(2)
+    val endTime = resultSet.getLong(3)
+    val mid = resultSet.getInt(4)
+    val params = resultSet.getBytes(5)
+    val gaps = resultSet.getBytes(6)
     new SegmentGroup(gid, startTime, endTime, mid, params, gaps)
   }
 
@@ -195,4 +258,5 @@ class RDBMSStorage(connectionString: String) extends Storage {
   private var getSegmentsStmt: PreparedStatement = _
   private var getMaxSidStmt: PreparedStatement = _
   private var getMaxGidStmt: PreparedStatement = _
+  private val (connectionString, textType, blobType) = splitConnectionStringAndTypes(connectionStringAndTypes)
 }

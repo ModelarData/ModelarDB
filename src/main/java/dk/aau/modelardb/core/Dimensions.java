@@ -14,6 +14,7 @@
  */
 package dk.aau.modelardb.core;
 
+import dk.aau.modelardb.core.timeseries.TimeSeries;
 import dk.aau.modelardb.core.utility.Pair;
 
 import java.util.ArrayList;
@@ -98,7 +99,8 @@ public class Dimensions {
         return this.types;
     }
 
-    public String getSchema() {
+    public String getSchema(String textType) {
+        //TODO: should getSchema should be in the storage backends so each can use the syntax and types it prefers?
         if (this.types.length == 0) {
             return "";
         }
@@ -110,18 +112,25 @@ public class Dimensions {
         for (int i = 0; i <  withPunctuation; i++) {
             sb.append(this.columns[i]);
             sb.append(' ');
-            sb.append(this.types[i].toString());
+            if (this.types[i] == Types.TEXT) {
+                sb.append(textType);
+            } else {
+                sb.append(this.types[i].toString());
+            }
             sb.append(", ");
         }
         sb.append(this.columns[withPunctuation]);
         sb.append(' ');
-        sb.append(this.types[withPunctuation].toString());
+        if (this.types[withPunctuation] == Types.TEXT) {
+            sb.append(textType);
+        } else {
+            sb.append(this.types[withPunctuation].toString());
+        }
         return sb.toString();
     }
 
     public float getLowestNoneZeroDistance() {
-        float highestLevelCount = this.dims.entrySet().stream().mapToInt(dim ->
-                (dim.getValue()._2 - dim.getValue()._1 + 1)).max().getAsInt();
+        float highestLevelCount = this.dims.values().stream().mapToInt(dim -> (dim._2 - dim._1 + 1)).max().getAsInt();
         return (float) (1.0 / highestLevelCount / this.names.length);
     }
 
@@ -319,12 +328,12 @@ public class Dimensions {
     }
 
     /** Instance Variables **/
-    private String[] names;
-    private HashMap<String, Pair<Integer, Integer>> dims;
-    private Object[] emptyRow;
-    private double[] weights;
-    private String[] columns;
-    private Dimensions.Types[] types;
-    private HashMap<String, Object[]> rows;
+    private final String[] names;
+    private final HashMap<String, Pair<Integer, Integer>> dims;
+    private final Object[] emptyRow;
+    private final double[] weights;
+    private final String[] columns;
+    private final Dimensions.Types[] types;
+    private final HashMap<String, Object[]> rows;
     public enum Types {INT, LONG, FLOAT, DOUBLE, TEXT}
 }

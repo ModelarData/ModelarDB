@@ -16,6 +16,7 @@ package dk.aau.modelardb.core;
 
 import dk.aau.modelardb.core.models.Model;
 import dk.aau.modelardb.core.models.ModelFactory;
+import dk.aau.modelardb.core.timeseries.TimeSeries;
 import dk.aau.modelardb.core.utility.Logger;
 import dk.aau.modelardb.core.utility.SegmentFunction;
 import dk.aau.modelardb.core.utility.Static;
@@ -39,7 +40,7 @@ public class WorkingSet implements Serializable {
                       String[] models, int[] mids, float error, int latency, int limit) {
         this.timeSeriesGroups = timeSeriesGroups;
         this.dynamicSplitFraction = (dynamicSplitFraction > 0.0F) ? 1.0F / dynamicSplitFraction : 0.0F;
-        this.currentTimeSeries = 0;
+        this.currentTimeSeriesGroup = 0;
         this.models = models;
         this.mids = mids;
         this.error = error;
@@ -68,11 +69,11 @@ public class WorkingSet implements Serializable {
     public String toString() {
         return "====================================================================================================\n" +
                 "Working Set [Current GID: " +
-                this.timeSeriesGroups[this.currentTimeSeries].gid +
+                this.timeSeriesGroups[this.currentTimeSeriesGroup].gid +
                 " | Total TSGs: " +
                 this.timeSeriesGroups.length +
                 " | Current TSG: " +
-                (this.currentTimeSeries + 1) +
+                (this.currentTimeSeriesGroup + 1) +
                 " | Error: " +
                 this.error +
                 " | Latency: " +
@@ -84,8 +85,8 @@ public class WorkingSet implements Serializable {
 
     /** Private Methods **/
     private void processBounded() {
-        while (this.currentTimeSeries < this.timeSeriesGroups.length &&
-                this.timeSeriesGroups[this.currentTimeSeries].isBounded) {
+        while (this.currentTimeSeriesGroup < this.timeSeriesGroups.length &&
+                ! this.timeSeriesGroups[this.currentTimeSeriesGroup].isAsync) {
             //Checks if the engine currently ingesting from this working set has been terminated
             if (this.haveBeenTerminated.getAsBoolean()) {
                 return;
@@ -101,15 +102,15 @@ public class WorkingSet implements Serializable {
 
     private void processUnbounded() throws IOException {
         //There is no work to do if no unbounded time series were in the configuration file or if the engine is terminated
-        if (this.currentTimeSeries == this.timeSeriesGroups.length || this.haveBeenTerminated.getAsBoolean()) {
+        if (this.currentTimeSeriesGroup == this.timeSeriesGroups.length || this.haveBeenTerminated.getAsBoolean()) {
             return;
         }
         Selector selector = Selector.open();
         int unboundedChannelsRegistered = 0;
 
         //The SegmentGenerators are attached to the Selector to make them easy to access when a data point is received
-        while (this.currentTimeSeries < this.timeSeriesGroups.length) {
-            TimeSeriesGroup tsg = this.timeSeriesGroups[this.currentTimeSeries];
+        while (this.currentTimeSeriesGroup < this.timeSeriesGroups.length) {
+            TimeSeriesGroup tsg = this.timeSeriesGroups[this.currentTimeSeriesGroup];
             SegmentGenerator sg = getNextSegmentGenerator();
             tsg.attachToSelector(selector, sg);
             unboundedChannelsRegistered++;
@@ -159,10 +160,10 @@ public class WorkingSet implements Serializable {
     }
 
     private SegmentGenerator getNextSegmentGenerator() {
-        int index = this.currentTimeSeries++;
+        int index = this.currentTimeSeriesGroup++;
         TimeSeriesGroup tsg = this.timeSeriesGroups[index];
         tsg.initialize();
-        Supplier<Model[]> modelsInitializer = () -> ModelFactory.getModels(models, mids, error, limit);
+        Supplier<Model[]> modelsInitializer = () -> ModelFactory.getModels(this.models, this.mids, this.error, this.limit);
         Model fallbackModel = ModelFactory.getFallbackModel(this.error, this.limit);
         List<Integer> sids = null;
         if (this.dynamicSplitFraction != 0.0F) {
@@ -170,7 +171,7 @@ public class WorkingSet implements Serializable {
         }
 
         //The source the data is ingested from is printed before ingestion is done to simplify debugging deadlocks
-        if (this.currentTimeSeries > 1) {
+        if (this.currentTimeSeriesGroup > 1) {
             System.out.println("---------------------------------------------------------");
         }
         System.out.println("GID: " + tsg.gid);
@@ -190,7 +191,7 @@ public class WorkingSet implements Serializable {
     }
 
     /** Instance Variables **/
-    private int currentTimeSeries;
+    private int currentTimeSeriesGroup;
     private SegmentFunction consumeTemporary;
     private SegmentFunction consumeFinalized;
     private BooleanSupplier haveBeenTerminated;

@@ -40,7 +40,7 @@ public class ReverseBufferIterator implements Iterator<DataPoint> {
     }
 
     /** Instance Variables **/
-    private int source;
+    private final int source;
     private int index;
-    private ArrayList<DataPoint[]> list;
+    private final ArrayList<DataPoint[]> list;
 }

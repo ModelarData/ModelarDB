@@ -14,6 +14,9 @@
  */
 package dk.aau.modelardb.core;
 
+import dk.aau.modelardb.core.timeseries.AsyncTimeSeriesSocket;
+import dk.aau.modelardb.core.timeseries.TimeSeries;
+import dk.aau.modelardb.core.timeseries.TimeSeriesCSV;
 import dk.aau.modelardb.core.utility.Pair;
 import dk.aau.modelardb.core.utility.Static;
 import dk.aau.modelardb.core.utility.ValueFunction;
@@ -48,16 +51,12 @@ public class Partitioner {
         //Initializes all time series, both bounded (files) and unbounded (sockets)
         for (String source : sources) {
             cms += 1;
-            TimeSeries ts = null;
+            TimeSeries ts;
             if (source.contains(":")) {
-                //The source is a socket
-                String[] ipSplitPort = source.split(":");
-                int port = Integer.parseInt(ipSplitPort[1]);
-                ts = new TimeSeries(ipSplitPort[0], port, cms, resolution, separator,
+                ts = new AsyncTimeSeriesSocket(source, cms, resolution, separator,
                         timestamps, dateFormat, timezone, values, locale);
             } else {
-                //The source is a csv file
-                ts = new TimeSeries(source, cms, resolution, separator, header,
+                ts = new TimeSeriesCSV(source, cms, resolution, separator, header,
                         timestamps, dateFormat, timezone, values, locale);
             }
             tss.add(ts);
@@ -97,13 +96,13 @@ public class Partitioner {
 
         Correlation[] correlations = (Correlation[]) configuration.get("modelardb.correlation");
         Iterator<Integer> gids = IntStream.range(currentMaximumGid + 1, Integer.MAX_VALUE).iterator();
-        TimeSeriesGroup[] groups = null;
+        TimeSeriesGroup[] groups;
         if (correlations.length == 0) {
             groups = Arrays.stream(timeSeries).map(ts -> new TimeSeriesGroup(gids.next(), new TimeSeries[]{ts}))
                     .toArray(TimeSeriesGroup[]::new);
         } else {
             //If groups are specified as disjoint sets of time series, they can be created directly
-            TimeSeries[][] tss = null;
+            TimeSeries[][] tss;
             if (areAllDisjoint(correlations)) {
                 tss = Partitioner.groupTimeSeriesOnlyBySource(timeSeries, correlations);
             } else {
@@ -140,11 +139,9 @@ public class Partitioner {
                 return false;
             }
 
-            HashSet<String> sources = clause.getCorrelatedSources();
             int orgSize = all.size();
-            for (String source : sources) {
-                all.add(source);
-            }
+            HashSet<String> sources = clause.getCorrelatedSources();
+            all.addAll(sources);
 
             int newSize = all.size();
             if (newSize - orgSize != sources.size()) {
@@ -211,7 +208,7 @@ public class Partitioner {
             }
         }
         return sourceToGroup.values().stream().distinct()
-                .map(al -> al.toArray(new TimeSeries[al.size()])).toArray(TimeSeries[][]::new);
+                .map(al -> al.toArray(new TimeSeries[0])).toArray(TimeSeries[][]::new);
     }
 
     //Partitioning Methods
@@ -246,7 +243,7 @@ public class Partitioner {
         //The groups are sorted by gid to make the order they are ingested in deterministic
         return sets.stream().map(ts -> {
             ts._2.sort(Comparator.comparingInt(tsg -> tsg.gid));
-            return ts._2.toArray(new TimeSeriesGroup[ts._2.size()]);
+            return ts._2.toArray(new TimeSeriesGroup[0]);
         }).toArray(TimeSeriesGroup[][]::new);
     }
 }

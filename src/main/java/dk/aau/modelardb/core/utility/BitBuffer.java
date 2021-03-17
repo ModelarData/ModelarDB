@@ -51,7 +51,7 @@ public class BitBuffer {
 
     public void writeBits(int value, int bits) {
         while (bits > 0) {
-            int bitsToWrite = 0;
+            int bitsToWrite;
             if (bits > this.bitsLeft) {
                 bitsToWrite = this.bitsLeft;
                 int shift = bits - this.bitsLeft;

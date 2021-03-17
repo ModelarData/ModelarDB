@@ -109,11 +109,11 @@ public class SegmentGroup {
     }
 
     public Segment[] toSegments(Storage storage) {
-        int[][] groupMetadataCache = storage.getGroupMetadataCache();
-        SegmentGroup[] sgs = this.explode(groupMetadataCache, storage.getGroupDerivedCache());
+        int[][] groupMetadataCache = storage.groupMetadataCache;
+        SegmentGroup[] sgs = this.explode(groupMetadataCache, storage.groupDerivedCache);
         Segment[] segments = new Segment[sgs.length];
 
-        Model m = storage.getModelCache()[mid];
+        Model m = storage.modelCache[mid];
         int[] gmc = groupMetadataCache[this.gid];
         for (int i = 0; i < sgs.length; i++) {
             segments[i] = m.get(sgs[i].gid, this.startTime, this.endTime, gmc[0], this.parameters, sgs[i].offsets);

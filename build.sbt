@@ -1,18 +1,57 @@
 name := "ModelarDB"
 version := "1.0"
-scalaVersion := "2.11.8"
-scalacOptions ++= Seq("-optimise", "-feature", "-deprecation", "-Xlint:_")
+scalaVersion := "2.12.13"
+scalacOptions ++= Seq("-opt:l:inline", "-opt-inline-from:<sources>", "-feature", "-deprecation", "-Xlint:_")
 
 resolvers += "Repo at github.com/ankurdave/maven-repo" at "https://github.com/ankurdave/maven-repo/raw/master"
 resolvers += "Spark Packages Repo" at "https://dl.bintray.com/spark-packages/maven"
 
 libraryDependencies ++= Seq(
   "org.scala-lang" % "scala-compiler" % scalaVersion.value,
-  "org.xerial" % "sqlite-jdbc" % "3.18.0",
-  "com.datastax.spark" %% "spark-cassandra-connector" % "2.0.3",
+  "org.apache.derby" % "derby" % "10.15.2.0",
+  "org.hsqldb" % "hsqldb" % "2.5.1",
+  "com.h2database" % "h2" % "1.4.200",
+  "com.datastax.spark" %% "spark-cassandra-connector" % "3.0.0",
   "amplab" % "spark-indexedrdd" % "0.4.0",
-  "org.apache.spark" %% "spark-core" % "2.1.0" % "provided",
-  "org.apache.spark" %% "spark-streaming" % "2.1.0" % "provided",
-  "org.apache.spark" %% "spark-sql" % "2.1.0" % "provided")
+  "org.apache.spark" %% "spark-core" % "3.1.1" % "provided",
+  "org.apache.spark" %% "spark-streaming" % "3.1.1" % "provided",
+  "org.apache.spark" %% "spark-sql" % "3.1.1" % "provided",
+
+  "org.scalatest" %% "scalatest" % "3.2.5" % Test,
+  "org.scalacheck" %% "scalacheck" % "1.14.1" % Test,
+  "org.scalamock" %% "scalamock" % "5.1.0" % Test
+)
+
+/* To avoid assembly conflict with Derby classes */
+assemblyMergeStrategy in assembly := {
+  case PathList("module-info.class") => MergeStrategy.first
+  case x =>
+    val oldStrategy = (assemblyMergeStrategy in assembly).value
+    oldStrategy(x)
+}
 
 run in Compile := Defaults.runTask(fullClasspath in Compile, mainClass in (Compile, run), runner in (Compile, run)).evaluated
+
+/* Otherwise Derby throws a java.security.AccessControlException in tests */
+Test / testOptions += Tests.Setup(() => System.setSecurityManager(null))
+
+/* Disable log buffering when running tests for nicer output */
+logBuffered in Test := false
+
+/* Github Package Repo */
+val owner = "modelardata"
+val repo = "modelardb"
+publishMavenStyle := true
+publishTo := Some("GitHub Package Registry" at s"https://maven.pkg.github.com/$owner/$repo")
+
+credentials +=
+  Credentials(
+    "GitHub Package Registry",
+    "maven.pkg.github.com",
+    "_", // Username is ignored when using a token
+    sys.env.getOrElse("GITHUB_TOKEN", "") // Just use an empty string when no ENV VAR found to allow SBT to work locally
+  )
+
+
+jacocoReportSettings := JacocoReportSettings(formats = Seq(JacocoReportFormats.ScalaHTML))
+

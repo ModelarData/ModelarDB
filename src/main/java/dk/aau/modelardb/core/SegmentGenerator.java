@@ -15,6 +15,7 @@
 package dk.aau.modelardb.core;
 
 import dk.aau.modelardb.core.models.Model;
+import dk.aau.modelardb.core.timeseries.TimeSeries;
 import dk.aau.modelardb.core.utility.Logger;
 import dk.aau.modelardb.core.utility.ReverseBufferIterator;
 import dk.aau.modelardb.core.utility.SegmentFunction;
@@ -25,7 +26,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-class SegmentGenerator {
+public class SegmentGenerator {
 
     /** Constructors **/
     SegmentGenerator(TimeSeriesGroup timeSeriesGroup, Supplier<Model[]> modelsInitializer, Model fallbackModel, List<Integer> sids,
@@ -469,7 +470,7 @@ class SegmentGenerator {
         TimeSeriesGroup tsg = new TimeSeriesGroup(tsgs, totalJoinIndex);
 
         //If the original group is recreated the master SegmentGenerator is used, otherwise a new one is created
-        SegmentGenerator nsg = null;
+        SegmentGenerator nsg;
         if (this.sids.size() == tsg.getTimeSeries().length) {
             nsg = this;
             this.timeSeriesGroup = tsg;
@@ -546,7 +547,7 @@ class SegmentGenerator {
     private long[] prevTimeStamps;
 
     //State variables for controlling split generators
-    private List<Integer> sids;
+    private final List<Integer> sids;
     private float dynamicSplitFraction;
     private long emittedSegments;
     private double compressionRatioAverage;

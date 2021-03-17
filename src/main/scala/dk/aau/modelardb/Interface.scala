@@ -51,7 +51,7 @@ object Interface {
       if (query == ":quit") {
         Static.info("ModelarDB: received termination command, shutdown imminent")
         return
-      } else if ( ! query.isEmpty) {
+      } else if (query.nonEmpty) {
         execute(query, out.write)
         out.flush()
       }
@@ -100,14 +100,14 @@ object Interface {
     //This method is only called if the file exist
     val st = System.currentTimeMillis()
     Static.info("ModelarDB: executing queries from " + path)
-    val lines = Source.fromFile(path).getLines()
-
-    for (line: String <- lines) {
+    val source = Source.fromFile(path)
+    for (line: String <- source.getLines()) {
       val q = line.trim
       if ( ! (q.isEmpty || q.startsWith("--"))) {
         execute(q.stripMargin, print)
       }
     }
+    source.close()
     val et = System.currentTimeMillis() - st
     val jst = java.time.Duration.ofMillis(et)
     Static.info("ModelarDB: finished all queries after " + jst)

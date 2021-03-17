@@ -22,60 +22,17 @@ import dk.aau.modelardb.core.utility.Static;
 
 import java.util.*;
 import java.util.Map.Entry;
-import java.util.stream.Stream;
 
 public abstract class Storage {
 
     /** Public Methods **/
     abstract public void open(Dimensions dimensions);
-    abstract public int getMaxSID();
-    abstract public int getMaxGID();
     abstract public void initialize(TimeSeriesGroup[] timeSeriesGroups,
                                     HashMap<Integer, Pair<String, ValueFunction>[]> derivedTimeSeries,
                                     Dimensions dimensions, String[] modelNames);
+    abstract public int getMaxSID();
+    abstract public int getMaxGID();
     abstract public void close();
-    abstract public void insert(SegmentGroup[] segments, int length);
-    abstract public Stream<SegmentGroup> getSegments();
-
-    public HashMap<String, Integer> getMidCache() {
-        return this.midCache;
-    }
-
-    public Model[] getModelCache() {
-        return this.modelCache;
-    }
-
-    public int[] getSourceGroupCache() {
-        return this.sourceGroupCache;
-    }
-
-    public HashMap<Integer, int[]> getGroupDerivedCache() {
-        return this.groupDerivedCache;
-    }
-
-    public float[] getSourceScalingFactorCache() {
-        return this.sourceScalingFactorCache;
-    }
-
-    public ValueFunction[] getSourceTransformationCache() {
-        return this.sourceTransformationCache;
-    }
-
-    public Dimensions getDimensions() {
-        return this.dimensions;
-    }
-
-    public Object[][] getDimensionsCache() {
-        return this.dimensionsCache;
-    }
-
-    public HashMap<String, HashMap<Object, Integer[]>> getInverseDimensionsCache() {
-        return this.inverseDimensionsCache;
-    }
-
-    public int[][] getGroupMetadataCache() {
-        return this.groupMetadataCache;
-    }
 
     /** Protected Methods **/
     protected HashMap<String, Integer> initializeCaches(String[] modelNames,
@@ -207,32 +164,32 @@ public abstract class Storage {
     }
 
     /** Instance Variables **/
-    protected Dimensions dimensions;
+    public Dimensions dimensions;
 
     //Write Cache: Maps the name of a model to the corresponding mid used in the data store
-    protected HashMap<String, Integer> midCache;
+    public HashMap<String, Integer> midCache;
 
     //Read Cache: Maps the mid of a model to an instance of the model so a segment can be constructed
-    protected Model[] modelCache;
+    public Model[] modelCache;
 
     //Read Cache: Maps the sid of a source to the gid of the group that the source is a member of
-    protected int[] sourceGroupCache;
+    public int[] sourceGroupCache;
 
     //Read Cache: Maps the gid of a group to pairs of sids for time series with derived time series
-    protected HashMap<Integer, int[]> groupDerivedCache;
+    public HashMap<Integer, int[]> groupDerivedCache;
 
     //Read Cache: Maps the sid of a source to the scaling factor specified for that source
-    protected float[] sourceScalingFactorCache;
+    public float[] sourceScalingFactorCache;
 
     //Read Cache: Maps the sid of a source to the scaling factor specified for that source
-    protected ValueFunction[] sourceTransformationCache;
+    public ValueFunction[] sourceTransformationCache;
 
     //Read Cache: Maps the sid of a source to the members provided for that data source
-    protected Object[][] dimensionsCache;
+    public Object[][] dimensionsCache;
 
     //Read Cache: Maps the value of a column for a dimension to the gids with that member
-    protected HashMap<String, HashMap<Object, Integer[]>> inverseDimensionsCache;
+    public HashMap<String, HashMap<Object, Integer[]>> inverseDimensionsCache;
 
     //Read Cache: Maps the gid of a group to the groups resolution and the sids that are part of that group
-    protected int[][] groupMetadataCache;
+    public int[][] groupMetadataCache;
 }

@@ -15,23 +15,16 @@
 package dk.aau.modelardb.core;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class Configuration {
 
     /** Constructors **/
     public Configuration() {
         this.values = new HashMap<>();
-        self = this;
     }
 
     /** Public Methods **/
-    static public Configuration get() {
-        if (self == null) {
-            throw new IllegalStateException("CORE: a configuration object have not been constructed");
-        }
-        return self;
-    }
-
     public void add(String name, Object value) {
 
         Object[] values;
@@ -51,8 +44,20 @@ public class Configuration {
         return this.values.remove(value);
     }
 
-    public boolean contains(String value) {
-        return this.values.containsKey(value);
+    public void contains(String... values) {
+        //All of the missing values should be one error
+        ArrayList<String> missingValues = new ArrayList<>();
+        for (String value : values) {
+            if ( ! this.values.containsKey(value)) {
+                missingValues.add(value);
+            }
+        }
+
+        //If values are missing execution cannot continue
+        if ( ! missingValues.isEmpty()) {
+            throw new IllegalArgumentException("ModelarDB: the following required options are not in the configuration file " +
+                    missingValues.stream().collect(Collectors.joining(" ")));
+        }
     }
 
     //Generic Getters
@@ -135,12 +140,12 @@ public class Configuration {
 
         try {
             return Integer.parseInt(value);
-        } catch (Exception e) {
+        } catch (Exception ignored) {
         }
 
         try {
             return Float.parseFloat(value);
-        } catch (Exception e) {
+        } catch (Exception ignored) {
         }
 
         return value;
@@ -208,5 +213,4 @@ public class Configuration {
 
     /** Instance Variables **/
     private final HashMap<String, Object[]> values;
-    private static Configuration self = null;
 }
