@@ -3,6 +3,9 @@ name: Compile and Test
 on:
   push:
 
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 jobs:
   compile-and-test:
     runs-on: ubuntu-latest
