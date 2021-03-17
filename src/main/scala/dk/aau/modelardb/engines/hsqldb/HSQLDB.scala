@@ -13,11 +13,34 @@ class HSQLDB(configuration: Configuration, storage: Storage) {
     val connection = DriverManager.getConnection("jdbc:hsqldb:mem:memdb")
     val stmt = connection.createStatement()
     //http://hsqldb.org/doc/2.0/guide/sqlroutines-chapt.html#src_routine_definition
-    stmt.execute("CREATE FUNCTION DataPoint() RETURNS TABLE(sid INT, ts TIMESTAMP, val REAL) READS SQL DATA LANGUAGE JAVA EXTERNAL NAME 'CLASSPATH:dk.aau.modelardb.engines.hsqldb.ViewDataPoint.queryView'")
+    stmt.execute(
+    """
+        |CREATE FUNCTION DataPoint()
+        |RETURNS TABLE(sid INT, ts TIMESTAMP, val REAL)
+        |READS SQL DATA
+        |LANGUAGE JAVA
+        |EXTERNAL NAME 'CLASSPATH:dk.aau.modelardb.engines.hsqldb.ViewDataPoint.queryView'
+        |""".stripMargin)
+
     //http://hsqldb.org/doc/2.0/guide/databaseobjects-chapt.html#dbc_view_creation
     stmt.execute("CREATE VIEW DataPoint as SELECT * FROM TABLE(DataPoint())")
+
     //http://hsqldb.org/doc/2.0/guide/sqlroutines-chapt.html#src_aggregate_functions
-    stmt.execute("CREATE AGGREGATE FUNCTION COUNT_S(IN stet INT, IN finalize BOOLEAN, INOUT total INT, INOUT ignore INT) RETURNS INT NO SQL LANGUAGE JAVA EXTERNAL NAME 'CLASSPATH:dk.aau.modelardb.engines.hsqldb.UDAF.countS'")
+    stmt.execute(
+      """
+        |CREATE AGGREGATE FUNCTION count_s(IN x ARRAY, IN flag BOOLEAN, INOUT addup BIGINT, INOUT counter INT)
+        |    RETURNS INTEGER
+        |    CONTAINS SQL
+        |  BEGIN ATOMIC
+        |  IF flag THEN
+        |      RETURN counter;
+        |  ELSE
+        |      SET counter = COALESCE(counter, 0) + 1;
+        |      SET addup = COALESCE(addup, 0) + COALESCE(x, 0);
+        |      RETURN NULL;
+        |  END IF;
+        |END
+        |""".stripMargin)
     stmt.close()
 
     //Ingestion
