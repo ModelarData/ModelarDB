@@ -14,6 +14,8 @@ import org.h2.value.{Value, ValueFloat, ValueInt, ValueTimestamp}
 import dk.aau.modelardb.core.DataPoint
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
+import scala.collection.JavaConverters.asScalaIteratorConverter
+
 //https://www.h2database.com/html/features.html#pluggable_tables
 class ViewDataPoint extends TableEngine {
   override def createTable(data: CreateTableData): TableBase = {
@@ -23,14 +25,9 @@ class ViewDataPoint extends TableEngine {
 
 //https://www.h2database.com/html/features.html#pluggable_tables
 class ViewDataPointTable(data: CreateTableData) extends TableBase(data) {
+  override def lock(session: Session, exclusive: Boolean, forceLockEvenInMvcc: Boolean): Boolean = false
 
-  override def lock(session: Session, exclusive: Boolean, forceLockEvenInMvcc: Boolean): Boolean = {
-    false
-  }
-
-  override def close(session: Session): Unit = {
-    //Nothing to do
-  }
+  override def close(session: Session): Unit = () //Nothing to do
 
   override def unlock(s: Session): Unit = ???
 
@@ -46,15 +43,11 @@ class ViewDataPointTable(data: CreateTableData) extends TableBase(data) {
 
   override def getTableType: TableType = ???
 
-  override def getScanIndex(session: Session): Index = {
-    new ViewDataIndex(this)
-  }
+  override def getScanIndex(session: Session): Index = new ViewDataIndex(this)
 
   override def getUniqueIndex: Index = ???
 
-  override def getIndexes: util.ArrayList[Index] = {
-    new util.ArrayList[Index]()
-  }
+  override def getIndexes: util.ArrayList[Index] = new util.ArrayList[Index]()
 
   override def isLockedExclusively: Boolean = ???
 
@@ -90,13 +83,9 @@ class ViewDataIndex(table: Table) extends Index {
 
   override def find(session: Session, first: SearchRow, last: SearchRow): Cursor = ???
 
-  override def find(filter: TableFilter, first: SearchRow, last: SearchRow): Cursor = {
-    new ViewDataCursor()
-  }
+  override def find(filter: TableFilter, first: SearchRow, last: SearchRow): Cursor = new ViewDataCursor(filter)
 
-  override def getCost(session: Session, masks: Array[Int], filters: Array[TableFilter], filter: Int, sortOrder: SortOrder, allColumnsSet: AllColumnsForPlan): Double = {
-    1.0  //HACK: unclear what whe have to return...
-  }
+  override def getCost(session: Session, masks: Array[Int], filters: Array[TableFilter], filter: Int,  sortOrder: SortOrder, allColumnsSet: AllColumnsForPlan): Double = 1.0  //HACK: unclear what we have to return...
 
   override def remove(session: Session): Unit = ???
 
@@ -120,23 +109,17 @@ class ViewDataIndex(table: Table) extends Index {
 
   override def compareRows(rowData: SearchRow, compare: SearchRow): Int = ???
 
-  override def getColumnIndex(col: Column): Int = {
-    -1 //HACK: -1 seems to indicate that no index exists for that column
-  }
+  override def getColumnIndex(col: Column): Int = -1 //HACK: -1 seems to indicate that no index exists for that column
 
   override def isFirstColumn(column: Column): Boolean = ???
 
-  override def getIndexColumns: Array[IndexColumn] = {
-    Array[IndexColumn]()
-  }
+  override def getIndexColumns: Array[IndexColumn] = Array[IndexColumn]()
 
   override def getColumns: Array[Column] = ???
 
   override def getIndexType: IndexType = ???
 
-  override def getTable: Table = {
-    table
-  }
+  override def getTable: Table = table
 
   override def getRow(session: Session, key: Long): Row = ???
 
@@ -187,20 +170,19 @@ class ViewDataIndex(table: Table) extends Index {
   override def getComment: String = ???
 }
 
-class ViewDataCursor() extends Cursor {
+class ViewDataCursor(filter: TableFilter) extends Cursor {
   override def get(): Row = ???
 
   override def getSearchRow: SearchRow = {
-    val row = new ViewDataRow()
-    row.setValue(0, ValueInt.get(this.dataPoint.sid))
-    row.setValue(1, ValueTimestamp.fromMillis(this.dataPoint.timestamp, 0))
-    row.setValue(2, ValueFloat.get(this.dataPoint.value))
-    row
+    new ViewDataRow(this.currentRow)
   }
 
   override def next(): Boolean = {
     if (this.dataPoints.hasNext) {
-      this.dataPoint = this.dataPoints.next()
+      val dataPoint = this.dataPoints.next()
+      this.currentRow(0) = ValueInt.get(dataPoint.sid)
+      this.currentRow(1) = ValueTimestamp.fromMillis(dataPoint.timestamp, 0)
+      this.currentRow(2) = ValueFloat.get(dataPoint.value)
       true
     } else {
       false
@@ -210,11 +192,16 @@ class ViewDataCursor() extends Cursor {
   override def previous(): Boolean = false
 
   /** Instance Variables **/
-  private val dataPoints = RDBMSEngineUtilities.getUtilities.getDataPoints()
-  private var dataPoint: DataPoint = null
+  //TODO: determine if the segments should be filtered by the segment view like done for Spark
+  private val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[H2Storage]
+  private val dataPoints: Iterator[DataPoint] = (storage.getSegmentGroups(filter) ++
+    RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
+    .flatMap(sg => sg.toSegments(this.storage))
+    .flatMap(segment => segment.grid().iterator().asScala)
+  private val currentRow = new Array[Value](3)
 }
 
-class ViewDataRow() extends Row {
+class ViewDataRow(currentRow: Array[Value]) extends Row {
   override def getByteCount(dummy: Data): Int = ???
 
   override def isEmpty: Boolean = ???
@@ -229,13 +216,9 @@ class ViewDataRow() extends Row {
 
   override def getColumnCount: Int = ???
 
-  override def getValue(index: Int): Value = {
-    this.values(index)
-  }
+  override def getValue(index: Int): Value = this.currentRow(index)
 
-  override def setValue(index: Int, v: Value): Unit = {
-    this.values(index) = v
-  }
+  override def setValue(index: Int, v: Value): Unit = ???
 
   override def setKey(old: SearchRow): Unit = ???
 
@@ -244,7 +227,4 @@ class ViewDataRow() extends Row {
   override def getKey: Long = ???
 
   override def getMemory: Int = ???
-
-  /** Instance Variables **/
-  val values = new Array[Value](3)
 }

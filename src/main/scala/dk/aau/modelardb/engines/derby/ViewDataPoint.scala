@@ -5,41 +5,36 @@ import java.net.URL
 import java.sql
 import java.sql.{Blob, Clob, Date, NClob, Ref, ResultSet, ResultSetMetaData, RowId, SQLWarning, SQLXML, Statement, Time, Timestamp}
 import java.util.Calendar
-
 import org.apache.derby.vti.{RestrictedVTI, Restriction}
-
 import dk.aau.modelardb.core.DataPoint
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
+import scala.collection.JavaConverters.asScalaIteratorConverter
 
 
+//https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfbasic.html
+//https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfexample.html
 object ViewDataPoint {
-  //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfbasic.html
-  //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfexample.html
-  def dataPointView: ResultSet = {
-    new ViewDataPoint()
-  }
+  def apply: ViewDataPoint = new ViewDataPoint()
 }
 
 //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtabfuncs.html
 //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfbasic.html
 class ViewDataPoint extends ResultSet with RestrictedVTI {
-
-  /** Public Methods **/
   override def next(): Boolean = {
     if (this.dataPoints.hasNext) {
-      this.dataPoint = this.dataPoints.next()
+      val dataPoint = this.dataPoints.next()
+      this.currentRow(0) = dataPoint.sid.asInstanceOf[Object]
+      this.currentRow(1) = new Timestamp(dataPoint.timestamp).asInstanceOf[Object]
+      this.currentRow(2) = dataPoint.value.asInstanceOf[Object]
       true
     } else {
       false
     }
   }
 
-  override def close(): Unit = {
-  }
+  override def close(): Unit = ()
 
-  override def wasNull(): Boolean = {
-    false
-  }
+  override def wasNull(): Boolean = false
 
   override def getString(columnIndex: Int): String = ???
 
@@ -49,20 +44,13 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
 
   override def getShort(columnIndex: Int): Short = ???
 
-  override def getInt(columnIndex: Int): Int = {
-    this.dataPoint.sid //HACK: skips column check as only sids are ints
-  }
+  override def getInt(columnIndex: Int): Int = this.currentRow(columnIndex - 1).asInstanceOf[Int]
 
   override def getLong(columnIndex: Int): Long = ???
 
-  override def getFloat(columnIndex: Int): Float = {
-    this.dataPoint.value //HACK: skips column check as only vals are floats
-  }
+  override def getFloat(columnIndex: Int): Float = ???
 
-  override def getDouble(columnIndex: Int): Double = {
-    //TODO: why is getDouble executed instead of get getFloat?
-    this.dataPoint.value //HACK: skips column check as only vals are double
-  }
+  override def getDouble(columnIndex: Int): Double = this.currentRow(columnIndex - 1).asInstanceOf[Float]
 
   override def getBigDecimal(columnIndex: Int, scale: Int): java.math.BigDecimal = ???
 
@@ -72,9 +60,7 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
 
   override def getTime(columnIndex: Int): Time = ???
 
-  override def getTimestamp(columnIndex: Int): Timestamp = {
-    new Timestamp(this.dataPoint.timestamp) //HACK: skips column check as only tss are timestamps
-  }
+  override def getTimestamp(columnIndex: Int): Timestamp = this.currentRow(columnIndex - 1).asInstanceOf[Timestamp]
 
   override def getAsciiStream(columnIndex: Int): InputStream = ???
 
@@ -114,9 +100,7 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
 
   override def getBinaryStream(columnLabel: String): InputStream = ???
 
-  override def getWarnings: SQLWarning = {
-    null //HACK: nothing can go wrong....
-  }
+  override def getWarnings: SQLWarning = null //HACK: nothing can go wrong....
 
   override def clearWarnings(): Unit = ???
 
@@ -432,9 +416,14 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
   //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfcontext.html
   //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfoptimizer.html
   override def initScan(columns: Array[String], filter: Restriction): Unit = {
+    val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[DerbyStorage]
+    this.dataPoints = (storage.getSegmentGroups(filter) ++ RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
+      .flatMap(sg => sg.toSegments(storage))
+      .flatMap(segment => segment.grid().iterator().asScala)
   }
 
   /** Instance Variables **/
-  private val dataPoints = RDBMSEngineUtilities.getUtilities.getDataPoints()
-  private var dataPoint: DataPoint = null
+  //TODO: determine if the segments should be filtered by the segment view like done for Spark
+  private var dataPoints: Iterator[DataPoint] = _
+  private val currentRow = new Array[Object](3)
 }

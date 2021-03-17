@@ -11,10 +11,10 @@ object Segment {
 
   /** Public Methods  **/
   //https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
-  def toSegment(gid: Int, start_time: Long, end_time: Long, mid: Int, params: Blob, gaps: Blob): Segment = {
+  def toSegment(gid: Int, start_time: Long, end_time: Long, resolution: Int, mid: Int, params: Blob, gaps: Blob): Segment = {
     val paramsAsBytes = blobToByte(params)
     val gapsAsBytes = blobToByte(gaps)
-    new Segment(gid, start_time, end_time, mid, paramsAsBytes, gapsAsBytes)
+    new Segment(gid, start_time, end_time, resolution, mid, paramsAsBytes, gapsAsBytes)
   }
 
   def blobToByte(blob: Blob): Array[Byte] = {
@@ -33,7 +33,7 @@ object Segment {
 }
 
 //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialudt.html
-class Segment(val gid: Int, val start_time: Long, val end_time: Long, val mid: Int, val params: Array[Byte], val gaps: Array[Byte]) extends Externalizable {
+class Segment(val gid: Int, val start_time: Long, val end_time: Long, val resolution: Int, val mid: Int, val params: Array[Byte], val gaps: Array[Byte]) extends Externalizable {
 
   /** Public Methods  **/
   override def writeExternal(out: ObjectOutput): Unit = { }

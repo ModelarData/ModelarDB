@@ -1,10 +1,9 @@
 package dk.aau.modelardb.engines.h2
 
-import dk.aau.modelardb.core.models.{Model, ModelFactory}
-import dk.aau.modelardb.core.timeseries.TimeSeries
-import dk.aau.modelardb.core.{Configuration, SegmentGroup, Storage, TimeSeriesGroup}
+import dk.aau.modelardb.core.models.ModelFactory
+import dk.aau.modelardb.core.{Configuration, SegmentGroup}
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
-import dk.aau.modelardb.storage.{JDBCStorage, StorageFactory}
+import dk.aau.modelardb.storage.JDBCStorage
 import org.h2.jdbc.JdbcSQLDataException
 import org.h2.table.TableFilter
 import org.scalamock.scalatest.MockFactory
@@ -13,7 +12,6 @@ import org.scalatest.matchers.should.Matchers
 
 import java.sql.{DriverManager, Statement}
 import java.time.Instant
-import scala.collection.JavaConverters._
 
 class H2Test extends AnyFlatSpec with Matchers with MockFactory {
 
@@ -22,10 +20,12 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
     try {
       val statement = conn.createStatement()
       fun(statement)
-    } finally { conn.close() }
+    } finally {
+      conn.close()
+    }
   }
 
-  behavior of "SegmentView"
+  behavior of "ViewSegment"
 
   it should "be able to execute simple select" in {
     withH2 { statement =>
@@ -36,21 +36,14 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
       val startTime = Instant.ofEpochMilli(100L)
       val endTime = Instant.ofEpochMilli(110L)
       val sg = new SegmentGroup(gid, startTime.toEpochMilli, endTime.toEpochMilli, mid, Array(0x42.toByte), Array(0x42.toByte))
-      val segment = ModelFactory.getFallbackModel(5.0f, 300)
-        .get(sid, startTime.toEpochMilli, endTime.toEpochMilli, resolution, Array(0x3.toByte), Array(0x3.toByte))
-
-      val model = mock[Model]
-      (model.get _)
-        .expects(*, *, *, *, *, *)
-        .returns(segment)
+      val model = ModelFactory.getFallbackModel(5.0f, 300)
 
       val storage = mock[JDBCStorageNoArgs]
       (storage.getSegmentGroups(_: TableFilter))
         .expects(*)
         .returns(Iterator(sg))
-        .once
 
-      storage.groupMetadataCache = Array(Array(), Array(1, 2))
+      storage.groupMetadataCache = Array(Array(), Array(resolution, 1, 1), Array(resolution, 1, 1))
       storage.groupDerivedCache = new java.util.HashMap[Integer, Array[Int]]()
       storage.modelCache = Array(model, model)
 
@@ -58,7 +51,10 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
       config.add("modelardb.batch", 1)
       RDBMSEngineUtilities.initialize(config, storage)
 
-      statement.execute(H2.CreateSegmentViewSQL)
+      statement.execute("""CREATE TABLE Segment
+                          |(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BYTEA, gaps BYTEA)
+                          |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
+                          |""".stripMargin)
       val rs = statement.executeQuery("SELECT * FROM segment")
       var count = 0
       while (rs.next()) {
@@ -77,11 +73,10 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
         an [JdbcSQLDataException] should be thrownBy rs.getTimestamp(1)
         an [JdbcSQLDataException] should be thrownBy rs.getTimestamp(4)
       }
-      count should equal(1)
+      count should equal(2)
     }
   }
 
-  /* Hack needed because JDBCStorage class init fails when constructor arg is null */
+  /* HACK: needed because JDBCStorage class init fails when constructor arg is null */
   private class JDBCStorageNoArgs extends JDBCStorage("jdbc:h2:mem")
-
 }

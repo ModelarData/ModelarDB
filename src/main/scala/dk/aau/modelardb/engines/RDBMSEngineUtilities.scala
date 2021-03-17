@@ -5,19 +5,17 @@ import java.util
 import java.util.function.BooleanSupplier
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import scala.collection.mutable
-import scala.collection.JavaConverters._
 import dk.aau.modelardb.core.utility.{Pair, SegmentFunction, Static, ValueFunction}
-import dk.aau.modelardb.core.{Configuration, DataPoint, Partitioner, SegmentGroup, Storage, WorkingSet}
+import dk.aau.modelardb.core.{Configuration, Partitioner, SegmentGroup, Storage, WorkingSet}
 import dk.aau.modelardb.engines.hsqldb.HSQLDBStorage
 
-//TODO: Use parameters and Configuration uniformly. Maybe remove get() and pass the configuration object around?
-//TODO: Implement a proper cache for segments retrieved from storage. Maybe store them as Gid, ST, ET intervals?
+//TODO: determine if adding the values to a pre-allocated array in the views is faster than having the branches.
+//TODO: determine if the data point views should get segments from the segment views for filtering like spark
+//TODO: Implement a proper cache for segments retrieved from storage. Maybe store them as Gid, ST, ET intervals.
 //TODO: Prevent the system from automatically terminating on its own while there are still time series to ingest.
-//TODO: Merge the two updateTemporarySegment methods, or better have the RDBMSs extract each SegmentGenerators buffer.
 //TODO: Merge the loggers from each thread before printing them to make them easier to read the results.
 //TODO: Make the two gridding methods used by the SparkEngine generic enough that all engines can use them.
-//TODO: Remove resolution from Segment View so RDBMSs can run UDAFs on the stored rows if they are also used for storage.
-//TODO: Move get segments groups and data points to each of the three RDBMSs storage interface so predicate push-down is used.
+//TODO: Remove resolution from Segment View so RDBMSs as it is avaliable from the metadata cache in storage.
 class RDBMSEngineUtilities(configuration: Configuration, storage: HSQLDBStorage) { //HACK: HSQLDBStorage matches the old Storage class
 
   /** Public methods **/
@@ -52,20 +50,13 @@ class RDBMSEngineUtilities(configuration: Configuration, storage: HSQLDBStorage)
     }
   }
 
-  def getSegmentGroups(): Iterator[SegmentGroup] = {
-    //The cache is copied to not block ingestion while the query is executed, we assume storage provides a snapshot
+  def getInMemorySegmentGroups(): Iterator[SegmentGroup] = {
+    //TODO: determine how to ingest and execute queries in parallel without ever introducing duplicate data points
     this.cacheLock.readLock().lock()
     val cachedTemporarySegments = this.temporarySegments.values.flatMap(sg => sg).toArray
     val cachedFinalizedSegments = this.finalizedSegments.take(this.finalizedSegmentsIndex)
-    val storedFinalizedSegments = storage.getSegmentGroups
     this.cacheLock.readLock().unlock()
-    cachedTemporarySegments.iterator ++ cachedFinalizedSegments.iterator ++ storedFinalizedSegments
-  }
-
-  def getDataPoints(): Iterator[DataPoint] = {
-    RDBMSEngineUtilities.getUtilities.getSegmentGroups.flatMap(sg =>
-      sg.toSegments(RDBMSEngineUtilities.getStorage))
-      .flatMap(segment => segment.grid().iterator().asScala)
+    cachedTemporarySegments.iterator ++ cachedFinalizedSegments.iterator
   }
 
   def executeQuery(connection: Connection, query: String): Array[String] = {
@@ -214,7 +205,6 @@ object RDBMSEngineUtilities {
   def initialize(configuration: Configuration, storage: Storage): Unit = {
     //Ensures the necessary parameters are available before starting the engine
     configuration.contains("modelardb.batch")
-
     RDBMSEngineUtilities.storage = storage
     RDBMSEngineUtilities.utilities = new RDBMSEngineUtilities(configuration, storage.asInstanceOf[HSQLDBStorage])
   }

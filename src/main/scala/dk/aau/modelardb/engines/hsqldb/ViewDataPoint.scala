@@ -8,6 +8,8 @@ import org.hsqldb.result.{Result, ResultMetaData}
 import org.hsqldb.rowio.{RowInputInterface, RowOutputInterface}
 import org.hsqldb.types.{TimestampData, Type}
 
+import scala.collection.JavaConverters.asScalaIteratorConverter
+
 //TODO: Double check that predicate push-down is not supported http://hsqldb.org/doc/2.0/guide/sqlroutines-chapt.html
 //http://hsqldb.org/doc/2.0/guide/sqlroutines-chapt.html#src_psm_return_statement
 //http://hsqldb.org/doc/2.0/guide/sqlroutines-chapt.html#src_jrt_routines
@@ -28,12 +30,12 @@ object ViewDataPoint {
 
 class ViewDataPoint extends RowSetNavigator {
   override def next: Boolean = {
-    if (this.gdp.hasNext) {
+    if (this.dataPoints.hasNext) {
       //The data points are different in the result despite modifying the array
-      val dp = this.gdp.next()
-      this.currentRow(0) = dp.sid.asInstanceOf[AnyRef]
-      this.currentRow(1) = new TimestampData(dp.timestamp / 1000).asInstanceOf[AnyRef]
-      this.currentRow(2) = dp.value.asInstanceOf[AnyRef]
+      val dataPoint = this.dataPoints.next()
+      this.currentRow(0) = dataPoint.sid.asInstanceOf[AnyRef]
+      this.currentRow(1) = new TimestampData(dataPoint.timestamp / 1000).asInstanceOf[AnyRef]
+      this.currentRow(2) = dataPoint.value.asInstanceOf[AnyRef]
       true
     } else {
       false
@@ -59,7 +61,10 @@ class ViewDataPoint extends RowSetNavigator {
   override def read(in: RowInputInterface, meta: ResultMetaData): Unit = ???
 
   /** Instance Variables **/
-  val columns = ViewDataPoint.labels.length
-  val gdp = RDBMSEngineUtilities.getUtilities.getDataPoints()
-  var currentRow: Array[AnyRef] = new Array[AnyRef](this.columns)
+  val storage = RDBMSEngineUtilities.getStorage
+  val dataPoints = (storage.asInstanceOf[HSQLDBStorage].getSegmentGroups() ++
+    RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
+    .flatMap(sg => sg.toSegments(storage))
+    .flatMap(segment => segment.grid().iterator().asScala)
+  var currentRow: Array[AnyRef] = new Array[AnyRef](3)
 }
