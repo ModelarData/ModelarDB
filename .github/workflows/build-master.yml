@@ -1,0 +1,92 @@
+name: Build Master
+
+on:
+  push:
+    branches: [ master ]
+
+env:
+  JAVA_VERSION: 11
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+
+  publish-jar:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up JDK
+      uses: actions/setup-java@v1
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+     # This also runs compile and test
+    - name: Release
+      run: sbt release with-defaults
+
+#  build-on-ubuntu:
+#
+#    runs-on: ubuntu-latest
+#
+#    steps:
+#    - uses: actions/checkout@v2
+#
+#    - name: Set up JDK ${{ env.JAVA_VERSION }}
+#      uses: actions/setup-java@v1
+#      with:
+#        java-version: ${{ env.JAVA_VERSION }}
+#
+#    # This also runs compile and test
+#    - name: Release
+#      run: sbt publish
+#
+#    - name: Upload assembly
+#      uses: actions/upload-artifact@v1
+#      with:
+#        name: modelardb-ubuntu
+#        path: target/scala-2.12/ModelarDB-assembly-*.jar
+#
+#  build-on-mac:
+#
+#    runs-on: macos-latest
+#
+#    steps:
+#    - run: brew install sbt
+#
+#    - uses: actions/checkout@v2
+#
+#    - name: Set up JDK ${{ env.JAVA_VERSION }}
+#      uses: actions/setup-java@v1
+#      with:
+#        java-version: ${{ env.JAVA_VERSION }}
+#
+#    # This also runs compile and test
+#    - name: Release
+#      run: sbt publish
+#
+#    - name: Upload assembly
+#      uses: actions/upload-artifact@v1
+#      with:
+#        name: modelardb-macos
+#        path: target/scala-2.12/ModelarDB-assembly-*.jar
+#
+#  build-on-win:
+#
+#    runs-on: windows-latest
+#
+#    steps:
+#      - uses: actions/checkout@v2
+#
+#      - name: Set up JDK ${{ env.JAVA_VERSION }}
+#        uses: actions/setup-java@v1
+#        with:
+#          java-version: ${{ env.JAVA_VERSION }}
+#
+#      - name: Publish
+#        run: sbt publish
+#
+#      - name: Upload assembly
+#        uses: actions/upload-artifact@v1
+#        with:
+#          name: modelardb-win
+#          path: target/scala-2.12/ModelarDB-assembly-*.jar

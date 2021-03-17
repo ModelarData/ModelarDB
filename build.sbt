@@ -31,3 +31,13 @@ assemblyMergeStrategy in assembly := {
 }
 
 run in Compile := Defaults.runTask(fullClasspath in Compile, mainClass in (Compile, run), runner in (Compile, run)).evaluated
+
+/* Otherwise Derby throws a java.security.AccessControlException in tests */
+Test / testOptions += Tests.Setup(() => System.setSecurityManager(null))
+
+/* Disable log buffering when running tests for nicer output */
+logBuffered in Test := false
+
+githubOwner := "modelardata"
+githubRepository := "modelardb"
+githubTokenSource := TokenSource.Environment("GITHUB_TOKEN")
