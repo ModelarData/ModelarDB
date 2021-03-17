@@ -31,11 +31,11 @@ import dk.aau.modelardb.core.SegmentGenerator;
 public class AsyncTimeSeriesSocket extends TimeSeries implements AsyncTimeSeries {
 
     /** Constructors **/
-    public AsyncTimeSeriesSocket(String source, int sid, int resolution, String splitString, int timestampColumn,
-                                 String dateFormat, String timeZone, int valueColumn, String localeString) {
+    public AsyncTimeSeriesSocket(String source, int sid, int resolution, String splitString, int timestampColumnIndex,
+                                 String dateFormat, String timeZone, int valueColumnIndex, String localeString) {
         super(source, sid, resolution);
         String[] hostAndPort = source.split(":");
-        this.host = host = hostAndPort[0];
+        this.host = hostAndPort[0];
         int port = Integer.parseInt(hostAndPort[1]);
         this.port = port;
 
@@ -44,7 +44,7 @@ public class AsyncTimeSeriesSocket extends TimeSeries implements AsyncTimeSeries
         this.splitString = splitString;
         this.scalingFactor = 1.0F;
 
-        this.timestampColumn = timestampColumn;
+        this.timestampColumn = timestampColumnIndex;
         switch (dateFormat) {
             case "unix":
                 this.dateParserType = 1;
@@ -60,7 +60,7 @@ public class AsyncTimeSeriesSocket extends TimeSeries implements AsyncTimeSeries
                 break;
         }
 
-        this.valueColumn = valueColumn;
+        this.valueColumn = valueColumnIndex;
         Locale locale = new Locale(localeString);
         this.valueParser = NumberFormat.getInstance(locale);
         this.decodeBuffer = new StringBuffer();

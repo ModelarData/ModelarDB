@@ -25,6 +25,7 @@ public abstract class TimeSeries implements  Serializable, Iterator<DataPoint> {
         this.source = source;
         this.sid = sid;
         this.resolution = resolution;
+        this.scalingFactor = 1.0F;
     }
     abstract public void open();
     abstract public void close();

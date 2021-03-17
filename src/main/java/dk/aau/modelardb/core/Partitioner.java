@@ -14,9 +14,7 @@
  */
 package dk.aau.modelardb.core;
 
-import dk.aau.modelardb.core.timeseries.AsyncTimeSeriesSocket;
-import dk.aau.modelardb.core.timeseries.TimeSeries;
-import dk.aau.modelardb.core.timeseries.TimeSeriesCSV;
+import dk.aau.modelardb.core.timeseries.*;
 import dk.aau.modelardb.core.utility.Pair;
 import dk.aau.modelardb.core.utility.Static;
 import dk.aau.modelardb.core.utility.ValueFunction;
@@ -34,10 +32,10 @@ public class Partitioner {
 
         String separator = configuration.getString("modelardb.separator");
         boolean header = configuration.getBoolean("modelardb.header");
-        int timestamps = configuration.getInteger("modelardb.timestamps");
+        int timestampColumnIndex = configuration.getInteger("modelardb.timestamps");
         String dateFormat = configuration.getString("modelardb.dateformat");
         String timezone = configuration.getString("modelardb.timezone");
-        int values = configuration.getInteger("modelardb.values");
+        int valueColumnIndex = configuration.getInteger("modelardb.values");
         String locale = configuration.getString("modelardb.locale");
 
         //HACK: Resolution is one argument as all time series used for evaluation has exhibits the same sampling interval
@@ -54,10 +52,14 @@ public class Partitioner {
             TimeSeries ts;
             if (source.contains(":")) {
                 ts = new AsyncTimeSeriesSocket(source, cms, resolution, separator,
-                        timestamps, dateFormat, timezone, values, locale);
+                        timestampColumnIndex, dateFormat, timezone, valueColumnIndex, locale);
+            }  else if (source.endsWith(".orc")) {
+                ts = new TimeSeriesORC(source, cms, resolution, timestampColumnIndex, valueColumnIndex);
+            }  else if (source.endsWith(".parquet")) {
+                ts = new TimeSeriesParquet(source, cms, resolution, timestampColumnIndex, valueColumnIndex);
             } else {
                 ts = new TimeSeriesCSV(source, cms, resolution, separator, header,
-                        timestamps, dateFormat, timezone, values, locale);
+                        timestampColumnIndex, dateFormat, timezone, valueColumnIndex, locale);
             }
             tss.add(ts);
 
