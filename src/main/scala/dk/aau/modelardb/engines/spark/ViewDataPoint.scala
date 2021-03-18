@@ -28,8 +28,8 @@ class ViewDataPoint(dimensions: Array[StructField]) (@transient override val sql
   /** Public Methods **/
   override def schema: StructType = StructType(Seq(
     StructField("sid", IntegerType, nullable = false),
-    StructField("ts", TimestampType, nullable = false),
-    StructField("val", FloatType, nullable = false))
+    StructField("timestamp", TimestampType, nullable = false),
+    StructField("value", FloatType, nullable = false))
     ++ dimensions)
 
   override def unhandledFilters(filters: Array[Filter]): Array[Filter] = filters
@@ -48,7 +48,7 @@ class ViewDataPoint(dimensions: Array[StructField]) (@transient override val sql
     var df = Spark.getViewProvider.option("type", "Segment").load()
     for (filter: Filter <- filters) {
       filter match {
-        //Cases are only added for sid and ts as the segment view have no understanding of min/max values
+        //Cases are only added for sid and timestamp as the segment view have no understanding of min/max values
         case sources.GreaterThan("sid", value: Int) => df = df.filter(s"sid > $value")
         case sources.GreaterThanOrEqual("sid", value: Int) => df = df.filter(s"sid >= $value")
         case sources.LessThan("sid", value: Int) => df = df.filter(s"sid < $value")
@@ -56,11 +56,11 @@ class ViewDataPoint(dimensions: Array[StructField]) (@transient override val sql
         case sources.EqualTo("sid", value: Int) => df = df.filter(s"sid = $value")
         case sources.In("sid", value: Array[Any]) => df = df.filter(value.mkString("sid IN (", ",", ")"))
 
-        case sources.GreaterThan("ts", value: Timestamp) => df = df.filter(s"et > CAST('$value' AS TIMESTAMP)")
-        case sources.GreaterThanOrEqual("ts", value: Timestamp) => df = df.filter(s"et >= CAST('$value' AS TIMESTAMP)")
-        case sources.LessThan("ts", value: Timestamp) => df = df.filter(s"st < CAST('$value' AS TIMESTAMP)")
-        case sources.LessThanOrEqual("ts", value: Timestamp) => df = df.filter(s"st <= CAST('$value' AS TIMESTAMP)")
-        case sources.EqualTo("ts", value: Timestamp) => df =
+        case sources.GreaterThan("timestamp", value: Timestamp) => df = df.filter(s"et > CAST('$value' AS TIMESTAMP)")
+        case sources.GreaterThanOrEqual("timestamp", value: Timestamp) => df = df.filter(s"et >= CAST('$value' AS TIMESTAMP)")
+        case sources.LessThan("timestamp", value: Timestamp) => df = df.filter(s"st < CAST('$value' AS TIMESTAMP)")
+        case sources.LessThanOrEqual("timestamp", value: Timestamp) => df = df.filter(s"st <= CAST('$value' AS TIMESTAMP)")
+        case sources.EqualTo("timestamp", value: Timestamp) => df =
           df.filter(s"st <= CAST('$value' AS TIMESTAMP) AND et >= CAST('$value' AS TIMESTAMP)")
 
         //All predicates requesting specific members can be pushed directly to the segment view for conversion to Gids
@@ -73,7 +73,7 @@ class ViewDataPoint(dimensions: Array[StructField]) (@transient override val sql
     }
 
     //Dimensions are appended to each data point if necessary, so they are not requested from the segment view
-    df = df.select("sid", "st", "et", "res", "mid", "param", "gaps")
+    df = df.select("sid", "start_time", "end_time", "resolution", "mid", "parameters", "gaps")
     df.rdd
   }
 }

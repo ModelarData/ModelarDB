@@ -14,7 +14,7 @@ class H2(configuration: Configuration, storage: Storage) {
     val stmt = connection.createStatement()
     //https://www.h2database.com/html/commands.html#create_table
     //TODO: extend the schema of both views with the columns of the user-defined dimensions at run-time
-    stmt.execute("""CREATE TABLE DataPoint(sid INT, ts TIMESTAMP, val REAL)
+    stmt.execute("""CREATE TABLE DataPoint(sid INT, timestamp TIMESTAMP, value REAL)
                    |ENGINE "dk.aau.modelardb.engines.h2.ViewDataPoint";
                    |""".stripMargin)
     stmt.execute("""CREATE TABLE Segment

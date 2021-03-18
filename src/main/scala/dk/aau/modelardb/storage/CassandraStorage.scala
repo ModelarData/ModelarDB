@@ -332,15 +332,15 @@ class CassandraStorage(connectionString: String) extends Storage with DerbyStora
         case sources.In("gid", values: Array[Any]) if values.length <= gidPushDownLimit => gid ++= values.map(_.asInstanceOf[Int])
 
         //Predicate push-down for "start_time" with rows ingested by Apache Spark until the requested start_time
-        case sources.LessThan("st", value: Timestamp) => if (value.before(minStartTime)) minStartTime = value; null
-        case sources.LessThanOrEqual("st", value: Timestamp) => if (value.before(minStartTime)) minStartTime = value; null
+        case sources.LessThan("start_time", value: Timestamp) => if (value.before(minStartTime)) minStartTime = value; null
+        case sources.LessThanOrEqual("start_time", value: Timestamp) => if (value.before(minStartTime)) minStartTime = value; null
 
         //Predicate push-down for end_time using SELECT * FROM segment WHERE et <=> ?
-        case sources.GreaterThan("et", value: Timestamp) => predicates.append(s"end_time > '$value'")
-        case sources.GreaterThanOrEqual("et", value: Timestamp) => predicates.append(s"end_time >= '$value'")
-        case sources.LessThan("et", value: Timestamp) => predicates.append(s"end_time < '$value'")
-        case sources.LessThanOrEqual("et", value: Timestamp) => predicates.append(s"end_time <= '$value'")
-        case sources.EqualTo("et", value: Timestamp) => predicates.append(s"end_time = '$value'")
+        case sources.GreaterThan("end_time", value: Timestamp) => predicates.append(s"end_time > '$value'")
+        case sources.GreaterThanOrEqual("end_time", value: Timestamp) => predicates.append(s"end_time >= '$value'")
+        case sources.LessThan("end_time", value: Timestamp) => predicates.append(s"end_time < '$value'")
+        case sources.LessThanOrEqual("end_time", value: Timestamp) => predicates.append(s"end_time <= '$value'")
+        case sources.EqualTo("end_time", value: Timestamp) => predicates.append(s"end_time = '$value'")
 
         //If a predicate is not supported when using Apache Cassandra for storage all we can do is inform the user
         case p => Static.warn("ModelarDB: unsupported predicate for CassandraStorage " + p, 120); null

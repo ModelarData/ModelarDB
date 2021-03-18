@@ -117,7 +117,7 @@ object Interface {
     val st = System.currentTimeMillis()
     var result: Array[String] = null
     try {
-      val query_rewritten = query.replace("#", "sid, st, et, res, mid, param, gaps")
+      val query_rewritten = query.replace("#", "sid, start_time, end_time, resolution, mid, parameters, gaps")
       result = this.sql(query_rewritten)
     } catch {
       case e: Exception =>

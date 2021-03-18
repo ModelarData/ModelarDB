@@ -193,6 +193,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
 
   //SparkStorage
   override def open(ssb: SparkSession.Builder, dimensions: Dimensions): SparkSession = {
+    open(dimensions)
     ssb.getOrCreate()
   }
 

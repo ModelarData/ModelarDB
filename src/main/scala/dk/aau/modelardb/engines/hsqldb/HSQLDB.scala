@@ -10,10 +10,10 @@ class HSQLDB(configuration: Configuration, storage: Storage) {
   def start(): Unit = {
     //Engine
     //http://hsqldb.org/doc/2.0/guide/dbproperties-chapt.html#dpc_connection_url:w
-    val connection = DriverManager.getConnection("jdbc:hsqldb:mem:memdb")
+    val connection = DriverManager.getConnection("jdbc:hsqldb:mem: ") //In-memory database named ' '
     val stmt = connection.createStatement()
     //http://hsqldb.org/doc/2.0/guide/sqlroutines-chapt.html#src_routine_definition
-    stmt.execute(
+    stmt.execute( //HSQLDB cannot handle columns with the same names as types or keywords
     """
         |CREATE FUNCTION DataPoint()
         |RETURNS TABLE(sid INT, ts TIMESTAMP, val REAL)
@@ -28,15 +28,15 @@ class HSQLDB(configuration: Configuration, storage: Storage) {
     //http://hsqldb.org/doc/2.0/guide/sqlroutines-chapt.html#src_aggregate_functions
     stmt.execute(
       """
-        |CREATE AGGREGATE FUNCTION count_s(IN x ARRAY, IN flag BOOLEAN, INOUT addup BIGINT, INOUT counter INT)
+        |CREATE AGGREGATE FUNCTION count_s(IN x INT ARRAY, IN flag BOOLEAN, INOUT addup BIGINT, INOUT counter INT)
         |    RETURNS INTEGER
         |    CONTAINS SQL
         |  BEGIN ATOMIC
         |  IF flag THEN
         |      RETURN counter;
         |  ELSE
-        |      SET counter = COALESCE(counter, 0) + 1;
-        |      SET addup = COALESCE(addup, 0) + COALESCE(x, 0);
+        |      -- SET counter = COALESCE(counter, 0) + 1;
+        |      -- SET addup = COALESCE(addup, 0) + COALESCE(x, 0);
         |      RETURN NULL;
         |  END IF;
         |END

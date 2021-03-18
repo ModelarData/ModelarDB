@@ -11,7 +11,7 @@ class Derby(configuration: Configuration, storage: Storage) {
     //Initialize
     //https://db.apache.org/derby/docs/10.15/security/rsecpolicysample.html
     //https://db.apache.org/derby/docs/10.15/devguide/cdevdvlpinmemdb.html
-    val connection = DriverManager.getConnection("jdbc:derby:memory:tempdb;create=true")
+    val connection = DriverManager.getConnection("jdbc:derby:memory:;create=true")
     val stmt = connection.createStatement()
 
     //TODO: extend the schema of both views with the columns of the user-defined dimensions at run-time
@@ -28,7 +28,7 @@ class Derby(configuration: Configuration, storage: Storage) {
     stmt.execute("CREATE VIEW Segment as SELECT s.* FROM TABLE(Segment()) s")
 
     stmt.execute("""CREATE FUNCTION DataPoint()
-                   |RETURNS TABLE (sid INT, timestamp TIMESTAMP, value FLOAT)
+                   |RETURNS TABLE (sid INT, timestamp TIMESTAMP, value REAL)
                    |LANGUAGE JAVA PARAMETER STYLE DERBY_JDBC_RESULT_SET
                    |READS SQL DATA
                    |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.ViewDataPoint.apply'""".stripMargin)

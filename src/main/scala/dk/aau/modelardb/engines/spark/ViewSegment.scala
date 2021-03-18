@@ -29,11 +29,11 @@ class ViewSegment(dimensions: Array[StructField]) (@transient val sqlContext: SQ
   /** Public Methods **/
   override def schema: StructType = StructType(Seq(
     StructField("sid", IntegerType, nullable = false),
-    StructField("st", TimestampType, nullable = false),
-    StructField("et", TimestampType, nullable = false),
-    StructField("res", IntegerType, nullable = false),
+    StructField("start_time", TimestampType, nullable = false),
+    StructField("end_time", TimestampType, nullable = false),
+    StructField("resolution", IntegerType, nullable = false),
     StructField("mid", IntegerType, nullable = false),
-    StructField("param", BinaryType, nullable = false),
+    StructField("parameters", BinaryType, nullable = false),
     StructField("gaps", BinaryType, nullable = false))
     ++ dimensions)
 

@@ -28,8 +28,8 @@ import org.apache.spark.sql.functions
 import scala.collection.mutable
 
 //Implementation of simple user-defined aggregate functions on top of the Segment View
-case class CountInput(st: Timestamp, et: Timestamp, res: Long) //Count only needs the timestamps and the resolution
-case class Input(sid: Int, st: Timestamp, et: Timestamp,res: Integer, mid: Integer, param: Array[Byte], gaps: Array[Byte])
+case class CountInput(start_time: Timestamp, end_time: Timestamp, resolution: Long) //Count only needs the timestamps and the resolution
+case class Input(sid: Int, start_time: Timestamp, end_time: Timestamp, resolution: Integer, mid: Integer, parameters: Array[Byte], gaps: Array[Byte])
 
 //Count
 class CountS extends Aggregator[CountInput, Long, Long] {
@@ -38,7 +38,7 @@ class CountS extends Aggregator[CountInput, Long, Long] {
   override def zero: Long = 0L
 
   override def reduce(total: Long, input: CountInput): Long = {
-    total + ((input.et.getTime - input.st.getTime) / input.res) + 1
+    total + ((input.end_time.getTime - input.start_time.getTime) / input.resolution) + 1
   }
 
   override def merge(total1: Long, total2: Long): Long = {
@@ -422,7 +422,7 @@ object SparkUDAF {
     val mc = Spark.getSparkStorage.modelCache
     input => {
       val model = mc(input.mid)
-      model.get(input.sid, input.st.getTime, input.et.getTime, input.res, input.param, input.gaps)
+      model.get(input.sid, input.start_time.getTime, input.end_time.getTime, input.resolution, input.parameters, input.gaps)
     }
   }
 }

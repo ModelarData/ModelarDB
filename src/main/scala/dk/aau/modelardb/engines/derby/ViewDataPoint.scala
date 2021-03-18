@@ -48,9 +48,9 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
 
   override def getLong(columnIndex: Int): Long = ???
 
-  override def getFloat(columnIndex: Int): Float = ???
+  override def getFloat(columnIndex: Int): Float = this.currentRow(columnIndex - 1).asInstanceOf[Float]
 
-  override def getDouble(columnIndex: Int): Double = this.currentRow(columnIndex - 1).asInstanceOf[Float]
+  override def getDouble(columnIndex: Int): Double = ???
 
   override def getBigDecimal(columnIndex: Int, scale: Int): java.math.BigDecimal = ???
 
