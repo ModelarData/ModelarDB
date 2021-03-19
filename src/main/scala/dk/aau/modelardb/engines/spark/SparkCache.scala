@@ -24,7 +24,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{Row, SparkSession}
 
-class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) extends Serializable {
+class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
 
   /** Public Methods **/
   def update(microBatch: RDD[Row]): Unit = {

@@ -14,8 +14,6 @@
  */
 package dk.aau.modelardb.core.utility;
 
-import java.io.Serializable;
-
-public interface SegmentFunction extends Serializable {
+public interface SegmentFunction {
     void emit(int gid, long startTime, long endTime, int mid, byte[] parameters, byte[] gaps);
 }

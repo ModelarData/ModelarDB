@@ -20,11 +20,11 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.Row
 
 //Abstract classes that projections generated at run-time using the ToolBox APIs can derive from
-abstract class SparkSegmentProjector extends Serializable {
+abstract class SparkSegmentProjector {
   def project(row: Row, dmc: Array[Array[Object]]): Row
 }
 
-abstract class SparkDataPointProjector extends Serializable {
+abstract class SparkDataPointProjector {
   def project(dp: DataPoint, dmc: Array[Array[Object]], sc: Array[Float], btc: Broadcast[Array[ValueFunction]]): Row
 }
 

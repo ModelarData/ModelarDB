@@ -14,9 +14,7 @@
  */
 package dk.aau.modelardb.core.utility;
 
-import java.io.Serializable;
-
-public class Pair<T, U> implements Serializable {
+public class Pair<T, U> {
 
     /** Constructors **/
     public Pair(T _1, U _2) {

@@ -19,12 +19,11 @@ import dk.aau.modelardb.core.utility.CubeFunction;
 import dk.aau.modelardb.core.utility.Static;
 import org.apache.commons.lang.time.DateUtils;
 
-import java.io.Serializable;
 import java.util.Calendar;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-public abstract class Segment implements Serializable {
+public abstract class Segment {
 
     /** Constructors **/
     public Segment(int sid, long startTime, long endTime, int resolution, int[] offsets) {
