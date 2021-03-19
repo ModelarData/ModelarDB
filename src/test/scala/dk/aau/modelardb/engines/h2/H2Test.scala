@@ -51,11 +51,8 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
       config.add("modelardb.batch", 1)
       RDBMSEngineUtilities.initialize(config, storage)
 
-      statement.execute("""CREATE TABLE Segment
-                          |(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BYTEA, gaps BYTEA)
-                          |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
-                          |""".stripMargin)
-      val rs = statement.executeQuery("SELECT * FROM segment")
+      statement.execute(H2.CreateSegmentViewSQL)
+      val rs = statement.executeQuery("SELECT * FROM Segment")
       var count = 0
       while (rs.next()) {
         count += 1

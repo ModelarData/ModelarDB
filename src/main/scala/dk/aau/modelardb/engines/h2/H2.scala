@@ -14,13 +14,8 @@ class H2(configuration: Configuration, storage: Storage) {
     val stmt = connection.createStatement()
     //https://www.h2database.com/html/commands.html#create_table
     //TODO: extend the schema of both views with the columns of the user-defined dimensions at run-time
-    stmt.execute("""CREATE TABLE DataPoint(sid INT, timestamp TIMESTAMP, value REAL)
-                   |ENGINE "dk.aau.modelardb.engines.h2.ViewDataPoint";
-                   |""".stripMargin)
-    stmt.execute("""CREATE TABLE Segment
-                   |(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BYTEA, gaps BYTEA)
-                   |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
-                   |""".stripMargin)
+    stmt.execute(H2.CreateDataPointViewSQL)
+    stmt.execute(H2.CreateSegmentViewSQL)
     //https://www.h2database.com/html/commands.html#create_aggregate
     stmt.execute("CREATE AGGREGATE COUNT_S FOR \"dk.aau.modelardb.engines.h2.CountS\";")
     stmt.close()
@@ -39,4 +34,16 @@ class H2(configuration: Configuration, storage: Storage) {
     //Shutdown
     connection.close()
   }
+}
+
+object H2 {
+
+  /** Type Variables **/
+  val CreateDataPointViewSQL = """CREATE TABLE DataPoint(sid INT, timestamp TIMESTAMP, value REAL)
+                                 |ENGINE "dk.aau.modelardb.engines.h2.ViewDataPoint";
+                                 |""".stripMargin
+  val CreateSegmentViewSQL = """CREATE TABLE Segment
+                               |(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BYTEA, gaps BYTEA)
+                               |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
+                               |""".stripMargin
 }
