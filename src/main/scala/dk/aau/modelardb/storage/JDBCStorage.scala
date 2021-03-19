@@ -16,20 +16,14 @@ package dk.aau.modelardb.storage
 
 import java.sql.{Array => _, _}
 import java.util
-
 import scala.collection.JavaConverters._
-
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
-
 import dk.aau.modelardb.engines.derby.DerbyStorage
 import org.apache.derby.vti.Restriction
-
-import dk.aau.modelardb.engines.h2.H2Storage
+import dk.aau.modelardb.engines.h2.{H2, H2Storage}
 import org.h2.table.TableFilter
-
 import dk.aau.modelardb.engines.hsqldb.HSQLDBStorage
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{Row, SparkSession}
@@ -58,7 +52,6 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
 
     //Prepares the necessary statements
     this.insertStmt = this.connection.prepareStatement("INSERT INTO segment VALUES(?, ?, ?, ?, ?, ?)")
-    this.getSegmentsStmt = this.connection.prepareStatement("SELECT * FROM segment")
     this.getMaxSidStmt = this.connection.prepareStatement("SELECT MAX(sid) FROM source")
     this.getMaxGidStmt = this.connection.prepareStatement("SELECT MAX(gid) FROM source")
   }
@@ -166,29 +159,19 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
   }
 
   override def getSegmentGroups(filter: Restriction): Iterator[SegmentGroup] = {
-    getSegmentGroups
+    Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
+    getSegmentGroups("")
   }
 
   //H2Storage
   override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
-    getSegmentGroups
+    getSegmentGroups(H2.tableFilterToSQLPredicates(filter))
   }
 
   //HSQLDBStorage
   override def getSegmentGroups(): Iterator[SegmentGroup] = {
     Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
-    val results = this.getSegmentsStmt.executeQuery()
-    new Iterator[SegmentGroup] {
-      override def hasNext: Boolean = {
-        if (results.next()) {
-          true
-        } else {
-          results.close()
-          false
-        }
-      }
-      override def next(): SegmentGroup = resultSetToSegmentGroup(results)
-    }
+    getSegmentGroups("")
   }
 
   //SparkStorage
@@ -205,7 +188,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
 
   override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): RDD[Row] = {
     Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
-    val rows = getSegmentGroups().map(sg => {
+    val rows = getSegmentGroups("").map(sg => {
       Row(sg.gid, new Timestamp(sg.startTime), new Timestamp(sg.endTime), sg.mid, sg.parameters, sg.offsets)
     })
     sparkSession.sparkContext.parallelize(rows.toSeq)
@@ -230,6 +213,28 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
        defaults(rdbms)
      }
    }
+
+  private def getSegmentGroups(predicates: String): Iterator[SegmentGroup] = {
+    val stmt = this.connection.createStatement()
+    val results = if (predicates.isEmpty) {
+      stmt.executeQuery("SELECT * FROM segment")
+    } else {
+      Static.info(s"ModelarDB: constructed predicates ($predicates)")
+      stmt.executeQuery("SELECT * FROM segment WHERE " + predicates)
+    }
+    new Iterator[SegmentGroup] {
+      override def hasNext: Boolean = {
+        if (results.next()) {
+          true
+        } else {
+          results.close()
+          stmt.close()
+          false
+        }
+      }
+      override def next(): SegmentGroup = resultSetToSegmentGroup(results)
+    }
+  }
 
   private def resultSetToSegmentGroup(resultSet: ResultSet): SegmentGroup = {
     val gid = resultSet.getInt(1)
@@ -256,7 +261,6 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
   /** Instance Variables **/
   private var connection: Connection = _
   private var insertStmt: PreparedStatement = _
-  private var getSegmentsStmt: PreparedStatement = _
   private var getMaxSidStmt: PreparedStatement = _
   private var getMaxGidStmt: PreparedStatement = _
   private val (connectionString, textType, blobType) = splitConnectionStringAndTypes(connectionStringAndTypes)
