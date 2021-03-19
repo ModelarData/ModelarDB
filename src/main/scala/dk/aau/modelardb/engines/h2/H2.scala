@@ -52,19 +52,23 @@ object H2 {
 
   /** Public Methods **/
   def tableFilterToSQLPredicates(filter: TableFilter): String = {
-    //TODO: Implement proper recursive parser of H2's ast using a stack or tailrec
-    val clause = filter.getSelect.getCondition() match {
+    //TODO: determine if the optimize method actually does anything and if it should be called before parsing the predicates
+    //TODO: decide if data point view => segment view predicates should be converted here (must be implemented for
+    // each of the storage format) or in segment view like for Spark (slower as three queries are run instead of two)
+    //TODO: Implement a proper recursive parser for H2's "AST" using a stack or @tailrec
+    filter.getSelect.getCondition() match {
+      case null => ""
       //https://github.com/h2database/h2database/blob/master/h2/src/main/org/h2/expression/condition/Comparison.java
       case c: Comparison => c.getSubexpression(0) match {
-        //TODO: Translate time series id to time series group id
+        //TODO: Translate time series id to time series group id like in Segment View
         //https://github.com/h2database/h2database/blob/master/h2/src/main/org/h2/expression/ExpressionColumn.java
         case ec: ExpressionColumn if ec.getColumnName == "SID" =>
           //https://github.com/h2database/h2database/blob/master/h2/src/main/org/h2/expression/ValueExpression.java
+          //TODO: Determine if we can get compareType from Comparison of if we to use getSQL and than remove the left branch
           "gid = " + c.getSubexpression(1).asInstanceOf[ValueExpression].getValue(null) //Session is ignored
         case p => Static.warn("ModelarDB: unsupported predicate for H2 " + p, 120); ""
       }
       case p => Static.warn("ModelarDB: unsupported predicate for H2 " + p, 120); ""
     }
-    clause
   }
 }
