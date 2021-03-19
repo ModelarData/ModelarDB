@@ -1,7 +1,8 @@
 name: Compile and Test
 
 on:
-  push:
+  pull_request:
+    types: [ opened ]
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
