@@ -42,7 +42,6 @@ class Spark(configuration: Configuration, storage: Storage) {
       Spark.getCache.flush()
       ssc.stop(stopSparkContext = false, stopGracefully = true)
     }
-    storage.close()
     ss.stop()
   }
 
