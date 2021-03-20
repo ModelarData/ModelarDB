@@ -29,18 +29,11 @@ class Spark(configuration: Configuration, storage: Storage) {
 
   /** Public Methods **/
   def start(): Unit = {
-    //Ensures the necessary parameters are available before starting the engine
-    configuration.contains("modelardb.interface", "modelardb.batch",
-      "modelardb.spark.receivers", "modelardb.spark.streaming")
-
     //Creates the Spark Session, Spark Streaming Context, and initializes the companion object
     val (ss, ssc) = initialize()
 
     //Starts listening for and executes queries using the user-configured interface
-    Interface.start(
-      configuration.getString("modelardb.interface"),
-      q => ss.sql(q).toJSON.collect()
-    )
+    Interface.start(configuration, q => ss.sql(q).toJSON.collect())
 
     //Ensures that Spark does not terminate until ingestion is safely stopped
     if (ssc != null) {
@@ -55,6 +48,7 @@ class Spark(configuration: Configuration, storage: Storage) {
 
   /** Private Methods **/
   private def initialize(): (SparkSession, StreamingContext) = {
+
     //Constructs the necessary Spark Conf and Spark Session Builder
     val engine = configuration.getString("modelardb.engine")
     val master = if (engine == "spark") "local[*]" else engine
@@ -74,7 +68,8 @@ class Spark(configuration: Configuration, storage: Storage) {
     }
 
     //Initializes storage and Spark with any new time series that the system must ingest
-    val ssc = if (configuration.getInteger("modelardb.spark.receivers") == 0) {
+    val ssc = if (configuration.contains("modelardb.spark.receivers")) {
+      configuration.containsOrThrow( "modelardb.batch", "modelardb.spark.streaming")
       Partitioner.initializeTimeSeries(configuration, storage.getMaxSID)
       val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
         .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
@@ -122,7 +117,7 @@ class Spark(configuration: Configuration, storage: Storage) {
     val stream = ssc.union(streams.toSeq)
 
     //If querying and temporary segments are disabled, segments can be written directly to disk without being cached
-    if (configuration.getString("modelardb.interface") == "none" && configuration.getLatency == 0) {
+    if ( ! configuration.contains("modelardb.interface") && configuration.getLatency == 0) {
       stream.foreachRDD(Spark.getCache.write(_))
       Static.info("ModelarDB: Spark Streaming initialized in bulk-loading mode")
     } else {

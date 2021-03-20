@@ -30,10 +30,7 @@ class H2(configuration: Configuration, storage: Storage) {
     utilities.startIngestion()
 
     //Interface
-    Interface.start(
-      configuration.getString("modelardb.interface"),
-      q => utilities.executeQuery(connection, q)
-    )
+    Interface.start(configuration, q => utilities.executeQuery(connection, q))
 
     //Shutdown
     connection.close()

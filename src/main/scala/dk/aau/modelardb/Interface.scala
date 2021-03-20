@@ -15,8 +15,8 @@
 package dk.aau.modelardb
 
 import java.nio.file.{Files, Paths}
-
 import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
+import dk.aau.modelardb.core.Configuration
 import dk.aau.modelardb.core.utility.Static
 
 import scala.io.Source
@@ -24,10 +24,13 @@ import scala.io.Source
 object Interface {
 
   /** Public Methods **/
-  def start(interface: String, sql: String => Array[String]): Unit = {
+  def start(configuration: Configuration, sql: String => Array[String]): Unit = {
+    if ( ! configuration.contains("modelardb.interface")) {
+      return
+    }
+
     this.sql = sql
-    interface match {
-      case "none" =>
+    configuration.getString("modelardb.interface") match {
       case "socket" => socket()
       case "http" => http()
       case path if Files.exists(Paths.get(path)) => file(path)

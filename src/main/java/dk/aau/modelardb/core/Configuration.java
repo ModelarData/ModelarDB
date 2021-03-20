@@ -25,7 +25,7 @@ public class Configuration {
     }
 
     /** Public Methods **/
-    public void add(String name, Object value) {
+    public Object add(String name, Object value) {
 
         Object[] values;
         if (value instanceof String) {
@@ -38,13 +38,19 @@ public class Configuration {
             values = new Object[]{value};
         }
         this.values.merge(name, values, this::mergeArrays);
+        return value;
     }
 
     public Object[] remove(String value) {
         return this.values.remove(value);
     }
 
-    public void contains(String... values) {
+    public boolean contains(String value) {
+        return this.values.containsKey(value);
+
+    }
+
+    public void containsOrThrow(String... values) {
         //All of the missing values should be one error
         ArrayList<String> missingValues = new ArrayList<>();
         for (String value : values) {

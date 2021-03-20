@@ -77,10 +77,10 @@ object Main {
     val dimensionLine = configDimensionsSource.getLines().map(_.trim).filter(_.startsWith("modelardb.dimensions"))
     val dimensions: Dimensions = if (dimensionLine.nonEmpty) {
       val lineSplit = dimensionLine.toStream.last.trim().split(" ", 2)
-      configuration.add("modelardb.dimensions", readDimensionsFile(lineSplit(1)))
-      configuration.getDimensions
+      configuration.add("modelardb.dimensions", readDimensionsFile(lineSplit(1))).asInstanceOf[Dimensions]
     } else {
-      null
+      //The user have not specified any dimensions
+      configuration.add("modelardb.dimensions", new Dimensions(Array())).asInstanceOf[Dimensions]
     }
     configDimensionsSource.close()
 
@@ -168,11 +168,6 @@ object Main {
 
   private def readDimensionsFile(dimensionPath: String): Dimensions = {
     Static.info(s"ModelarDB: $dimensionPath")
-    //The user explicitly specified that no dimensions exist
-    if (dimensionPath.equalsIgnoreCase("none")) {
-      return new Dimensions(Array())
-    }
-
     //Checks if the user has specified a schema inline, and if not, ensures that the dimensions file exists
     if ( ! new File(dimensionPath).exists()) {
       val dimensions = dimensionPath.split(';').map(_.trim)
@@ -259,11 +254,11 @@ object Main {
 
   private def validate(configuration: Configuration): Configuration = {
     //Settings used outside core are checked to ensure their values are within the expected range
-    if (configuration.getInteger("modelardb.spark.streaming") <= 0) {
+    if (configuration.contains("modelardb.spark.streaming") && configuration.getInteger("modelardb.spark.streaming") <= 0) {
       throw new UnsupportedOperationException ("ModelarDB: modelardb.spark.streaming must be a positive number of seconds between micro-batches")
     }
 
-    if (configuration.getInteger("modelardb.spark.receivers") < 0) {
+    if (configuration.contains("modelardb.spark.receivers") && configuration.getInteger("modelardb.spark.receivers") < 0) {
       throw new UnsupportedOperationException ("ModelarDB: modelardb.spark.receiver must be a positive number of receivers or zero to disable")
     }
     configuration
