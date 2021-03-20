@@ -165,7 +165,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
 
   //H2Storage
   override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
-    getSegmentGroups(H2.tableFilterToSQLPredicates(filter))
+    getSegmentGroups(H2.tableFilterToSQLPredicates(filter, this.sourceGroupCache))
   }
 
   //HSQLDBStorage

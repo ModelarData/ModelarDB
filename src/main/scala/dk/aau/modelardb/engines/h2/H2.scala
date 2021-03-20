@@ -8,6 +8,7 @@ import dk.aau.modelardb.engines.RDBMSEngineUtilities
 import org.h2.expression.condition.Comparison
 import org.h2.expression.{ExpressionColumn, ValueExpression}
 import org.h2.table.TableFilter
+import org.h2.value.ValueInt
 
 class H2(configuration: Configuration, storage: Storage) {
   /** Public Methods **/
@@ -38,33 +39,41 @@ class H2(configuration: Configuration, storage: Storage) {
 }
 
 object H2 {
-  /** Type Variables **/
-  val CreateDataPointViewSQL = """CREATE TABLE DataPoint(sid INT, timestamp TIMESTAMP, value REAL)
-                                 |ENGINE "dk.aau.modelardb.engines.h2.ViewDataPoint";
-                                 |""".stripMargin
-  val CreateSegmentViewSQL = """CREATE TABLE Segment
-                               |(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BYTEA, gaps BYTEA)
-                               |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
-                               |""".stripMargin
+  /** Type Variables * */
+  val CreateDataPointViewSQL =
+    """CREATE TABLE DataPoint(sid INT, timestamp TIMESTAMP, value REAL)
+      |ENGINE "dk.aau.modelardb.engines.h2.ViewDataPoint";
+      |""".stripMargin
+  val CreateSegmentViewSQL =
+    """CREATE TABLE Segment
+      |(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BYTEA, gaps BYTEA)
+      |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
+      |""".stripMargin
 
-  /** Public Methods **/
-  def tableFilterToSQLPredicates(filter: TableFilter): String = {
+  private val compareTypeField = classOf[Comparison].getDeclaredField("compareType")
+  this.compareTypeField.setAccessible(true)
+  private val compareTypeMethod = classOf[Comparison].getDeclaredMethod("getCompareOperator", classOf[Int])
+  this.compareTypeMethod.setAccessible(true)
+
+  /** Public Methods * */
+  def tableFilterToSQLPredicates(filter: TableFilter, sgc: Array[Int]): String = {
     //TODO: determine if the optimize method actually does anything and if it should be called before parsing the predicates
     //TODO: decide if data point view => segment view predicates should be converted here (must be implemented for
     // each of the storage format) or in segment view like for Spark (slower as three queries are run instead of two)
-    //TODO: Implement a proper recursive parser for H2's "AST" using a stack or @tailrec
+    //TODO: Implement a proper recursive parser for H2's "AST" using a stack or @tailrec to ensure it is tail recursive
+    //TODO: Determine if the comparison operator really cannot be extracted in a proper way
     filter.getSelect.getCondition() match {
       case null => ""
-      //https://github.com/h2database/h2database/blob/master/h2/src/main/org/h2/expression/condition/Comparison.java
-      case c: Comparison => c.getSubexpression(0) match {
-        //TODO: Translate time series id to time series group id like in Segment View
-        //https://github.com/h2database/h2database/blob/master/h2/src/main/org/h2/expression/ExpressionColumn.java
-        case ec: ExpressionColumn if ec.getColumnName == "SID" =>
-          //https://github.com/h2database/h2database/blob/master/h2/src/main/org/h2/expression/ValueExpression.java
-          //TODO: Determine if we can get compareType from Comparison of if we to use getSQL and than remove the left branch
-          "gid = " + c.getSubexpression(1).asInstanceOf[ValueExpression].getValue(null) //Session is ignored
-        case p => Static.warn("ModelarDB: unsupported predicate for H2 " + p, 120); ""
-      }
+      case c: Comparison =>
+        //HACK: Extracts the operator from the sub-tree using reflection as compareType seems to be completely inaccessible
+        val operator = this.compareTypeMethod.invoke(c, this.compareTypeField.get(c)).asInstanceOf[String]
+        val ec = c.getSubexpression(0).asInstanceOf[ExpressionColumn]
+        val ve = c.getSubexpression(1).asInstanceOf[ValueExpression]
+        val columnNameAndOperator = ec.getColumnName + " " + operator
+        columnNameAndOperator match {
+          case "SID =" => "GID = " + sgc(ve.getValue(null).asInstanceOf[ValueInt].getInt) //Session is ignored
+          case p => Static.warn("ModelarDB: unsupported predicate for H2 " + p, 120); ""
+        }
       case p => Static.warn("ModelarDB: unsupported predicate for H2 " + p, 120); ""
     }
   }
