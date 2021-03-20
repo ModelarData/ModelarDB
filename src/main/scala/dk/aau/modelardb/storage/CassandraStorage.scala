@@ -19,25 +19,18 @@ import java.nio.ByteBuffer
 import java.sql.Timestamp
 import java.time.Instant
 import java.util
-
 import scala.collection.JavaConverters._
-
-import com.datastax.oss.driver.api.core.cql.{SimpleStatement, BatchStatement, PreparedStatement, BatchType}
+import com.datastax.oss.driver.api.core.cql.{BatchStatement, BatchType, PreparedStatement, SimpleStatement}
 import com.datastax.spark.connector._
 import com.datastax.spark.connector.cql.CassandraConnector
 import com.datastax.spark.connector.rdd.CassandraTableScanRDD
-
 import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
 import dk.aau.modelardb.core.{Dimensions, SegmentGroup, Storage, TimeSeriesGroup}
-
 import dk.aau.modelardb.engines.derby.DerbyStorage
 import org.apache.derby.vti.Restriction
-
-import dk.aau.modelardb.engines.h2.H2Storage
+import dk.aau.modelardb.engines.h2.{H2, H2Storage}
 import org.h2.table.TableFilter
-
 import dk.aau.modelardb.engines.hsqldb.HSQLDBStorage
-
 import dk.aau.modelardb.engines.spark.{Spark, SparkStorage}
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd.RDD
@@ -186,42 +179,19 @@ class CassandraStorage(connectionString: String) extends Storage with DerbyStora
   }
 
   def getSegmentGroups(filter: Restriction): Iterator[SegmentGroup] = {
-    getSegmentGroups
+    Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
+    getSegmentGroups("")
   }
 
   //H2Storage
   def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
-    getSegmentGroups
+    getSegmentGroups(H2.tableFilterToSQLPredicates(filter, this.sourceGroupCache))
   }
 
   //HSQLDBStorage
   override def getSegmentGroups(): Iterator[SegmentGroup] = {
     Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
-    val session = this.connector.openSession()
-    val results = session.execute(s"SELECT * FROM ${this.keyspace}.segment").iterator()
-    session.close()
-    val gmdc = this.groupMetadataCache
-
-    new Iterator[SegmentGroup] {
-      override def hasNext: Boolean = results.hasNext
-
-      override def next(): SegmentGroup = {
-        val row = results.next()
-        val gid = row.getBigInteger("gid").intValue()
-        val gaps = row.getBigInteger("gaps").longValue()
-        val size: Long = row.getBigInteger("size").longValue()
-        val endTime = row.getInstant("end_time").toEpochMilli
-        val mid = row.getBigInteger("mid").intValue()
-        val params = row.getByteBuffer("parameters")
-
-        //Reconstructs the gaps array from the bit flag
-        val gapsArray = Static.bitsToGaps(gaps, gmdc(gid))
-
-        //Reconstructs the start time from the end time and length
-        val startTime = endTime - (size * gmdc(gid)(0))
-        new SegmentGroup(gid, startTime, endTime, mid, params.array, gapsArray)
-      }
-    }
+    getSegmentGroups("")
   }
 
   //SparkStorage
@@ -310,6 +280,39 @@ class CassandraStorage(connectionString: String) extends Storage with DerbyStora
     //The insert statement will be used for every batch of segments
     this.insertStmt = session.prepare(s"INSERT INTO ${this.keyspace}.segment(gid, gaps, size, end_time, mid, parameters) VALUES(?, ?, ?, ?, ?, ?)")
     session.close()
+  }
+
+  private def getSegmentGroups(predicates: String): Iterator[SegmentGroup] = {
+    val session = this.connector.openSession()
+    val results = if (predicates.isEmpty) {
+      session.execute(s"SELECT * FROM ${this.keyspace}.segment").iterator()
+    } else {
+      Static.info(s"ModelarDB: constructed predicates ($predicates)")
+      session.execute(s"SELECT * FROM ${this.keyspace}.segment WHERE " + predicates).iterator()
+    }
+    session.close()
+    val gmdc = this.groupMetadataCache
+
+    new Iterator[SegmentGroup] {
+      override def hasNext: Boolean = results.hasNext
+
+      override def next(): SegmentGroup = {
+        val row = results.next()
+        val gid = row.getBigInteger("gid").intValue()
+        val gaps = row.getBigInteger("gaps").longValue()
+        val size: Long = row.getBigInteger("size").longValue()
+        val endTime = row.getInstant("end_time").toEpochMilli
+        val mid = row.getBigInteger("mid").intValue()
+        val params = row.getByteBuffer("parameters")
+
+        //Reconstructs the gaps array from the bit flag
+        val gapsArray = Static.bitsToGaps(gaps, gmdc(gid))
+
+        //Reconstructs the start time from the end time and length
+        val startTime = endTime - (size * gmdc(gid)(0))
+        new SegmentGroup(gid, startTime, endTime, mid, params.array, gapsArray)
+      }
+    }
   }
 
   private def constructPredicate(filters: Array[Filter]): (String, Timestamp, Array[Int]) = {

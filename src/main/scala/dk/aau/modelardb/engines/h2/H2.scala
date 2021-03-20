@@ -72,9 +72,9 @@ object H2 {
         val columnNameAndOperator = ec.getColumnName + " " + operator
         columnNameAndOperator match {
           case "SID =" => "GID = " + sgc(ve.getValue(null).asInstanceOf[ValueInt].getInt) //Session is ignored
-          case p => Static.warn("ModelarDB: unsupported predicate for H2 " + p, 120); ""
+          case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
         }
-      case p => Static.warn("ModelarDB: unsupported predicate for H2 " + p, 120); ""
+      case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
     }
   }
 }
