@@ -168,22 +168,27 @@ public class Configuration {
             case "modelardb.error":
                 if (( ! (value instanceof Float) || (float) value < 0.0 || 100.0 < (float) value) &&
                         ( ! (value instanceof Integer) || (int) value < 0.0 || 100.0 < (int) value)) {
-                    throw new IllegalArgumentException("CORE: modelardb.error must be a percentage written from 0.0 to 100.0");
+                    throw new IllegalArgumentException("CORE: modelardb.error must be a percentage from 0.0 to 100.0");
                 }
                 break;
             case "modelardb.latency":
-                if ( ! (value instanceof Integer) || (int) value < 0) {
-                    throw new IllegalArgumentException("CORE: modelardb.latency must be a positive number of seconds or zero to disable");
+                if ( ! (value instanceof Integer) || (int) value <= 0) {
+                    throw new IllegalArgumentException("CORE: modelardb.latency must be a positive number of seconds");
                 }
                 break;
             case "modelardb.limit":
-                if ( ! (value instanceof Integer) || (int) value < 0) {
-                    throw new IllegalArgumentException("CORE: modelardb.limit must be a positive number of seconds or zero to disable");
+                if ( ! (value instanceof Integer) || (int) value <= 0) {
+                    throw new IllegalArgumentException("CORE: modelardb.limit must be a positive number of data point groups");
                 }
                 break;
             case "modelardb.resolution":
                 if ( ! (value instanceof Integer) || (int) value <= 0) {
                     throw new IllegalArgumentException("CORE: modelardb.resolution must be a positive number of seconds");
+                }
+                break;
+            case "modelardb.ingestors":
+                if ( ! (value instanceof Integer) || (int) value <= 0) {
+                    throw new UnsupportedOperationException("ModelarDB: modelardb.ingestors must be a positive number of ingestors");
                 }
                 break;
         }

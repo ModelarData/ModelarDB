@@ -40,6 +40,14 @@ object EngineFactory {
   /** Private Methods **/
   //TODO: Replace local with one of the three RDBMSs for single node testing
   private def startLocal(configuration: Configuration, storage: HSQLDBStorage): Unit = { //HACK: HSQLDBStorage matches the old Storage class
+    if ( ! configuration.contains("modelardb.ingestors")) {
+      return
+    }
+
+    if (configuration.getInteger("modelardb.ingestors") != 1) {
+      throw new java.lang.RuntimeException("ModelarDB: the local engine only supports using one ingestor")
+    }
+
     //Creates a method that drops temporary segments and one that store finalized segments in batches
     val consumeTemporary = new SegmentFunction {
       override def emit(gid: Int, startTime: Long, endTime: Long, mid: Int, parameters: Array[Byte], gaps: Array[Byte]): Unit = ()

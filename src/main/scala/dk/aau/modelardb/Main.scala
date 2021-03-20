@@ -119,7 +119,7 @@ object Main {
         case "modelardb.engine" | "modelardb.interface" | "modelardb.latency" | "modelardb.limit" | "modelardb.batch" |
              "modelardb.dynamicsplitfraction"  | "modelardb.storage" | "modelardb.separator" | "modelardb.header" |
              "modelardb.timestamps" | "modelardb.dateformat" | "modelardb.timezone" | "modelardb.values" |
-             "modelardb.locale" | "modelardb.error" | "modelardb.spark.streaming" | "modelardb.spark.receivers" =>
+             "modelardb.locale" | "modelardb.error" | "modelardb.ingestors" | "modelardb.spark.streaming" =>
           configuration.add(lineSplit(0), lineSplit(1).stripPrefix("'").stripSuffix("'"))
         case _ =>
           if (lineSplit(0).charAt(0) != '#') {
@@ -256,10 +256,6 @@ object Main {
     //Settings used outside core are checked to ensure their values are within the expected range
     if (configuration.contains("modelardb.spark.streaming") && configuration.getInteger("modelardb.spark.streaming") <= 0) {
       throw new UnsupportedOperationException ("ModelarDB: modelardb.spark.streaming must be a positive number of seconds between micro-batches")
-    }
-
-    if (configuration.contains("modelardb.spark.receivers") && configuration.getInteger("modelardb.spark.receivers") < 0) {
-      throw new UnsupportedOperationException ("ModelarDB: modelardb.spark.receiver must be a positive number of receivers or zero to disable")
     }
     configuration
   }

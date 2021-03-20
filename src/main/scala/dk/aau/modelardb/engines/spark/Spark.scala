@@ -68,7 +68,7 @@ class Spark(configuration: Configuration, storage: Storage) {
     }
 
     //Initializes storage and Spark with any new time series that the system must ingest
-    val ssc = if (configuration.contains("modelardb.spark.receivers")) {
+    val ssc = if (configuration.contains("modelardb.ingestors")) {
       configuration.containsOrThrow( "modelardb.batch", "modelardb.spark.streaming")
       Partitioner.initializeTimeSeries(configuration, storage.getMaxSID)
       val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
@@ -103,12 +103,12 @@ class Spark(configuration: Configuration, storage: Storage) {
   }
 
   private def setupStream(spark: SparkSession, timeSeriesGroups: Array[TimeSeriesGroup]): StreamingContext = {
-    //Creates receiverCount receivers with each receiving a working set created by Partitioner.partitionTimeSeries
+    //Creates a receiver per ingestor with each receiving a working set created by Partitioner.partitionTimeSeries
     val ssc = new StreamingContext(spark.sparkContext, Seconds(configuration.getInteger("modelardb.spark.streaming")))
     val midCache = Spark.getSparkStorage.midCache
     val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, midCache,
-      configuration.getInteger("modelardb.spark.receivers"))
-    if (workingSets.length != configuration.getInteger("modelardb.spark.receivers")) {
+      configuration.getInteger("modelardb.ingestors"))
+    if (workingSets.length != configuration.getInteger("modelardb.ingestors")) {
       throw new java.lang.RuntimeException("ModelarDB: spark engine did not receive a workings sets for each receiver")
     }
 
@@ -117,7 +117,7 @@ class Spark(configuration: Configuration, storage: Storage) {
     val stream = ssc.union(streams.toSeq)
 
     //If querying and temporary segments are disabled, segments can be written directly to disk without being cached
-    if ( ! configuration.contains("modelardb.interface") && configuration.getLatency == 0) {
+    if ( ! configuration.contains("modelardb.interface") && ! configuration.contains("modelardb.latency")) {
       stream.foreachRDD(Spark.getCache.write(_))
       Static.info("ModelarDB: Spark Streaming initialized in bulk-loading mode")
     } else {

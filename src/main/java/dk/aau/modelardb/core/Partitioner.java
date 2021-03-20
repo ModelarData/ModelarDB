@@ -128,7 +128,8 @@ public class Partitioner {
         int[] mids = Arrays.stream(configuration.getModels()).mapToInt(midCache::get).toArray();
         WorkingSet[] workingSets = Arrays.stream(pts).map(tss -> new WorkingSet(tss, configuration.getFloat(
                 "modelardb.dynamicsplitfraction"), configuration.getModels(), mids, configuration.getError(),
-                configuration.getLatency(), configuration.getLimit())).toArray(WorkingSet[]::new);
+                configuration.contains("modelardb.latency") ? configuration.getLatency() : 0,
+                configuration.getLimit())).toArray(WorkingSet[]::new);
         Static.info(String.format("CORE: created %d working set(s)", workingSets.length));
         return workingSets;
     }
