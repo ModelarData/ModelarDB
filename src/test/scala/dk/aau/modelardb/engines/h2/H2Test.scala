@@ -4,6 +4,7 @@ import dk.aau.modelardb.core.models.ModelFactory
 import dk.aau.modelardb.core.{Configuration, SegmentGroup}
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 import dk.aau.modelardb.storage.JDBCStorage
+import org.h2.expression.condition.Comparison
 import org.h2.jdbc.JdbcSQLDataException
 import org.h2.table.TableFilter
 import org.scalamock.scalatest.MockFactory
@@ -24,6 +25,15 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
       conn.close()
     }
   }
+
+  behavior of "H2 Companion Object"
+  it should "be able to make compareType and getCompareOperator public" in {
+    val compareTypeField = classOf[Comparison].getDeclaredField("compareType")
+    compareTypeField.setAccessible(true)
+    val compareTypeMethod = classOf[Comparison].getDeclaredMethod("getCompareOperator", classOf[Int])
+    compareTypeMethod.setAccessible(true)
+  }
+
 
   behavior of "ViewSegment"
 
