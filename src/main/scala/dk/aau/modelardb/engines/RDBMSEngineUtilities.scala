@@ -28,7 +28,7 @@ class RDBMSEngineUtilities(configuration: Configuration, storage: HSQLDBStorage)
     val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
       .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
     storage.initialize(timeSeriesGroups, derivedTimeSeries, dimensions, configuration.getModels)
-    if (timeSeriesGroups.isEmpty && ! configuration.contains("modelardb.ingestors")) {
+    if (timeSeriesGroups.isEmpty || ! configuration.contains("modelardb.ingestors")) {
       //There are no time series to ingest or no ingetors to ingest them with
       return
     }
