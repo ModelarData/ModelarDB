@@ -1,7 +1,7 @@
 package dk.aau.modelardb.engines.h2
 
 import dk.aau.modelardb.core.models.ModelFactory
-import dk.aau.modelardb.core.{Configuration, SegmentGroup}
+import dk.aau.modelardb.core.{Configuration, Dimensions, SegmentGroup}
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 import dk.aau.modelardb.storage.JDBCStorage
 import org.h2.expression.condition.Comparison
@@ -61,7 +61,7 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
       config.add("modelardb.batch", 1)
       RDBMSEngineUtilities.initialize(config, storage)
 
-      statement.execute(H2.CreateSegmentViewSQL)
+      statement.execute(H2.getCreateSegmentViewSQL(new Dimensions(Array())))
       val rs = statement.executeQuery("SELECT * FROM Segment")
       var count = 0
       while (rs.next()) {

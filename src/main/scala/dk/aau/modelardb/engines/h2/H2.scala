@@ -3,8 +3,9 @@ package dk.aau.modelardb.engines.h2
 import java.sql.DriverManager
 import dk.aau.modelardb.Interface
 import dk.aau.modelardb.core.utility.Static
-import dk.aau.modelardb.core.{Configuration, Storage}
+import dk.aau.modelardb.core.{Configuration, Dimensions, Storage}
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
+import dk.aau.modelardb.core.Dimensions.Types
 import org.h2.expression.condition.Comparison
 import org.h2.expression.{ExpressionColumn, ValueExpression}
 import org.h2.table.TableFilter
@@ -18,9 +19,8 @@ class H2(configuration: Configuration, storage: Storage) {
     val connection = DriverManager.getConnection("jdbc:h2:mem:")
     val stmt = connection.createStatement()
     //https://www.h2database.com/html/commands.html#create_table
-    //TODO: extend the schema of both views with the columns of the user-defined dimensions at run-time
-    stmt.execute(H2.CreateDataPointViewSQL)
-    stmt.execute(H2.CreateSegmentViewSQL)
+    stmt.execute(H2.getCreateDataPointViewSQL(configuration.getDimensions))
+    stmt.execute(H2.getCreateSegmentViewSQL(configuration.getDimensions))
     //https://www.h2database.com/html/commands.html#create_aggregate
     stmt.execute("CREATE AGGREGATE COUNT_S FOR \"dk.aau.modelardb.engines.h2.CountS\";")
     stmt.close()
@@ -40,22 +40,25 @@ class H2(configuration: Configuration, storage: Storage) {
 
 object H2 {
   /** Type Variables * */
-  val CreateDataPointViewSQL =
-    """CREATE TABLE DataPoint(sid INT, timestamp TIMESTAMP, value REAL)
-      |ENGINE "dk.aau.modelardb.engines.h2.ViewDataPoint";
-      |""".stripMargin
-  val CreateSegmentViewSQL =
-    """CREATE TABLE Segment
-      |(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BYTEA, gaps BYTEA)
-      |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
-      |""".stripMargin
-
   private val compareTypeField = classOf[Comparison].getDeclaredField("compareType")
   this.compareTypeField.setAccessible(true)
   private val compareTypeMethod = classOf[Comparison].getDeclaredMethod("getCompareOperator", classOf[Int])
   this.compareTypeMethod.setAccessible(true)
 
-  /** Public Methods * */
+  /** Public Methods **/
+  def getCreateDataPointViewSQL(dimensions: Dimensions): String = {
+    s"""CREATE TABLE DataPoint(sid INT, timestamp TIMESTAMP, value REAL${getDimensionColumns(dimensions)})
+       |ENGINE "dk.aau.modelardb.engines.h2.ViewDataPoint";
+       |""".stripMargin
+  }
+
+  def getCreateSegmentViewSQL(dimensions: Dimensions): String = {
+    s"""CREATE TABLE Segment
+       |(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BYTEA, gaps BYTEA${getDimensionColumns(dimensions)})
+       |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
+       |""".stripMargin
+  }
+
   def tableFilterToSQLPredicates(filter: TableFilter, sgc: Array[Int]): String = {
     //TODO: determine if the optimize method actually does anything and if it should be called before parsing the predicates
     //TODO: decide if data point view => segment view predicates should be converted here (must be implemented for
@@ -75,6 +78,21 @@ object H2 {
           case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
         }
       case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
+    }
+  }
+
+  /** Private Methods **/
+  private def getDimensionColumns(dimensions: Dimensions): String = {
+    if (dimensions.getColumns.isEmpty) {
+      ""
+    } else {
+      dimensions.getColumns.zip(dimensions.getTypes).map {
+        case (name, Types.INT) => name + " INT"
+        case (name, Types.LONG) => name + " BIGINT"
+        case (name, Types.FLOAT) => name + " REAL"
+        case (name, Types.DOUBLE) => name + " DOUBLE"
+        case (name, Types.TEXT) => name + " TEXT"
+      }.mkString(", ", ", ", "")
     }
   }
 }

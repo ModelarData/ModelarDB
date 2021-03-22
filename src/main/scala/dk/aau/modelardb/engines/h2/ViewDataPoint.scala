@@ -10,7 +10,7 @@ import org.h2.result.{Row, SearchRow, SortOrder}
 import org.h2.schema.Schema
 import org.h2.store.Data
 import org.h2.table.{Column, IndexColumn, Table, TableBase, TableFilter, TableType}
-import org.h2.value.{Value, ValueFloat, ValueInt, ValueTimestamp}
+import org.h2.value.{Value, ValueFloat, ValueInt, ValueString, ValueTimestamp}
 import dk.aau.modelardb.core.DataPoint
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
@@ -183,6 +183,13 @@ class ViewDataCursor(filter: TableFilter) extends Cursor {
       this.currentRow(0) = ValueInt.get(dataPoint.sid)
       this.currentRow(1) = ValueTimestamp.fromMillis(dataPoint.timestamp, 0)
       this.currentRow(2) = ValueFloat.get(dataPoint.value)
+
+      //TODO: determine if foreach or indexes are faster and generate a method that add the members without assuming they are strings
+      var index = 3
+      for (member <- this.dimensionsCache(dataPoint.sid)) {
+        this.currentRow(index) = ValueString.get(member.asInstanceOf[String])
+        index += 1
+      }
       true
     } else {
       false
@@ -194,11 +201,12 @@ class ViewDataCursor(filter: TableFilter) extends Cursor {
   /** Instance Variables **/
   //TODO: determine if the segments should be filtered by the segment view like done for Spark
   private val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[H2Storage]
+  private val dimensionsCache = storage.dimensionsCache
   private val dataPoints: Iterator[DataPoint] = (storage.getSegmentGroups(filter) ++
     RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
     .flatMap(sg => sg.toSegments(this.storage))
     .flatMap(segment => segment.grid().iterator().asScala)
-  private val currentRow = new Array[Value](3)
+  private val currentRow = new Array[Value](if (dimensionsCache.isEmpty) 3 else 3 + dimensionsCache(1).length) //0 is null
 }
 
 class ViewDataRow(currentRow: Array[Value]) extends Row {

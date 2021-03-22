@@ -73,7 +73,8 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
 
         var column = 5
         for (dim <- dimensions.get(ts.source)) {
-          insertSourceStmt.setObject(column, dim.toString)
+          //TODO: Support none string members
+          insertSourceStmt.setString(column, dim.toString)
           column += 1
         }
         insertSourceStmt.executeUpdate()
@@ -95,7 +96,8 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
       //Dimensions
       var column = 5
       while(column <= sourceDimensions + 4) {
-        metadata.add(results.getObject(column))
+        //TODO: Support none string members
+        metadata.add(results.getString(column))
         column += 1
       }
       sourcesInStorage.put(sid, metadata.toArray)
