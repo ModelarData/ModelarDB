@@ -23,7 +23,9 @@ class H2(configuration: Configuration, storage: Storage) {
     stmt.execute(H2.getCreateSegmentViewSQL(configuration.getDimensions))
     //https://www.h2database.com/html/commands.html#create_aggregate
     stmt.execute("CREATE AGGREGATE COUNT_S FOR \"dk.aau.modelardb.engines.h2.CountS\";")
+    stmt.execute("CREATE AGGREGATE MIN_S FOR \"dk.aau.modelardb.engines.h2.MinS\";")
     stmt.close()
+    H2.h2storage = storage.asInstanceOf[H2Storage]
 
     //Ingestion
     RDBMSEngineUtilities.initialize(configuration, storage)
@@ -41,6 +43,7 @@ class H2(configuration: Configuration, storage: Storage) {
 
 object H2 {
   /** Type Variables * */
+  private var h2storage: H2Storage = _
   private val compareTypeField = classOf[Comparison].getDeclaredField("compareType")
   this.compareTypeField.setAccessible(true)
   private val compareTypeMethod = classOf[Comparison].getDeclaredMethod("getCompareOperator", classOf[Int])
@@ -58,6 +61,10 @@ object H2 {
        |(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BYTEA, gaps BYTEA${getDimensionColumns(dimensions)})
        |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
        |""".stripMargin
+  }
+
+  def getH2Storage(): H2Storage = {
+    this.h2storage
   }
 
   def tableFilterToSQLPredicates(filter: TableFilter, sgc: Array[Int]): String = {
