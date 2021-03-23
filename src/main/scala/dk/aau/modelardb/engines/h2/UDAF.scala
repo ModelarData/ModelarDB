@@ -22,10 +22,10 @@ class CountS extends AggregateFunction {
   override def add(value: Any): Unit = {
     val values = value.asInstanceOf[Array[Object]]
     val gid = values(0).asInstanceOf[java.lang.Integer]
-    val st = values(1).asInstanceOf[java.lang.Long]
-    val et = values(2).asInstanceOf[java.lang.Long]
+    val st = values(1).asInstanceOf[java.sql.Timestamp]
+    val et = values(2).asInstanceOf[java.sql.Timestamp]
     val res = this.cache(gid)(0)
-    this.count = this.count + ((et - st) / res) + 1
+    this.count = this.count + ((et.getTime - st.getTime) / res) + 1
   }
 
   override def getResult: AnyRef = {

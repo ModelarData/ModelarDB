@@ -3,6 +3,7 @@ package dk.aau.modelardb.engines
 import java.sql.Connection
 import java.util
 import java.util.function.BooleanSupplier
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import scala.collection.mutable
 import dk.aau.modelardb.core.utility.{Pair, SegmentFunction, Static, ValueFunction}
@@ -29,12 +30,14 @@ class RDBMSEngineUtilities(configuration: Configuration, storage: HSQLDBStorage)
       .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
     storage.initialize(timeSeriesGroups, derivedTimeSeries, dimensions, configuration.getModels)
     if (timeSeriesGroups.isEmpty || ! configuration.contains("modelardb.ingestors")) {
-      //There are no time series to ingest or no ingetors to ingest them with
+      //There are no time series to ingest or no ingestors to ingest them with
+      this.numberOfRunningIngestors = new CountDownLatch(0)
       return
     }
 
     val midCache = storage.midCache
     val threads = configuration.getInteger("modelardb.ingestors")
+    this.numberOfRunningIngestors = new CountDownLatch(threads)
     val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, midCache, threads)
 
     //Start Ingestion
@@ -127,6 +130,7 @@ class RDBMSEngineUtilities(configuration: Configuration, storage: HSQLDBStorage)
     finalizedSegmentsIndex = 0
     cacheLock.writeLock().unlock()
     workingSet.logger.printWorkingSetResult()
+    this. numberOfRunningIngestors.countDown()
   }
 
   private def addColumnToOutput(columnName: String, value: AnyRef, end: Char, output: StringBuilder): Unit = {
@@ -194,6 +198,7 @@ class RDBMSEngineUtilities(configuration: Configuration, storage: HSQLDBStorage)
   /** Instance Variables **/
   private var finalizedSegmentsIndex = 0
   private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](configuration.getInteger("modelardb.batch"))
+  private var numberOfRunningIngestors: CountDownLatch = _
   private val cacheLock = new ReentrantReadWriteLock()
   private val temporarySegments = mutable.HashMap[Int, Array[SegmentGroup]]()
 }
@@ -206,6 +211,13 @@ object RDBMSEngineUtilities {
     configuration.contains("modelardb.batch")
     RDBMSEngineUtilities.storage = storage
     RDBMSEngineUtilities.utilities = new RDBMSEngineUtilities(configuration, storage.asInstanceOf[HSQLDBStorage])
+  }
+
+  def waitUntilIngestionIsDone(): Unit = {
+    if (utilities.numberOfRunningIngestors.getCount != 0) {
+      Static.info("ModelarDB: waiting for all ingestors to finnish")
+    }
+    utilities.numberOfRunningIngestors.await()
   }
 
   def getStorage: Storage = RDBMSEngineUtilities.storage

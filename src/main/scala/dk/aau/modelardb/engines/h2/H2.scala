@@ -35,6 +35,7 @@ class H2(configuration: Configuration, storage: Storage) {
 
     //Shutdown
     connection.close()
+    RDBMSEngineUtilities.waitUntilIngestionIsDone()
   }
 }
 

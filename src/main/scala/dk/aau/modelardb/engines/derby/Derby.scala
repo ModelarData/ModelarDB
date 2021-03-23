@@ -63,5 +63,6 @@ class Derby(configuration: Configuration, storage: Storage) {
 
     //Shutdown
     connection.close()
+    RDBMSEngineUtilities.waitUntilIngestionIsDone()
   }
 }
