@@ -42,14 +42,15 @@ class Derby(configuration: Configuration, storage: Storage) {
                    |""".stripMargin)
     //https://db.apache.org/derby/docs/10.15/ref/rrefcreatefunctionstatement.html
     //https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
-    stmt.execute("""CREATE FUNCTION TO_SEGMENT(sid INT, start_time BIGINT, end_time BIGINT, resolution INT, mid INT, parameters BLOB, gaps BLOB)
+    stmt.execute("""CREATE FUNCTION to_segment(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BLOB, gaps BLOB)
                    |RETURNS segment
                    |PARAMETER STYLE JAVA NO SQL
                    |LANGUAGE JAVA
                    |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.Segment.toSegment'""".stripMargin)
     //https://db.apache.org/derby/docs/10.15/ref/rrefsqljcreateaggregate.html
     //https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
-    stmt.execute("CREATE DERBY AGGREGATE count_s FOR segment EXTERNAL NAME 'dk.aau.modelardb.engines.derby.CountS'")
+    stmt.execute("CREATE DERBY AGGREGATE count_big FOR int RETURNS bigint EXTERNAL NAME 'dk.aau.modelardb.engines.derby.CountBig'")
+    stmt.execute("CREATE DERBY AGGREGATE count_s FOR segment RETURNS bigint EXTERNAL NAME 'dk.aau.modelardb.engines.derby.CountS'")
     stmt.close()
 
     //Ingestion

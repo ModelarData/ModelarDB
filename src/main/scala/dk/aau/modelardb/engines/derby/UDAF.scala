@@ -1,20 +1,18 @@
 package dk.aau.modelardb.engines.derby
 
-import java.sql.Blob
+import java.sql.{Blob, Timestamp}
 import java.io.{Externalizable, ObjectInput, ObjectOutput}
-
 import org.apache.derby.agg.Aggregator
-
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
 object Segment {
 
   /** Public Methods  **/
   //https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
-  def toSegment(gid: Int, start_time: Long, end_time: Long, resolution: Int, mid: Int, params: Blob, gaps: Blob): Segment = {
+  def toSegment(gid: Int, start_time: Timestamp , end_time: Timestamp, resolution: Int, mid: Int, params: Blob, gaps: Blob): Segment = {
     val paramsAsBytes = blobToByte(params)
     val gapsAsBytes = blobToByte(gaps)
-    new Segment(gid, start_time, end_time, resolution, mid, paramsAsBytes, gapsAsBytes)
+    new Segment(gid, start_time.getTime, end_time.getTime, resolution, mid, paramsAsBytes, gapsAsBytes)
   }
 
   def blobToByte(blob: Blob): Array[Byte] = {
@@ -42,15 +40,37 @@ class Segment(val gid: Int, val start_time: Long, val end_time: Long, val resolu
 
 //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialuda.html
 //Count
+class CountBig extends Aggregator[Int, Long, CountBig] {
+
+  /** Public Methods  **/
+  override def init(): Unit = {
+  }
+
+  override def accumulate(v: Int): Unit = {
+    this.count += 1
+  }
+
+  override def merge(a: CountBig): Unit = {
+    this.count = this.count + a.count
+  }
+
+  override def terminate(): Long = {
+    this.count
+  }
+
+  /** Instance Variables **/
+  var count: Long = 0
+}
+
 class CountS extends Aggregator[Segment, Long, CountS] {
 
   /** Public Methods  **/
   override def init(): Unit = {
-    this.cache = RDBMSEngineUtilities.getStorage.groupMetadataCache
+    this.gmc = RDBMSEngineUtilities.getStorage.groupMetadataCache
   }
 
   override def accumulate(v: Segment): Unit = {
-    val res = this.cache(v.gid)(0)
+    val res = this.gmc(v.gid)(0)
     this.count = this.count + ((v.end_time - v.start_time) / res) + 1
   }
 
@@ -62,11 +82,7 @@ class CountS extends Aggregator[Segment, Long, CountS] {
     this.count
   }
 
-  def getCount(): Long = {
-    this.count
-  }
-
   /** Instance Variables **/
   var count: Long = 0
-  var cache: Array[Array[Int]] = null
+  var gmc: Array[Array[Int]] = null
 }
