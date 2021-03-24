@@ -1,9 +1,12 @@
 package dk.aau.modelardb.engines.h2
 
 import dk.aau.modelardb.core.models.Segment
+import dk.aau.modelardb.core.utility.CubeFunction
 
 import java.sql.{Connection, Timestamp}
 import org.h2.api.AggregateFunction
+
+import java.util.Calendar
 
 //http://www.h2database.com/javadoc/org/h2/api/Aggregate.html
 //http://www.h2database.com/javadoc/org/h2/api/AggregateFunction.html
@@ -145,7 +148,6 @@ class AvgS extends AggregateFunction {
     } else {
       null
     }
-
   }
 
   /** Instance Variables **/
@@ -153,6 +155,37 @@ class AvgS extends AggregateFunction {
   private var count: Long = 0
   private var updated = false
 }
+
+
+//TODO: determine if a user-defined aggregate can return multiple values?
+//TimeCount
+class TimeCountMonth extends AggregateFunction {
+
+  /** Public Methods **/
+  override def init(conn: Connection): Unit = {
+  }
+
+  override def getType(inputTypes: Array[Int]): Int = {
+    java.sql.Types.ARRAY
+  }
+
+  override def add(row: Any): Unit = {
+    val segment = UDAF.rowToSegment(row)
+    segment.cube(this.calendar, 2, this.aggregate, this.result)
+  }
+
+  override def getResult: AnyRef = {
+    this.result.asInstanceOf[AnyRef]
+  }
+
+  /** Instance Variables **/
+  private val result: Array[Double] = Array.fill(13){0}
+  private val calendar = Calendar.getInstance()
+  private val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
+    total(field) = total(field) + segment.length.toDouble
+  }
+}
+
 
 object UDAF {
   /** Type Variables **/
