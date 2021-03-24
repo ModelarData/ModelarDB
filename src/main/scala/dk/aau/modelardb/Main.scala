@@ -16,8 +16,7 @@ package dk.aau.modelardb
 
 import java.io.File
 import java.nio.file.{FileSystems, Paths}
-import java.util.HashMap
-
+import java.util.{HashMap, TimeZone}
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
 import dk.aau.modelardb.engines.EngineFactory
@@ -48,6 +47,7 @@ object Main {
 
     /* Configuration */
     val configuration = readConfigurationFile(configPath)
+    TimeZone.setDefault(configuration.getTimeZone) //Ensures all components use the same time zone
 
     /* Storage */
     val storage = StorageFactory.getStorage(configuration.getString("modelardb.storage"))

@@ -67,7 +67,7 @@ class Spark(configuration: Configuration, storage: Storage) {
     }
 
     //Initializes storage and Spark with any new time series that the system must ingest
-    val ssc = if (configuration.contains("modelardb.ingestors")) {
+    val ssc = if ( ! configuration.contains("modelardb.ingestors")) {
       configuration.containsOrThrow( "modelardb.batch", "modelardb.spark.streaming")
       Partitioner.initializeTimeSeries(configuration, storage.getMaxSID)
       val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)

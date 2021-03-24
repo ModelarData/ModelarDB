@@ -108,13 +108,6 @@ public class Configuration {
         return getInteger("modelardb.limit");
     }
 
-    public Calendar getCalendar() {
-        //Initializes the calendar with the appropriate time zone and locale
-        Locale locale = new Locale(this.getString("modelardb.locale"));
-        TimeZone timeZone = TimeZone.getTimeZone(this.getString("modelardb.timezone"));
-        return Calendar.getInstance(timeZone, locale);
-    }
-
     public int getResolution() {
         return getInteger("modelardb.resolution");
     }
@@ -133,6 +126,14 @@ public class Configuration {
 
     public String getStorage() {
         return getString("modelardb.storage");
+    }
+
+    public TimeZone getTimeZone() {
+        if (values.containsKey("modelardb.timezone")) {
+            return TimeZone.getTimeZone((String) values.get("modelardb.timezone")[0]);
+        } else {
+            return TimeZone.getDefault();
+        }
     }
 
     /** Private Methods **/
