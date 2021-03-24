@@ -24,6 +24,9 @@ class H2(configuration: Configuration, storage: Storage) {
     //https://www.h2database.com/html/commands.html#create_aggregate
     stmt.execute("CREATE AGGREGATE COUNT_S FOR \"dk.aau.modelardb.engines.h2.CountS\";")
     stmt.execute("CREATE AGGREGATE MIN_S FOR \"dk.aau.modelardb.engines.h2.MinS\";")
+    stmt.execute("CREATE AGGREGATE MAX_S FOR \"dk.aau.modelardb.engines.h2.MaxS\";")
+    stmt.execute("CREATE AGGREGATE SUM_S FOR \"dk.aau.modelardb.engines.h2.SumS\";")
+    stmt.execute("CREATE AGGREGATE AVG_S FOR \"dk.aau.modelardb.engines.h2.AvgS\";")
     stmt.close()
     H2.h2storage = storage.asInstanceOf[H2Storage]
 
