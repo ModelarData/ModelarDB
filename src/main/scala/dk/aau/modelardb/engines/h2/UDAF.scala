@@ -7,6 +7,7 @@ import java.sql.{Connection, Timestamp}
 import org.h2.api.AggregateFunction
 
 import java.util.Calendar
+import scala.collection.mutable
 
 //http://www.h2database.com/javadoc/org/h2/api/Aggregate.html
 //http://www.h2database.com/javadoc/org/h2/api/AggregateFunction.html
@@ -166,7 +167,7 @@ class TimeCountMonth extends AggregateFunction {
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
-    java.sql.Types.ARRAY
+    java.sql.Types.JAVA_OBJECT
   }
 
   override def add(row: Any): Unit = {
@@ -175,7 +176,11 @@ class TimeCountMonth extends AggregateFunction {
   }
 
   override def getResult: AnyRef = {
-    this.result.asInstanceOf[AnyRef]
+    val result = mutable.HashMap[Int, Long]()
+    this.result.zipWithIndex.filter(_._1 != 0).foreach(t => {
+      result(t._2) = t._1.longValue()
+    })
+    scala.collection.immutable.SortedMap[Int, Long]() ++ result
   }
 
   /** Instance Variables **/
