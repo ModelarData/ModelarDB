@@ -40,7 +40,6 @@ class Spark(configuration: Configuration, storage: Storage) {
       Static.info("ModelarDB: awaiting termination")
       ssc.awaitTermination()
       Spark.getCache.flush()
-      ssc.stop(stopSparkContext = false, stopGracefully = true)
     }
     ss.stop()
   }

@@ -57,9 +57,6 @@ object Main {
 
     /* Cleanup */
     storage.close()
-
-    //HACK: some engine and storage providers makes the main process hang despite being terminated beforehand
-    Static.SIGTERM()
   }
 
   /** Private Methods **/
