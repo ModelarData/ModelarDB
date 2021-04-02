@@ -20,6 +20,7 @@ import dk.aau.modelardb.core.Configuration
 import dk.aau.modelardb.core.utility.Static
 
 import scala.io.Source
+import scala.io.StdIn.readLine
 
 object Interface {
 
@@ -33,6 +34,7 @@ object Interface {
     configuration.getString("modelardb.interface") match {
       case "socket" => socket()
       case "http" => http()
+      case "repl" => repl(configuration.getStorage)
       case path if Files.exists(Paths.get(path)) => file(path)
       case _ => throw new java.lang.UnsupportedOperationException("unknown value for modelardb.interface in the config file")
     }
@@ -50,7 +52,7 @@ object Interface {
     //Query
     Static.info("ModelarDB: the socket is ready to receive queries (Port: 9999)")
     while (true) {
-      val query = in.readLine().trim
+      val query = in.readLine().trim()
       if (query == ":quit") {
         Static.info("ModelarDB: received termination command, shutdown imminent")
         return
@@ -80,7 +82,7 @@ object Interface {
 
         //The query is executed with the result returned as an HTTP response
         val results = scala.collection.mutable.ArrayBuffer[String]()
-        execute(reader.readLine.trim, line => results.append(line))
+        execute(reader.readLine.trim(), line => results.append(line))
         val out = results.mkString("\n")
         httpExchange.sendResponseHeaders(200, out.length)
         val response = httpExchange.getResponseBody
@@ -99,13 +101,21 @@ object Interface {
     server.stop(0)
   }
 
+  private def repl(storage: String): Unit = {
+    val prompt = storage.substring(storage.lastIndexOf('/') + 1) + "> "
+    do {
+      print(prompt)
+      execute(readLine, print)
+    } while(true)
+  }
+
   private def file(path: String): Unit = {
     //This method is only called if the file exist
     val st = System.currentTimeMillis()
     Static.info("ModelarDB: executing queries from " + path)
     val source = Source.fromFile(path)
     for (line: String <- source.getLines()) {
-      val q = line.trim
+      val q = line.trim()
       if ( ! (q.isEmpty || q.startsWith("--"))) {
         execute(q.stripMargin, print)
       }
