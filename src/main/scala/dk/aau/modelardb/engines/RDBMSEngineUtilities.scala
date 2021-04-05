@@ -8,7 +8,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import scala.collection.mutable
 import dk.aau.modelardb.core.utility.{Pair, SegmentFunction, Static, ValueFunction}
 import dk.aau.modelardb.core.{Configuration, Partitioner, SegmentGroup, Storage, WorkingSet}
-import dk.aau.modelardb.engines.hsqldb.HSQLDBStorage
+import dk.aau.modelardb.engines.h2.H2Storage
 
 //TODO: determine if adding the values to a pre-allocated array in the views is faster than having the branches.
 //TODO: determine if the data point views should get segments from the segment views for filtering like spark
@@ -17,7 +17,7 @@ import dk.aau.modelardb.engines.hsqldb.HSQLDBStorage
 //TODO: Merge the loggers from each thread before printing them to make them easier to read the results.
 //TODO: Make the two gridding methods used by the SparkEngine generic enough that all engines can use them.
 //TODO: Remove resolution from Segment View so RDBMSs as it is avaliable from the metadata cache in storage.
-class RDBMSEngineUtilities(configuration: Configuration, storage: HSQLDBStorage) { //HACK: HSQLDBStorage matches the old Storage class
+class RDBMSEngineUtilities(configuration: Configuration, storage: H2Storage) { //HACK: H2Storage is used to have insert
 
   /** Public methods **/
   def startIngestion(): Unit = {
@@ -210,7 +210,7 @@ object RDBMSEngineUtilities {
     //Ensures the necessary parameters are available before starting the engine
     configuration.contains("modelardb.batch")
     RDBMSEngineUtilities.storage = storage
-    RDBMSEngineUtilities.utilities = new RDBMSEngineUtilities(configuration, storage.asInstanceOf[HSQLDBStorage])
+    RDBMSEngineUtilities.utilities = new RDBMSEngineUtilities(configuration, storage.asInstanceOf[H2Storage])
   }
 
   def waitUntilIngestionIsDone(): Unit = {

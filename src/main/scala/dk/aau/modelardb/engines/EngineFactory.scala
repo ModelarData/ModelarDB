@@ -24,7 +24,6 @@ object EngineFactory {
     configuration.getString("modelardb.engine").takeWhile(_ != ':') match {
       case "derby" => new dk.aau.modelardb.engines.derby.Derby(configuration, storage).start()
       case "h2" => new dk.aau.modelardb.engines.h2.H2(configuration, storage).start()
-      case "hsqldb" => new dk.aau.modelardb.engines.hsqldb.HSQLDB(configuration, storage).start()
       case "spark" => new dk.aau.modelardb.engines.spark.Spark(configuration, storage).start()
       case _ =>
         throw new java.lang.UnsupportedOperationException("ModelarDB: unknown value for modelardb.engine in the config file")

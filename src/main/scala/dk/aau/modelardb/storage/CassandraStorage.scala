@@ -30,14 +30,13 @@ import dk.aau.modelardb.engines.derby.DerbyStorage
 import org.apache.derby.vti.Restriction
 import dk.aau.modelardb.engines.h2.{H2, H2Storage}
 import org.h2.table.TableFilter
-import dk.aau.modelardb.engines.hsqldb.HSQLDBStorage
 import dk.aau.modelardb.engines.spark.{Spark, SparkStorage}
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{Row, SparkSession, sources}
 
-class CassandraStorage(connectionString: String) extends Storage with DerbyStorage with H2Storage with HSQLDBStorage with SparkStorage {
+class CassandraStorage(connectionString: String) extends Storage with DerbyStorage with H2Storage with SparkStorage {
 
   /** Public Methods **/
   //Storage
@@ -186,12 +185,6 @@ class CassandraStorage(connectionString: String) extends Storage with DerbyStora
   //H2Storage
   def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
     getSegmentGroups(H2.tableFilterToSQLPredicates(filter, this.sourceGroupCache))
-  }
-
-  //HSQLDBStorage
-  override def getSegmentGroups(): Iterator[SegmentGroup] = {
-    Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
-    getSegmentGroups("")
   }
 
   //SparkStorage

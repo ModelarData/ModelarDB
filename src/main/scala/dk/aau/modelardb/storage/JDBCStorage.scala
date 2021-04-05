@@ -23,7 +23,6 @@ import dk.aau.modelardb.engines.derby.{Derby, DerbyStorage}
 import org.apache.derby.vti.Restriction
 import dk.aau.modelardb.engines.h2.{H2, H2Storage}
 import org.h2.table.TableFilter
-import dk.aau.modelardb.engines.hsqldb.HSQLDBStorage
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{Row, SparkSession}
@@ -31,7 +30,7 @@ import dk.aau.modelardb.engines.spark.SparkStorage
 
 import scala.collection.mutable.ListBuffer
 
-class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbyStorage with H2Storage with HSQLDBStorage with SparkStorage {
+class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbyStorage with H2Storage with SparkStorage {
 
   /** Public Methods **/
   //Storage
@@ -180,12 +179,6 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
   //H2Storage
   override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
     getSegmentGroups(H2.tableFilterToSQLPredicates(filter, this.sourceGroupCache))
-  }
-
-  //HSQLDBStorage
-  override def getSegmentGroups(): Iterator[SegmentGroup] = {
-    Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
-    getSegmentGroups("")
   }
 
   //SparkStorage

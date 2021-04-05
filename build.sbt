@@ -9,7 +9,6 @@ resolvers += "Spark Packages Repo" at "https://dl.bintray.com/spark-packages/mav
 libraryDependencies ++= Seq(
   "org.scala-lang" % "scala-compiler" % scalaVersion.value,
   "org.apache.derby" % "derby" % "10.15.2.0",
-  "org.hsqldb" % "hsqldb" % "2.5.1",
   "com.h2database" % "h2" % "1.4.200",
   "com.datastax.spark" %% "spark-cassandra-connector" % "3.0.0",
   "amplab" % "spark-indexedrdd" % "0.4.0",
