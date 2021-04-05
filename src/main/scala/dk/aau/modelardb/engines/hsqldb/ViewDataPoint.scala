@@ -10,7 +10,6 @@ import org.hsqldb.types.{TimestampData, Type}
 
 import scala.collection.JavaConverters.asScalaIteratorConverter
 
-//TODO: Double check that predicate push-down is not supported http://hsqldb.org/doc/2.0/guide/sqlroutines-chapt.html
 //http://hsqldb.org/doc/2.0/guide/sqlroutines-chapt.html#src_psm_return_statement
 //http://hsqldb.org/doc/2.0/guide/sqlroutines-chapt.html#src_jrt_routines
 object ViewDataPoint {
