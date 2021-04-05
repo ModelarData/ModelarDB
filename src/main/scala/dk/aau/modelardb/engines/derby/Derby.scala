@@ -6,12 +6,7 @@ import dk.aau.modelardb.core.{Configuration, Storage}
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 import dk.aau.modelardb.engines.derby.Derby._
 import org.apache.derby.vti.Restriction
-import org.apache.derby.vti.Restriction.ColumnQualifier
 import org.apache.derby.vti.Restriction.ColumnQualifier.{ORDER_OP_EQUALS => EQUALS, ORDER_OP_GREATEROREQUALS => GREATEROREQUALS, ORDER_OP_GREATERTHAN => GREATERTHAN, ORDER_OP_ISNOTNULL => ISNOTNULL, ORDER_OP_ISNULL => ISNULL, ORDER_OP_LESSOREQUALS => LESSOREQUALS, ORDER_OP_LESSTHAN => LESSTHAN, ORDER_OP_NOT_EQUALS => NOT_EQUALS}
-
-import java.lang.ClassCastException
-import java.time.Instant
-import scala.annotation.tailrec
 
 class Derby(configuration: Configuration, storage: Storage) {
   /** Public Methods **/
@@ -49,10 +44,7 @@ class Derby(configuration: Configuration, storage: Storage) {
     utilities.startIngestion()
 
     //Interface
-    Interface.start(
-      configuration,
-      q => utilities.executeQuery(connection, q)
-    )
+    Interface.start(configuration, q => utilities.executeQuery(connection, q))
 
     //Shutdown
     connection.close()

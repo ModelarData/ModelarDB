@@ -13,7 +13,6 @@ import dk.aau.modelardb.engines.h2.H2Storage
 //TODO: determine if adding the values to a pre-allocated array in the views is faster than having the branches.
 //TODO: determine if the data point views should get segments from the segment views for filtering like spark
 //TODO: Implement a proper cache for segments retrieved from storage. Maybe store them as Gid, ST, ET intervals.
-//TODO: Prevent the system from automatically terminating on its own while there are still time series to ingest.
 //TODO: Merge the loggers from each thread before printing them to make them easier to read the results.
 //TODO: Make the two gridding methods used by the SparkEngine generic enough that all engines can use them.
 //TODO: Remove resolution from Segment View so RDBMSs as it is avaliable from the metadata cache in storage.
@@ -130,7 +129,7 @@ class RDBMSEngineUtilities(configuration: Configuration, storage: H2Storage) { /
     finalizedSegmentsIndex = 0
     cacheLock.writeLock().unlock()
     workingSet.logger.printWorkingSetResult()
-    this. numberOfRunningIngestors.countDown()
+    this.numberOfRunningIngestors.countDown()
   }
 
   private def addColumnToOutput(columnName: String, value: AnyRef, end: Char, output: StringBuilder): Unit = {
