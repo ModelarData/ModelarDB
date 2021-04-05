@@ -211,8 +211,8 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
        val defaults = Map(
          "sqlite" -> Tuple3(connectionStringWithArguments, "TEXT", "BYTEA"),
          "postgresql" -> Tuple3(connectionStringWithArguments, "TEXT", "BYTEA"),
-         "derby" -> Tuple3(connectionStringWithArguments, "LONG VARCHAR", "BLOB"),
-         "h2" -> Tuple3(connectionStringWithArguments, "TEXT", "BYTEA"),
+         "derby" -> Tuple3(connectionStringWithArguments, "LONG VARCHAR", "LONG VARCHAR FOR BIT DATA"),
+         "h2" -> Tuple3(connectionStringWithArguments, "VARCHAR", "BINARY"),
          "hsqldb" -> Tuple3(connectionStringWithArguments, "LONGVARCHAR", "LONGVARBINARY"))
        if ( ! defaults.contains(rdbms)) {
          throw new IllegalArgumentException("ModelarDB: the string and binary type must also be specified for " + rdbms)
