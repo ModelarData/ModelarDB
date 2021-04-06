@@ -179,7 +179,7 @@ class ViewDataPointCursor(filter: TableFilter) extends Cursor {
     RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
     .flatMap(sg => sg.toSegments(this.storage))
     .flatMap(segment => segment.grid().iterator().asScala)
-  private val currentRow = new Array[Value](if (dimensionsCache.isEmpty) 3 else 3 + dimensionsCache(1).length) //0 is null
+  private val currentRow = new Array[Value](if (dimensionsCache.length == 1) 3 else 3 + dimensionsCache(1).length) //0 is null
   private val currentViewRow = new ViewRow()
 
   /** Public Methods **/

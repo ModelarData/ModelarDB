@@ -1,14 +1,14 @@
 package dk.aau.modelardb.engines.derby
 
-import java.sql.{DriverManager, SQLException, Timestamp}
+import java.sql.DriverManager
 import dk.aau.modelardb.Interface
 import dk.aau.modelardb.core.Dimensions.Types
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{Configuration, Dimensions, Storage}
-import dk.aau.modelardb.engines.RDBMSEngineUtilities
+import dk.aau.modelardb.engines.{PredicatePushDown, RDBMSEngineUtilities}
 import dk.aau.modelardb.engines.derby.Derby._
 import org.apache.derby.vti.Restriction
-import org.apache.derby.vti.Restriction.ColumnQualifier.{ORDER_OP_EQUALS => EQUALS, ORDER_OP_GREATEROREQUALS => GREATEROREQUALS, ORDER_OP_GREATERTHAN => GREATERTHAN, ORDER_OP_ISNOTNULL => ISNOTNULL, ORDER_OP_ISNULL => ISNULL, ORDER_OP_LESSOREQUALS => LESSOREQUALS, ORDER_OP_LESSTHAN => LESSTHAN, ORDER_OP_NOT_EQUALS => NOT_EQUALS}
+import org.apache.derby.vti.Restriction.ColumnQualifier.{ORDER_OP_EQUALS, ORDER_OP_GREATEROREQUALS, ORDER_OP_GREATERTHAN, ORDER_OP_ISNOTNULL, ORDER_OP_ISNULL, ORDER_OP_LESSOREQUALS, ORDER_OP_LESSTHAN, ORDER_OP_NOT_EQUALS}
 
 class Derby(configuration: Configuration, storage: Storage) {
   /** Public Methods **/
@@ -93,7 +93,7 @@ object Derby {
       |""".stripMargin
 
   val CreateToSegmentFunctionSQL =
-    """CREATE FUNCTION TO_SEGMENT(sid INT, start_time BIGINT, end_time BIGINT, resolution INT, mid INT, parameters LONG VARCHAR FOR BIT DATA, gaps LONG VARCHAR FOR BIT DATA)
+    """CREATE FUNCTION TO_SEGMENT(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters LONG VARCHAR FOR BIT DATA, gaps LONG VARCHAR FOR BIT DATA)
       |RETURNS segment
       |PARAMETER STYLE JAVA NO SQL
       |LANGUAGE JAVA
@@ -102,64 +102,36 @@ object Derby {
   val CreateCountUDAFSQL = "CREATE DERBY AGGREGATE count_s FOR segment EXTERNAL NAME 'dk.aau.modelardb.engines.derby.CountS'"
 
 
-  def toLong(columnValue: AnyRef): Long = {
-    columnValue match {
-      case ts: Timestamp => ts.getTime
-      case str: String => Timestamp.valueOf(str).getTime
-      case _ => throw new SQLException(s"Unable to cast ${columnValue.getClass} to java.sql.Timestamp")
-    }
-  }
-
-  def lookupOperator(opCode: Int): String = {
-    opCode match {
-      case EQUALS => "="
-      case GREATEROREQUALS => ">="
-      case GREATERTHAN => ">"
-      case ISNOTNULL => "IS NOT NULL"
-      case ISNULL => "IS NULL"
-      case LESSOREQUALS => "<="
-      case LESSTHAN => "<"
-      case NOT_EQUALS => "!="
-    }
-  }
-
   def restrictionToSQLPredicates(restriction: Restriction, sgc: Array[Int]): String = {
-
-    def loop(restriction: Restriction): String = {
+    //TODO: Determine if Derby really does not support predicate push-down for IN clauses
+    if (restriction == null) {
+      ""
+    } else {
       restriction match {
         case col: Restriction.ColumnQualifier =>
           val name = col.getColumnName
           val op = col.getComparisonOperator
           val value = col.getConstantOperand
 
-          (name.toUpperCase, op, value) match {
-            case ("SID", EQUALS, value)  =>
-              val sid = value.asInstanceOf[Int]
-              val gid = sgc(sid)
-              s"GID = $gid "
-            case ("SID", _, _) => throw new SQLException("Only equals [=] is supported on column SID")
-            case ("START_TIME", op, value) => s"START_TIME ${lookupOperator(op)} ${toLong(value)} "
-            case ("END_TIME", op, value) => s"END_TIME ${lookupOperator(op)} ${toLong(value)} "
-            case ("MID", _, _) => col.toSQL + " "
+          (name, op, value) match {
+            //SID
+            case ("SID", ORDER_OP_EQUALS, value) => s" GID = " + PredicatePushDown.sidPointToGidPoint(value.asInstanceOf[Int], sgc)
+            //TIMESTAMP
+            //START TIME
+            case ("START_TIME", op, value) => s"START_TIME ${lookupOperator(op)} ${PredicatePushDown.toLongThroughTimestamp(value)} "
+            //END TIME
+            case ("END_TIME", op, value) => s"END_TIME ${lookupOperator(op)} ${PredicatePushDown.toLongThroughTimestamp(value)} "
+            //DIMENSIONS
             case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
           }
-
         case and: Restriction.AND =>
-          loop(and.getLeftChild) + " AND " + loop(and.getRightChild)
-
+          restrictionToSQLPredicates(and.getLeftChild, sgc) + " AND " + restrictionToSQLPredicates(and.getRightChild, sgc)
         case or: Restriction.OR =>
-          loop(or.getLeftChild) + " OR " + loop(or.getRightChild)
+          restrictionToSQLPredicates(or.getLeftChild, sgc) + " OR " + restrictionToSQLPredicates(or.getRightChild, sgc)
+        case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
       }
     }
-
-    if (restriction == null) {
-      ""
-    } else {
-      loop(restriction)
-    }
   }
-
-  val OperatorSymbols = Array("<", "=", "<=", ">", ">=", "IS NULL", "IS NOT NULL", "!=")
 
   /** Private Methods **/
   private def getDimensionColumns(dimensions: Dimensions): String = {
@@ -173,6 +145,19 @@ object Derby {
         case (name, Types.DOUBLE) => name + " DOUBLE"
         case (name, Types.TEXT) => name + " LONG VARCHAR"
       }.mkString(", ", ", ", "")
+    }
+  }
+
+  private def lookupOperator(opCode: Int): String = {
+    opCode match {
+      case ORDER_OP_EQUALS => "="
+      case ORDER_OP_GREATEROREQUALS => ">="
+      case ORDER_OP_GREATERTHAN => ">"
+      case ORDER_OP_ISNOTNULL => "IS NOT NULL"
+      case ORDER_OP_ISNULL => "IS NULL"
+      case ORDER_OP_LESSOREQUALS => "<="
+      case ORDER_OP_LESSTHAN => "<"
+      case ORDER_OP_NOT_EQUALS => "!="
     }
   }
 }

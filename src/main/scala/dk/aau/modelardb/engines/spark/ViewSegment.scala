@@ -15,9 +15,9 @@
 package dk.aau.modelardb.engines.spark
 
 import java.sql.Timestamp
-
 import dk.aau.modelardb.core.SegmentGroup
 import dk.aau.modelardb.core.utility.Static
+import dk.aau.modelardb.engines.PredicatePushDown
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.{BaseRelation, Filter, PrunedFilteredScan}
 import org.apache.spark.sql.types._
@@ -56,56 +56,22 @@ class ViewSegment(dimensions: Array[StructField]) (@transient val sqlContext: SQ
     //Sids and members are mapped to Gids so only segments from the necessary groups are retrieved
     val sgc = Spark.getSparkStorage.sourceGroupCache
     val idc = Spark.getSparkStorage.inverseDimensionsCache
-
-    val maxSid = sgc.length
     val gidFilters: Array[Filter] = filters.map {
-      case sources.EqualTo("sid", sid: Int) => sidPointToGidPoint(sid, sgc)
-      case sources.EqualNullSafe("sid", sid: Int) => sidPointToGidPoint(sid, sgc)
-      case sources.GreaterThan("sid", sid: Int) => sidRangeToGidIn(sid + 1, maxSid, sgc, maxSid)
-      case sources.GreaterThanOrEqual("sid", sid: Int) => sidRangeToGidIn(sid, maxSid, sgc, maxSid)
-      case sources.LessThan("sid", sid: Int) => sidRangeToGidIn(0, sid - 1, sgc, maxSid)
-      case sources.LessThanOrEqual("sid", sid: Int) => sidRangeToGidIn(0, sid, sgc, maxSid)
-      case sources.In("sid", values: Array[Any]) => sidInToGidIn(values, sgc, maxSid)
-      case sources.IsNull("sid") => sources.IsNull("gid")
-      case sources.IsNotNull("sid") => sources.IsNotNull("gid")
+      case sources.EqualTo("sid", sid: Int) => sources.EqualTo("gid", PredicatePushDown.sidPointToGidPoint(sid, sgc))
+      case sources.EqualNullSafe("sid", sid: Int) => sources.EqualTo("gid", PredicatePushDown.sidPointToGidPoint(sid, sgc))
+      case sources.GreaterThan("sid", sid: Int) => sources.In("gid", PredicatePushDown.sidRangeToGidIn(sid + 1, sgc.length, sgc))
+      case sources.GreaterThanOrEqual("sid", sid: Int) => sources.In("gid", PredicatePushDown.sidRangeToGidIn(sid, sgc.length, sgc))
+      case sources.LessThan("sid", sid: Int) => sources.In("gid", PredicatePushDown.sidRangeToGidIn(0, sid - 1, sgc))
+      case sources.LessThanOrEqual("sid", sid: Int) => sources.In("gid", PredicatePushDown.sidRangeToGidIn(0, sid, sgc))
+      case sources.In("sid", values: Array[Any]) => sources.In("gid", PredicatePushDown.sidInToGidIn(values, sgc))
       case sources.EqualTo(column: String, value: Any) if idc.containsKey(column) =>
-        sources.In("gid", idc.get(column).getOrDefault(value, Array(Integer.valueOf(-1))).asInstanceOf[Array[Any]])
+        sources.In("gid", PredicatePushDown.dimensionEqualToGidIn(column, value, idc))
       case f => f
     }
 
     //DEBUG: prints the predicates spark provides the segment group store after query rewriting
     Static.info("ModelarDB: segment rewritten filters { " + gidFilters.mkString(" ") + " }", 120)
     this.cache.getSegmentGroupRDD(gidFilters)
-  }
-
-  private def sidPointToGidPoint(sid: Int, sgc: Array[Int]): Filter = {
-    if (sid < sgc.length) {
-      sources.EqualTo("gid", sgc(sid))
-    } else {
-      sources.EqualTo("gid", -1)
-    }
-  }
-
-  private def sidRangeToGidIn(startSid: Int, endSid: Int, sgc: Array[Int], maxSid: Int): Filter = {
-    if (endSid <= 0 || startSid >= maxSid) {
-      //All sids are outside the range of assigned sids, so a sentinel is used to ensure no gids match
-      return sources.EqualTo("gid", -1)
-    }
-
-    //All sids within the range of assigned sids are translated with the set removing duplicates
-    val sids = scala.collection.mutable.Set[Int]()
-    for (sid <- Math.max(startSid, 1) to Math.min(endSid, maxSid)) {
-      sids.add(sgc(sid))
-    }
-    sources.In("gid", sids.toArray)
-  }
-
-  private def sidInToGidIn(sids: Array[Any], sgc: Array[Int], maxSid: Int): Filter = {
-    sources.In("gid",
-      sids.map(obj => {
-        val sid = obj.asInstanceOf[Int]
-        if (sid <= 0 || maxSid < sid) -1 else sgc(sid)
-      }))
   }
 
   private def getSegmentGroupRowToSegmentRows: Row => Array[Row] = {

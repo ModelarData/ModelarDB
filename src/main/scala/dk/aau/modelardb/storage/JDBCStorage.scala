@@ -160,12 +160,12 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
   }
 
   override def getSegmentGroups(filter: Restriction): Iterator[SegmentGroup] = {
-    getSegmentGroups(Derby.restrictionToSQLPredicates(filter, this.sourceGroupCache))
+    getSegmentGroups(Derby.restrictionToSQLPredicates(filter, this.sourceGroupCache).strip())
   }
 
   //H2Storage
   override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
-    getSegmentGroups(H2.tableFilterToSQLPredicates(filter, this.sourceGroupCache))
+    getSegmentGroups(H2.tableFilterToSQLPredicates(filter, this.sourceGroupCache).strip())
   }
 
   //SparkStorage

@@ -4,9 +4,9 @@ import java.sql.DriverManager
 import dk.aau.modelardb.Interface
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{Configuration, Dimensions, Storage}
-import dk.aau.modelardb.engines.RDBMSEngineUtilities
+import dk.aau.modelardb.engines.{PredicatePushDown, RDBMSEngineUtilities}
 import dk.aau.modelardb.core.Dimensions.Types
-import org.h2.expression.condition.Comparison
+import org.h2.expression.condition.{Comparison, ConditionInConstantSet}
 import org.h2.expression.{ExpressionColumn, ValueExpression}
 import org.h2.table.TableFilter
 import org.h2.value.ValueInt
@@ -96,7 +96,19 @@ object H2 {
         val ve = c.getSubexpression(1).asInstanceOf[ValueExpression]
         val columnNameAndOperator = ec.getColumnName + " " + operator
         columnNameAndOperator match {
-          case "SID =" => "GID = " + sgc(ve.getValue(null).asInstanceOf[ValueInt].getInt) //Session is ignored
+          //SID
+          case "SID =" => val sid = ve.getValue(null).asInstanceOf[ValueInt].getInt
+            s" GID = " + PredicatePushDown.sidPointToGidPoint(sid, sgc)
+          case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
+        }
+      case cin: ConditionInConstantSet =>
+        cin.getSubexpression(0).getColumnName match {
+          case "SID" =>
+            val sids = Array.fill[Any](cin.getSubexpressionCount - 1)(0) //The first value is the column name
+            for (i <- Range(1, cin.getSubexpressionCount)) {
+              sids(i - 1) = cin.getSubexpression(i).getValue(null).asInstanceOf[ValueInt].getInt
+            }
+            PredicatePushDown.sidInToGidIn(sids, sgc).mkString("GID IN (", ",", ")")
           case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
         }
       case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""

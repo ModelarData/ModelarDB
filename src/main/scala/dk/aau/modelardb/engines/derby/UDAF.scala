@@ -1,41 +1,25 @@
 package dk.aau.modelardb.engines.derby
 
-import java.sql.{Blob, Timestamp}
+import java.sql.Timestamp
 import java.io.{Externalizable, ObjectInput, ObjectOutput}
 import org.apache.derby.agg.Aggregator
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
+//Documentation: https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
 object Segment {
 
   /** Public Methods  **/
-  //Documentation: https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
-  def toSegment(gid: Int, start_time: Timestamp , end_time: Timestamp, resolution: Int, mid: Int, params: Blob, gaps: Blob): Segment = {
-    val paramsAsBytes = blobToByte(params)
-    val gapsAsBytes = blobToByte(gaps)
-    new Segment(gid, start_time.getTime, end_time.getTime, resolution, mid, paramsAsBytes, gapsAsBytes)
+  def toSegment(gid: Int, start_time: Timestamp , end_time: Timestamp, resolution: Int, mid: Int, params: Array[Byte], gaps: Array[Byte]): Segment = {
+    new Segment(gid, start_time.getTime, end_time.getTime, resolution, mid, params, gaps)
   }
-
-  def blobToByte(blob: Blob): Array[Byte] = {
-    val blobLength = blob.length.asInstanceOf[Int]
-    val gapsAsBytes = if (blobLength == 0) {
-      emptyArray
-    } else {
-      blob.getBytes(1, blobLength)
-    }
-    //blob.free() //Throws java.lang.UnsupportedOperationException: Not supported
-    gapsAsBytes
-  }
-
-  /** Instance Variables **/
-  val emptyArray = Array[Byte]()
 }
 
 //Documentation: https://db.apache.org/derby/docs/10.15/devguide/cdevspecialudt.html
 class Segment(val gid: Int, val start_time: Long, val end_time: Long, val resolution: Int, val mid: Int, val params: Array[Byte], val gaps: Array[Byte]) extends Externalizable {
 
   /** Public Methods  **/
-  override def writeExternal(out: ObjectOutput): Unit = { }
-  override def readExternal(in: ObjectInput): Unit = { }
+  override def writeExternal(out: ObjectOutput): Unit = {}
+  override def readExternal(in: ObjectInput): Unit = {}
 }
 
 //Documentation: https://db.apache.org/derby/docs/10.15/devguide/cdevspecialuda.html

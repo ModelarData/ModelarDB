@@ -25,7 +25,7 @@ class ViewSegment extends java.sql.ResultSet with RestrictedVTI {
   private val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[DerbyStorage]
   private val dimensionsCache = this.storage.dimensionsCache
   private var segments: Iterator[SegmentGroup] = _
-  private val currentRow = new Array[Object](if (dimensionsCache.isEmpty) 7 else 7 + dimensionsCache(1).length) //0 is null
+  private val currentRow = new Array[Object](if (dimensionsCache.length == 1) 7 else 7 + dimensionsCache(1).length) //0 is null
 
   /** Public Methods **/
   /* Documentation:

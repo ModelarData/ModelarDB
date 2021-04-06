@@ -56,12 +56,12 @@ class ViewDataPoint(dimensions: Array[StructField]) (@transient override val sql
         case sources.EqualTo("sid", value: Int) => df = df.filter(s"sid = $value")
         case sources.In("sid", value: Array[Any]) => df = df.filter(value.mkString("sid IN (", ",", ")"))
 
-        case sources.GreaterThan("timestamp", value: Timestamp) => df = df.filter(s"et > CAST('$value' AS TIMESTAMP)")
-        case sources.GreaterThanOrEqual("timestamp", value: Timestamp) => df = df.filter(s"et >= CAST('$value' AS TIMESTAMP)")
-        case sources.LessThan("timestamp", value: Timestamp) => df = df.filter(s"st < CAST('$value' AS TIMESTAMP)")
-        case sources.LessThanOrEqual("timestamp", value: Timestamp) => df = df.filter(s"st <= CAST('$value' AS TIMESTAMP)")
+        case sources.GreaterThan("timestamp", value: Timestamp) => df = df.filter(s"end_time > CAST('$value' AS TIMESTAMP)")
+        case sources.GreaterThanOrEqual("timestamp", value: Timestamp) => df = df.filter(s"end_time >= CAST('$value' AS TIMESTAMP)")
+        case sources.LessThan("timestamp", value: Timestamp) => df = df.filter(s"start_time < CAST('$value' AS TIMESTAMP)")
+        case sources.LessThanOrEqual("timestamp", value: Timestamp) => df = df.filter(s"start_time <= CAST('$value' AS TIMESTAMP)")
         case sources.EqualTo("timestamp", value: Timestamp) => df =
-          df.filter(s"st <= CAST('$value' AS TIMESTAMP) AND et >= CAST('$value' AS TIMESTAMP)")
+          df.filter(s"start_time <= CAST('$value' AS TIMESTAMP) AND end_time >= CAST('$value' AS TIMESTAMP)")
 
         //All predicates requesting specific members can be pushed directly to the segment view for conversion to Gids
         case sources.EqualTo(column: String, value: Any) if column != "val" => df = if (value.isInstanceOf[String])
