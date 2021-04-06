@@ -8,7 +8,6 @@ import org.h2.engine.{Database, DbObject, Session}
 import org.h2.index.{Cursor, Index, IndexLookupBatch, IndexType}
 import org.h2.result.{Row, SearchRow, SortOrder}
 import org.h2.schema.Schema
-import org.h2.store.Data
 import org.h2.table._
 import org.h2.value.{Value, ValueBytes, ValueInt, ValueString, ValueTimestamp}
 
@@ -175,12 +174,14 @@ class ViewSegmentCursor(filter: TableFilter) extends Cursor {
     RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
     .flatMap(_.explode(this.storage.groupMetadataCache, this.storage.groupDerivedCache))
   private val currentRow = new Array[Value](if (dimensionsCache.isEmpty) 7 else 7 + dimensionsCache(1).length) //0 is null
+  private val currentViewRow = new ViewRow()
 
   /** Public Methods **/
   override def get(): Row = ???
 
   override def getSearchRow: SearchRow = {
-    new ViewSegmentRow(currentRow)
+    this.currentViewRow.setValueList(this.currentRow)
+    this.currentViewRow
   }
 
   override def next(): Boolean = {
@@ -207,32 +208,4 @@ class ViewSegmentCursor(filter: TableFilter) extends Cursor {
   }
 
   override def previous(): Boolean = false
-}
-
-class ViewSegmentRow(currentRow: Array[Value]) extends Row {
-  override def getByteCount(dummy: Data): Int = ???
-
-  override def isEmpty: Boolean = ???
-
-  override def setDeleted(deleted: Boolean): Unit = ???
-
-  override def isDeleted: Boolean = ???
-
-  override def getValueList: Array[Value] = ???
-
-  override def hasSharedData(other: Row): Boolean = ???
-
-  override def getColumnCount: Int = ???
-
-  override def getValue(index: Int): Value = currentRow(index)
-
-  override def setValue(index: Int, v: Value): Unit = ???
-
-  override def setKey(old: SearchRow): Unit = ???
-
-  override def setKey(key: Long): Unit = ???
-
-  override def getKey: Long = ???
-
-  override def getMemory: Int = ???
 }

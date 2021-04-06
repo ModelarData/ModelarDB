@@ -5,7 +5,6 @@ import java.net.URL
 import java.sql.{Blob, Clob, Date, NClob, Ref, ResultSetMetaData, RowId, SQLWarning, SQLXML, Statement, Time, Timestamp}
 import java.util.Calendar
 import java.{sql, util}
-import javax.sql.rowset.serial.SerialBlob
 import dk.aau.modelardb.core.SegmentGroup
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 import org.apache.derby.vti.{RestrictedVTI, Restriction}
@@ -47,8 +46,8 @@ class ViewSegment extends java.sql.ResultSet with RestrictedVTI {
       this.currentRow(2) = new Timestamp(segment.endTime)
       this.currentRow(3) = this.storage.groupMetadataCache(segment.gid)(0).asInstanceOf[Object]
       this.currentRow(4) = segment.mid.asInstanceOf[Object]
-      this.currentRow(5) = new SerialBlob(segment.parameters)
-      this.currentRow(6) = new SerialBlob(segment.offsets)
+      this.currentRow(5) = segment.parameters
+      this.currentRow(6) = segment.offsets
 
       //TODO: determine if foreach or indexes are faster and generate a method that add the members without assuming they are strings
       var index = 7
@@ -65,7 +64,7 @@ class ViewSegment extends java.sql.ResultSet with RestrictedVTI {
   //JDBC uses 1-based indexes while arrays use 0-based indexing
   override def getInt(columnIndex: Int): Int = this.currentRow(columnIndex - 1).asInstanceOf[Int]
   override def getTimestamp(columnIndex: Int): Timestamp = this.currentRow(columnIndex - 1).asInstanceOf[Timestamp]
-  override def getBlob(columnIndex: Int): Blob = this.currentRow(columnIndex - 1).asInstanceOf[Blob]
+  override def getBytes(columnIndex: Int): Array[Byte] = this.currentRow(columnIndex - 1).asInstanceOf[Array[Byte]]
   override def getString(columnIndex: Int): String = this.currentRow(columnIndex - 1).asInstanceOf[String]
 
   override def getWarnings: SQLWarning = null //HACK: nothing can go wrong....
@@ -96,8 +95,6 @@ class ViewSegment extends java.sql.ResultSet with RestrictedVTI {
   override def getDouble(columnIndex: Int): Double = ???
 
   override def getBigDecimal(columnIndex: Int, scale: Int): java.math.BigDecimal = ???
-
-  override def getBytes(columnIndex: Int): Array[Byte] = ???
 
   override def getDate(columnIndex: Int): Date = ???
 
@@ -292,6 +289,8 @@ class ViewSegment extends java.sql.ResultSet with RestrictedVTI {
   override def getObject(columnIndex: Int, map: util.Map[String, Class[_]]): AnyRef = ???
 
   override def getRef(columnIndex: Int): Ref = ???
+
+  override def getBlob(columnIndex: Int): Blob = ???
 
   override def getClob(columnIndex: Int): Clob = ???
 

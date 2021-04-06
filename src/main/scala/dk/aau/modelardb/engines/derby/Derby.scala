@@ -75,7 +75,7 @@ object Derby {
   //Segment View
   def getCreateSegmentFunctionSQL(dimensions: Dimensions): String = {
     s"""CREATE FUNCTION Segment()
-       |RETURNS TABLE (sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BLOB, gaps BLOB${Derby.getDimensionColumns(dimensions)})
+       |RETURNS TABLE (sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters LONG VARCHAR FOR BIT DATA, gaps LONG VARCHAR FOR BIT DATA${Derby.getDimensionColumns(dimensions)})
        |LANGUAGE JAVA
        |PARAMETER STYLE DERBY_JDBC_RESULT_SET
        |READS SQL DATA
@@ -93,7 +93,7 @@ object Derby {
       |""".stripMargin
 
   val CreateToSegmentFunctionSQL =
-    """CREATE FUNCTION TO_SEGMENT(sid INT, start_time BIGINT, end_time BIGINT, resolution INT, mid INT, parameters BLOB, gaps BLOB)
+    """CREATE FUNCTION TO_SEGMENT(sid INT, start_time BIGINT, end_time BIGINT, resolution INT, mid INT, parameters LONG VARCHAR FOR BIT DATA, gaps LONG VARCHAR FOR BIT DATA)
       |RETURNS segment
       |PARAMETER STYLE JAVA NO SQL
       |LANGUAGE JAVA

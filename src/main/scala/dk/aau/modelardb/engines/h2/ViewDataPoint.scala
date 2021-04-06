@@ -8,7 +8,6 @@ import org.h2.engine.{Database, DbObject, Session}
 import org.h2.index.{Cursor, Index, IndexLookupBatch, IndexType}
 import org.h2.result.{Row, SearchRow, SortOrder}
 import org.h2.schema.Schema
-import org.h2.store.Data
 import org.h2.table.{Column, IndexColumn, Table, TableBase, TableFilter, TableType}
 import org.h2.value.{Value, ValueFloat, ValueInt, ValueString, ValueTimestamp}
 import dk.aau.modelardb.core.DataPoint
@@ -43,7 +42,7 @@ class ViewDataPointTable(data: CreateTableData) extends TableBase(data) {
 
   override def getTableType: TableType = ???
 
-  override def getScanIndex(session: Session): Index = new ViewDataIndex(this)
+  override def getScanIndex(session: Session): Index = new ViewDataPointIndex(this)
 
   override def getUniqueIndex: Index = ???
 
@@ -68,7 +67,7 @@ class ViewDataPointTable(data: CreateTableData) extends TableBase(data) {
   override def checkRename(): Unit = ???
 }
 
-class ViewDataIndex(table: Table) extends Index {
+class ViewDataPointIndex(table: Table) extends Index {
   override def getPlanSQL: String = ???
 
   override def close(session: Session): Unit = ???
@@ -83,7 +82,7 @@ class ViewDataIndex(table: Table) extends Index {
 
   override def find(session: Session, first: SearchRow, last: SearchRow): Cursor = ???
 
-  override def find(filter: TableFilter, first: SearchRow, last: SearchRow): Cursor = new ViewDataCursor(filter)
+  override def find(filter: TableFilter, first: SearchRow, last: SearchRow): Cursor = new ViewDataPointCursor(filter)
 
   override def getCost(session: Session, masks: Array[Int], filters: Array[TableFilter], filter: Int,  sortOrder: SortOrder, allColumnsSet: AllColumnsForPlan): Double = 1.0  //HACK: unclear what we have to return...
 
@@ -170,23 +169,25 @@ class ViewDataIndex(table: Table) extends Index {
   override def getComment: String = ???
 }
 
-class ViewDataCursor(filter: TableFilter) extends Cursor {
+class ViewDataPointCursor(filter: TableFilter) extends Cursor {
 
   /** Instance Variables **/
   //TODO: determine if the segments should be filtered by the segment view like done for Spark
   private val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[H2Storage]
   private val dimensionsCache = this.storage.dimensionsCache
-  private val currentRow = new Array[Value](if (dimensionsCache.isEmpty) 3 else 3 + dimensionsCache(1).length) //0 is null
   private val dataPoints: Iterator[DataPoint] = (this.storage.getSegmentGroups(filter) ++
     RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
     .flatMap(sg => sg.toSegments(this.storage))
     .flatMap(segment => segment.grid().iterator().asScala)
+  private val currentRow = new Array[Value](if (dimensionsCache.isEmpty) 3 else 3 + dimensionsCache(1).length) //0 is null
+  private val currentViewRow = new ViewRow()
 
   /** Public Methods **/
   override def get(): Row = ???
 
   override def getSearchRow: SearchRow = {
-    new ViewDataRow(this.currentRow)
+    this.currentViewRow.setValueList(this.currentRow)
+    this.currentViewRow
   }
 
   override def next(): Boolean = {
@@ -209,32 +210,4 @@ class ViewDataCursor(filter: TableFilter) extends Cursor {
   }
 
   override def previous(): Boolean = false
-}
-
-class ViewDataRow(currentRow: Array[Value]) extends Row {
-  override def getByteCount(dummy: Data): Int = ???
-
-  override def isEmpty: Boolean = ???
-
-  override def setDeleted(deleted: Boolean): Unit = ???
-
-  override def isDeleted: Boolean = ???
-
-  override def getValueList: Array[Value] = ???
-
-  override def hasSharedData(other: Row): Boolean = ???
-
-  override def getColumnCount: Int = ???
-
-  override def getValue(index: Int): Value = this.currentRow(index)
-
-  override def setValue(index: Int, v: Value): Unit = ???
-
-  override def setKey(old: SearchRow): Unit = ???
-
-  override def setKey(key: Long): Unit = ???
-
-  override def getKey: Long = ???
-
-  override def getMemory: Int = ???
 }

@@ -26,8 +26,8 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
   //TODO: determine if the segments should be filtered by the segment view like done for Spark
   private val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[DerbyStorage]
   private val dimensionsCache = this.storage.dimensionsCache
-  private val currentRow = new Array[Object](if (dimensionsCache.isEmpty) 3 else 3 + dimensionsCache(1).length) //0 is null
   private var dataPoints: Iterator[DataPoint] = _
+  private val currentRow = new Array[Object](if (dimensionsCache.isEmpty) 3 else 3 + dimensionsCache(1).length) //0 is null
 
   /* Documentation:
    * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfrestr.html
