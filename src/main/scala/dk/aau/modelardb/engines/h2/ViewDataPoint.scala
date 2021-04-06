@@ -16,14 +16,14 @@ import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
 import scala.collection.JavaConverters.asScalaIteratorConverter
 
-//https://www.h2database.com/html/features.html#pluggable_tables
+//Documentation: https://www.h2database.com/html/features.html#pluggable_tables
 class ViewDataPoint extends TableEngine {
   override def createTable(data: CreateTableData): TableBase = {
     new ViewDataPointTable(data)
   }
 }
 
-//https://www.h2database.com/html/features.html#pluggable_tables
+//Documentation: https://www.h2database.com/html/features.html#pluggable_tables
 class ViewDataPointTable(data: CreateTableData) extends TableBase(data) {
   override def lock(session: Session, exclusive: Boolean, forceLockEvenInMvcc: Boolean): Boolean = false
 

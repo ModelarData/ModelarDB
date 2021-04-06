@@ -15,12 +15,12 @@ import org.h2.value.{Value, ValueBytes, ValueInt, ValueTimestamp}
 
 import java.{lang, util}
 
-//https://www.h2database.com/html/features.html#pluggable_tables
+//Documentation: https://www.h2database.com/html/features.html#pluggable_tables
 class ViewSegment extends TableEngine {
   override def createTable(data: CreateTableData): Table = new ViewSegmentTable(data)
 }
 
-//https://www.h2database.com/html/features.html#pluggable_tables
+//Documentation: https://www.h2database.com/html/features.html#pluggable_tables
 class ViewSegmentTable(data: CreateTableData) extends TableBase(data) {
   override def lock(session: Session, exclusive: Boolean, forceLockEvenInMvcc: Boolean): Boolean = false
 

@@ -28,8 +28,6 @@ import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{Row, SparkSession}
 import dk.aau.modelardb.engines.spark.SparkStorage
 
-import scala.collection.mutable.ListBuffer
-
 class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbyStorage with H2Storage with SparkStorage {
 
   /** Public Methods **/
@@ -162,18 +160,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
   }
 
   override def getSegmentGroups(filter: Restriction): Iterator[SegmentGroup] = {
-    val sql = Derby.toSQL(filter, this)
-    val rs = connection
-      .createStatement()
-      .executeQuery(sql)
-
-    val groups = ListBuffer.empty[SegmentGroup]
-
-    while (rs.next()) {
-      groups += resultSetToSegmentGroup(rs)
-    }
-
-    groups.iterator
+    getSegmentGroups(Derby.restrictionToSQLPredicates(filter, this.sourceGroupCache))
   }
 
   //H2Storage

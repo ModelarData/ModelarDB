@@ -2,6 +2,7 @@ package dk.aau.modelardb.engines.derby
 
 import java.sql.{DriverManager, SQLException, Timestamp}
 import dk.aau.modelardb.Interface
+import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{Configuration, Storage}
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 import dk.aau.modelardb.engines.derby.Derby._
@@ -12,30 +13,35 @@ class Derby(configuration: Configuration, storage: Storage) {
   /** Public Methods **/
   def start(): Unit = {
     //Initialize
-    //https://db.apache.org/derby/docs/10.15/security/rsecpolicysample.html
-    //https://db.apache.org/derby/docs/10.15/devguide/cdevdvlpinmemdb.html
+    /* Documentation:
+     * https://db.apache.org/derby/docs/10.15/security/rsecpolicysample.html
+     * https://db.apache.org/derby/docs/10.15/devguide/cdevdvlpinmemdb.html */
     val connection = DriverManager.getConnection("jdbc:derby:memory:;create=true")
     val stmt = connection.createStatement()
 
     //TODO: extend the schema of both views with the columns of the user-defined dimensions at run-time
-    //https://db.apache.org/derby/docs/10.15/ref/rrefcreatefunctionstatement.html
-    //https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
-    //https://db.apache.org/derby/docs/10.15/ref/rrefsqlj15446.html
+    /* Documentation:
+     * https://db.apache.org/derby/docs/10.15/ref/rrefcreatefunctionstatement.html
+     * https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
+     * https://db.apache.org/derby/docs/10.15/ref/rrefsqlj15446.html */
     stmt.execute(CreateSegmentFunctionSQL)
     stmt.execute(CreateSegmentViewSQL)
 
-    stmt.execute(CreateDatapointFunctionSQL)
-    stmt.execute(CreateDatapointViewSQL)
+    stmt.execute(CreateDataPointFunctionSQL)
+    stmt.execute(CreateDataPointViewSQL)
 
-    //https://db.apache.org/derby/docs/10.15/ref/rrefsqljcreatetype.html
-    //https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
+    /* Documentation:
+     * https://db.apache.org/derby/docs/10.15/ref/rrefsqljcreatetype.html
+     * https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html */
     stmt.execute(CreateSegmentTypeSQL)
-    //https://db.apache.org/derby/docs/10.15/ref/rrefcreatefunctionstatement.html
-    //https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
+    /* Documentation:
+     * https://db.apache.org/derby/docs/10.15/ref/rrefcreatefunctionstatement.html
+     * https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html */
     stmt.execute(CreateToSegmentFunctionSQL)
-    //https://db.apache.org/derby/docs/10.15/ref/rrefsqljcreateaggregate.html
-    //https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
-    stmt.execute(CreateCountUDFSQL)
+    /* Documentation:
+     * https://db.apache.org/derby/docs/10.15/ref/rrefsqljcreateaggregate.html
+     * https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html */
+    stmt.execute(CreateCountUDAFSQL)
     stmt.close()
 
     //Ingestion
@@ -54,6 +60,18 @@ class Derby(configuration: Configuration, storage: Storage) {
 
 object Derby {
 
+  //Data Point View
+  val CreateDataPointFunctionSQL =
+    """|CREATE FUNCTION DataPoint()
+       |RETURNS TABLE (sid INT, timestamp TIMESTAMP, value REAL)
+       |LANGUAGE JAVA PARAMETER STYLE DERBY_JDBC_RESULT_SET
+       |READS SQL DATA
+       |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.ViewDataPoint.apply'
+       |""".stripMargin
+
+  val CreateDataPointViewSQL = "CREATE VIEW DataPoint as SELECT d.* FROM TABLE(DataPoint()) d"
+
+  //Segment View
   val CreateSegmentFunctionSQL =
     """CREATE FUNCTION Segment()
       |RETURNS TABLE (sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BLOB, gaps BLOB)
@@ -65,21 +83,12 @@ object Derby {
 
   val CreateSegmentViewSQL = "CREATE VIEW Segment as SELECT s.* FROM TABLE(Segment()) s"
 
+  //Segment View UDAFs
   val CreateSegmentTypeSQL =
     """CREATE TYPE segment
       |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.Segment'
       |LANGUAGE JAVA
       |""".stripMargin
-
-  val CreateDatapointFunctionSQL =
-    """|CREATE FUNCTION DataPoint()
-       |RETURNS TABLE (sid INT, timestamp TIMESTAMP, value REAL)
-       |LANGUAGE JAVA PARAMETER STYLE DERBY_JDBC_RESULT_SET
-       |READS SQL DATA
-       |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.ViewDataPoint.apply'
-       |""".stripMargin
-
-  val CreateDatapointViewSQL = "CREATE VIEW DataPoint as SELECT d.* FROM TABLE(DataPoint()) d"
 
   val CreateToSegmentFunctionSQL =
     """CREATE FUNCTION TO_SEGMENT(sid INT, start_time BIGINT, end_time BIGINT, resolution INT, mid INT, parameters BLOB, gaps BLOB)
@@ -88,7 +97,7 @@ object Derby {
       |LANGUAGE JAVA
       |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.Segment.toSegment'""".stripMargin
 
-  val CreateCountUDFSQL = "CREATE DERBY AGGREGATE count_s FOR segment EXTERNAL NAME 'dk.aau.modelardb.engines.derby.CountS'"
+  val CreateCountUDAFSQL = "CREATE DERBY AGGREGATE count_s FOR segment EXTERNAL NAME 'dk.aau.modelardb.engines.derby.CountS'"
 
 
   def toLong(columnValue: AnyRef): Long = {
@@ -112,7 +121,7 @@ object Derby {
     }
   }
 
-  def toSQL(restriction: Restriction, storage: Storage): String = {
+  def restrictionToSQLPredicates(restriction: Restriction, sgc: Array[Int]): String = {
 
     def loop(restriction: Restriction): String = {
       restriction match {
@@ -124,13 +133,13 @@ object Derby {
           (name.toUpperCase, op, value) match {
             case ("SID", EQUALS, value)  =>
               val sid = value.asInstanceOf[Int]
-              val gid = storage.sourceGroupCache(sid)
+              val gid = sgc(sid)
               s"GID = $gid "
             case ("SID", _, _) => throw new SQLException("Only equals [=] is supported on column SID")
             case ("START_TIME", op, value) => s"START_TIME ${lookupOperator(op)} ${toLong(value)} "
             case ("END_TIME", op, value) => s"END_TIME ${lookupOperator(op)} ${toLong(value)} "
             case ("MID", _, _) => col.toSQL + " "
-            case _ =>  throw new SQLException(s"Unsupported column $name. Only SID, MID, START_TIME, END_TIME is supported in WHERE clause")
+            case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
           }
 
         case and: Restriction.AND =>
@@ -142,9 +151,9 @@ object Derby {
     }
 
     if (restriction == null) {
-      "SELECT * FROM segment"
+      ""
     } else {
-      "SELECT * FROM segment WHERE " + loop(restriction)
+      loop(restriction)
     }
   }
 

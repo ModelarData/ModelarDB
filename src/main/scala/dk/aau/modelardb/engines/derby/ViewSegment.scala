@@ -10,73 +10,61 @@ import dk.aau.modelardb.core.SegmentGroup
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 import org.apache.derby.vti.{RestrictedVTI, Restriction}
 
-/* Documentation
+/* Documentation:
  * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfbasic.html
  * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfexample.html */
 object ViewSegment {
   def apply: ViewSegment = new ViewSegment()
 }
 
-/* Documentation
+/* Documentation:
  * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtabfuncs.html
  * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfbasic.html */
 class ViewSegment extends java.sql.ResultSet with RestrictedVTI {
 
+  /** Instance Variable **/
   private var segments: Iterator[SegmentGroup] = _
   private val currentRow = new Array[Object](7)
+  private val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[DerbyStorage]
 
-  private val storage = RDBMSEngineUtilities.getStorage match {
-    case derby: DerbyStorage => derby
-    case _ => throw new Exception("Wrong storage type received. Expected DerbyStorage.")
-  }
-
-  /* Documentation
+  /* Documentation:
    * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfrestr.html
    * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfcontext.html
    * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfoptimizer.html */
   override def initScan(columns: Array[String], restriction: Restriction): Unit = {
-    segments = (storage.getSegmentGroups(restriction) ++
+    this.segments = (this.storage.getSegmentGroups(restriction) ++
       RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
-      .flatMap(_.explode(storage.groupMetadataCache, storage.groupDerivedCache))
+      .flatMap(_.explode(this.storage.groupMetadataCache, this.storage.groupDerivedCache))
   }
 
   override def next(): Boolean = {
-    if (segments.hasNext) {
+    if (this.segments.hasNext) {
       val segment = this.segments.next()
-      currentRow(0) = segment.gid.asInstanceOf[Object] //HACK: exploded so it is a sid
-      currentRow(1) = new Timestamp(segment.startTime)
-      currentRow(2) = new Timestamp(segment.endTime)
-      currentRow(3) = storage.groupMetadataCache(segment.gid)(0).asInstanceOf[Object]
-      currentRow(4) = segment.mid.asInstanceOf[Object]
-      currentRow(5) = new SerialBlob(segment.parameters)
-      currentRow(6) = new SerialBlob(segment.offsets)
+      this.currentRow(0) = segment.gid.asInstanceOf[Object] //HACK: exploded so it is a sid
+      this.currentRow(1) = new Timestamp(segment.startTime)
+      this.currentRow(2) = new Timestamp(segment.endTime)
+      this.currentRow(3) = this.storage.groupMetadataCache(segment.gid)(0).asInstanceOf[Object]
+      this.currentRow(4) = segment.mid.asInstanceOf[Object]
+      this.currentRow(5) = new SerialBlob(segment.parameters)
+      this.currentRow(6) = new SerialBlob(segment.offsets)
       true
-    } else { false }
+    } else {
+      false
+    }
   }
 
-  override def getInt(columnIndex: Int): Int = {
-    // Because ResultSet is 1-based not zero based
-    currentRow(columnIndex - 1).asInstanceOf[Int]
-  }
-
-  override def getTimestamp(columnIndex: Int): Timestamp = {
-    // Because ResultSet is 1-based not zero based
-    currentRow(columnIndex - 1).asInstanceOf[Timestamp]
-  }
-
-  override def getBlob(columnIndex: Int): Blob = {
-    // Because ResultSet is 1-based not zero based
-    currentRow(columnIndex - 1).asInstanceOf[Blob]
-  }
-
-  override def close(): Unit = ()
-
-  override def wasNull(): Boolean = false
+  //JDBC uses 1-based indexes while arrays use 0-based indexing
+  override def getInt(columnIndex: Int): Int = this.currentRow(columnIndex - 1).asInstanceOf[Int]
+  override def getTimestamp(columnIndex: Int): Timestamp = this.currentRow(columnIndex - 1).asInstanceOf[Timestamp]
+  override def getBlob(columnIndex: Int): Blob = this.currentRow(columnIndex - 1).asInstanceOf[Blob]
 
   override def getWarnings: SQLWarning = null //HACK: nothing can go wrong....
 
-  /* Unimplemented methods */
+  override def wasNull(): Boolean = false
 
+  override def close(): Unit = ()
+
+  /** Unimplemented methods **/
   override def getInt(columnLabel: String): Int = ???
 
   override def getTimestamp(columnLabel: String): Timestamp = ???
@@ -444,5 +432,4 @@ class ViewSegment extends java.sql.ResultSet with RestrictedVTI {
   override def unwrap[T](iface: Class[T]): T = ???
 
   override def isWrapperFor(iface: Class[_]): Boolean = ???
-
 }

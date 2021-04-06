@@ -15,20 +15,20 @@ class H2(configuration: Configuration, storage: Storage) {
   /** Public Methods **/
   def start(): Unit = {
     //Engine
-    //http://www.h2database.com/html/features.html#in_memory_databases
+    //Documentation: http://www.h2database.com/html/features.html#in_memory_databases
     val connection = DriverManager.getConnection("jdbc:h2:mem:")
     val stmt = connection.createStatement()
-    //https://www.h2database.com/html/commands.html#create_table
+    //Documentation: https://www.h2database.com/html/commands.html#create_table
     stmt.execute(H2.getCreateDataPointViewSQL(configuration.getDimensions))
     stmt.execute(H2.getCreateSegmentViewSQL(configuration.getDimensions))
-    //https://www.h2database.com/html/commands.html#create_aggregate
-    stmt.execute("CREATE AGGREGATE COUNT_S FOR \"dk.aau.modelardb.engines.h2.CountS\";")
-    stmt.execute("CREATE AGGREGATE MIN_S FOR \"dk.aau.modelardb.engines.h2.MinS\";")
-    stmt.execute("CREATE AGGREGATE MAX_S FOR \"dk.aau.modelardb.engines.h2.MaxS\";")
-    stmt.execute("CREATE AGGREGATE SUM_S FOR \"dk.aau.modelardb.engines.h2.SumS\";")
-    stmt.execute("CREATE AGGREGATE AVG_S FOR \"dk.aau.modelardb.engines.h2.AvgS\";")
+    //Documentation: https://www.h2database.com/html/commands.html#create_aggregate
+    stmt.execute(H2.getCreateUDAFSQL("COUNT_S"))
+    stmt.execute(H2.getCreateUDAFSQL("MIN_S"))
+    stmt.execute(H2.getCreateUDAFSQL("MAX_S"))
+    stmt.execute(H2.getCreateUDAFSQL("SUM_S"))
+    stmt.execute(H2.getCreateUDAFSQL("AVG_S"))
 
-    stmt.execute("CREATE AGGREGATE COUNT_MONTH FOR \"dk.aau.modelardb.engines.h2.TimeCountMonth\";")
+    stmt.execute(H2.getCreateUDAFSQL("COUNT_MONTH"))
     stmt.close()
     H2.h2storage = storage.asInstanceOf[H2Storage]
 
@@ -55,17 +55,26 @@ object H2 {
   this.compareTypeMethod.setAccessible(true)
 
   /** Public Methods **/
+  //Data Point View
   def getCreateDataPointViewSQL(dimensions: Dimensions): String = {
     s"""CREATE TABLE DataPoint(sid INT, timestamp TIMESTAMP, value REAL${getDimensionColumns(dimensions)})
        |ENGINE "dk.aau.modelardb.engines.h2.ViewDataPoint";
        |""".stripMargin
   }
 
+  //Segment View
   def getCreateSegmentViewSQL(dimensions: Dimensions): String = {
     s"""CREATE TABLE Segment
        |(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BYTEA, gaps BYTEA${getDimensionColumns(dimensions)})
        |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
        |""".stripMargin
+  }
+
+  //Segment View UDAfs
+  def getCreateUDAFSQL(sqlName: String): String = {
+    val splitSQLName = sqlName.split("_")
+    val className = splitSQLName.map(_.toLowerCase.capitalize).mkString("")
+    s"""CREATE AGGREGATE $sqlName FOR "dk.aau.modelardb.engines.h2.$className";"""
   }
 
   def getH2Storage(): H2Storage = {
@@ -104,7 +113,7 @@ object H2 {
         case (name, Types.LONG) => name + " BIGINT"
         case (name, Types.FLOAT) => name + " REAL"
         case (name, Types.DOUBLE) => name + " DOUBLE"
-        case (name, Types.TEXT) => name + " TEXT"
+        case (name, Types.TEXT) => name + " VARCHAR"
       }.mkString(", ", ", ", "")
     }
   }

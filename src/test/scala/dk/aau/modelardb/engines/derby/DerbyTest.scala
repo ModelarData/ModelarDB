@@ -1,22 +1,18 @@
 package dk.aau.modelardb.engines.derby
 
 import dk.aau.modelardb.core.models.ModelFactory
-import dk.aau.modelardb.core.timeseries.TimeSeriesCSV
-import dk.aau.modelardb.core.utility.{Pair, ValueFunction}
-import dk.aau.modelardb.core.{Configuration, Correlation, Dimensions, SegmentGroup, TimeSeriesGroup}
+import dk.aau.modelardb.core.{Configuration,  Dimensions, SegmentGroup}
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
-import dk.aau.modelardb.storage.{JDBCStorage, StorageFactory}
+import dk.aau.modelardb.storage.JDBCStorage
+
 import org.apache.derby.vti.Restriction
 import org.scalamock.matchers.ArgCapture.CaptureOne
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
-import java.nio.file.{Path, Paths}
 import java.sql.{DriverManager, SQLDataException, SQLException, Statement, Timestamp}
 import java.time.Instant
-import scala.collection.JavaConverters._
-import scala.io.Source
 
 class DerbyTest extends AnyFlatSpec with MockFactory with Matchers {
 
@@ -106,7 +102,6 @@ class DerbyTest extends AnyFlatSpec with MockFactory with Matchers {
     withDerby { statement =>
       val gid = 1
       val mid = 1
-      val sid = 1
       val resolution = 10
       val startTime = Instant.ofEpochMilli(100L)
       val endTime = Instant.ofEpochMilli(110L)
@@ -141,9 +136,8 @@ class DerbyTest extends AnyFlatSpec with MockFactory with Matchers {
       statement.executeQuery(inputSql)
 
       val restriction = c1.value
-      val outputSql = Derby.toSQL(restriction, storage)
+      val outputSql = Derby.restrictionToSQLPredicates(restriction, storage.sourceGroupCache)
 
-      outputSql should startWith ("SELECT * FROM segment")
       outputSql should include ("GID = 1")
       outputSql should include (s"START_TIME >= ${startTime.toEpochMilli}")
       outputSql should include (s"START_TIME <= ${endTime.toEpochMilli}")

@@ -8,7 +8,7 @@ import dk.aau.modelardb.engines.RDBMSEngineUtilities
 object Segment {
 
   /** Public Methods  **/
-  //https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
+  //Documentation: https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
   def toSegment(gid: Int, start_time: Timestamp , end_time: Timestamp, resolution: Int, mid: Int, params: Blob, gaps: Blob): Segment = {
     val paramsAsBytes = blobToByte(params)
     val gapsAsBytes = blobToByte(gaps)
@@ -30,7 +30,7 @@ object Segment {
   val emptyArray = Array[Byte]()
 }
 
-//https://db.apache.org/derby/docs/10.15/devguide/cdevspecialudt.html
+//Documentation: https://db.apache.org/derby/docs/10.15/devguide/cdevspecialudt.html
 class Segment(val gid: Int, val start_time: Long, val end_time: Long, val resolution: Int, val mid: Int, val params: Array[Byte], val gaps: Array[Byte]) extends Externalizable {
 
   /** Public Methods  **/
@@ -38,7 +38,7 @@ class Segment(val gid: Int, val start_time: Long, val end_time: Long, val resolu
   override def readExternal(in: ObjectInput): Unit = { }
 }
 
-//https://db.apache.org/derby/docs/10.15/devguide/cdevspecialuda.html
+//Documentation: https://db.apache.org/derby/docs/10.15/devguide/cdevspecialuda.html
 //Count
 class CountBig extends Aggregator[Int, Long, CountBig] {
 

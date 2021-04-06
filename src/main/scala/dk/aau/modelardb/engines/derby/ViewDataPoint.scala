@@ -10,16 +10,34 @@ import dk.aau.modelardb.core.DataPoint
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 import scala.collection.JavaConverters.asScalaIteratorConverter
 
-
-//https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfbasic.html
-//https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfexample.html
+/* Documentation:
+ * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfbasic.html
+ * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfexample.html */
 object ViewDataPoint {
   def apply: ViewDataPoint = new ViewDataPoint()
 }
 
-//https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtabfuncs.html
-//https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfbasic.html
+/* Documentation:
+ * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtabfuncs.html
+ * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfbasic.html */
 class ViewDataPoint extends ResultSet with RestrictedVTI {
+
+  /** Instance Variables **/
+  //TODO: determine if the segments should be filtered by the segment view like done for Spark
+  private var dataPoints: Iterator[DataPoint] = _
+  private val currentRow = new Array[Object](3)
+
+  /* Documentation:
+   * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfrestr.html
+   * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfcontext.html
+   * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfoptimizer.html */
+  override def initScan(columns: Array[String], filter: Restriction): Unit = {
+    val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[DerbyStorage]
+    this.dataPoints = (storage.getSegmentGroups(filter) ++ RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
+      .flatMap(sg => sg.toSegments(storage))
+      .flatMap(segment => segment.grid().iterator().asScala)
+  }
+
   override def next(): Boolean = {
     if (this.dataPoints.hasNext) {
       val dataPoint = this.dataPoints.next()
@@ -32,10 +50,18 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
     }
   }
 
-  override def close(): Unit = ()
+  //JDBC uses 1-based indexes while arrays use 0-based indexing
+  override def getInt(columnIndex: Int): Int = this.currentRow(columnIndex - 1).asInstanceOf[Int]
+  override def getFloat(columnIndex: Int): Float = this.currentRow(columnIndex - 1).asInstanceOf[Float]
+  override def getTimestamp(columnIndex: Int): Timestamp = this.currentRow(columnIndex - 1).asInstanceOf[Timestamp]
+
+  override def getWarnings: SQLWarning = null //HACK: nothing can go wrong....
 
   override def wasNull(): Boolean = false
 
+  override def close(): Unit = ()
+
+  /** Unimplemented methods **/
   override def getString(columnIndex: Int): String = ???
 
   override def getBoolean(columnIndex: Int): Boolean = ???
@@ -44,11 +70,7 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
 
   override def getShort(columnIndex: Int): Short = ???
 
-  override def getInt(columnIndex: Int): Int = this.currentRow(columnIndex - 1).asInstanceOf[Int]
-
   override def getLong(columnIndex: Int): Long = ???
-
-  override def getFloat(columnIndex: Int): Float = this.currentRow(columnIndex - 1).asInstanceOf[Float]
 
   override def getDouble(columnIndex: Int): Double = ???
 
@@ -59,8 +81,6 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
   override def getDate(columnIndex: Int): Date = ???
 
   override def getTime(columnIndex: Int): Time = ???
-
-  override def getTimestamp(columnIndex: Int): Timestamp = this.currentRow(columnIndex - 1).asInstanceOf[Timestamp]
 
   override def getAsciiStream(columnIndex: Int): InputStream = ???
 
@@ -99,8 +119,6 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
   override def getUnicodeStream(columnLabel: String): InputStream = ???
 
   override def getBinaryStream(columnLabel: String): InputStream = ???
-
-  override def getWarnings: SQLWarning = null //HACK: nothing can go wrong....
 
   override def clearWarnings(): Unit = ???
 
@@ -411,19 +429,4 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
   override def unwrap[T](iface: Class[T]): T = ???
 
   override def isWrapperFor(iface: Class[_]): Boolean = ???
-
-  //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfrestr.html
-  //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfcontext.html
-  //https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfoptimizer.html
-  override def initScan(columns: Array[String], filter: Restriction): Unit = {
-    val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[DerbyStorage]
-    this.dataPoints = (storage.getSegmentGroups(filter) ++ RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
-      .flatMap(sg => sg.toSegments(storage))
-      .flatMap(segment => segment.grid().iterator().asScala)
-  }
-
-  /** Instance Variables **/
-  //TODO: determine if the segments should be filtered by the segment view like done for Spark
-  private var dataPoints: Iterator[DataPoint] = _
-  private val currentRow = new Array[Object](3)
 }

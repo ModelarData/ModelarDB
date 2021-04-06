@@ -9,8 +9,10 @@ import org.h2.api.AggregateFunction
 import java.util.Calendar
 import scala.collection.mutable
 
-//http://www.h2database.com/javadoc/org/h2/api/Aggregate.html
-//http://www.h2database.com/javadoc/org/h2/api/AggregateFunction.html
+
+/* Documentation:
+ * http://www.h2database.com/javadoc/org/h2/api/Aggregate.html
+ * http://www.h2database.com/javadoc/org/h2/api/AggregateFunction.html */
 //Count
 class CountS extends AggregateFunction {
 
@@ -160,7 +162,7 @@ class AvgS extends AggregateFunction {
 
 //TODO: determine if a user-defined aggregate can return multiple values?
 //TimeCount
-class TimeCountMonth extends AggregateFunction {
+class CountMonth extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
