@@ -14,7 +14,7 @@ import org.h2.value.ValueInt
 class H2(configuration: Configuration, storage: Storage) {
   /** Public Methods **/
   def start(): Unit = {
-    //Engine
+    //Initialize
     //Documentation: http://www.h2database.com/html/features.html#in_memory_databases
     val connection = DriverManager.getConnection("jdbc:h2:mem:")
     val stmt = connection.createStatement()
@@ -57,7 +57,7 @@ object H2 {
   /** Public Methods **/
   //Data Point View
   def getCreateDataPointViewSQL(dimensions: Dimensions): String = {
-    s"""CREATE TABLE DataPoint(sid INT, timestamp TIMESTAMP, value REAL${getDimensionColumns(dimensions)})
+    s"""CREATE TABLE DataPoint(sid INT, timestamp TIMESTAMP, value REAL${H2.getDimensionColumns(dimensions)})
        |ENGINE "dk.aau.modelardb.engines.h2.ViewDataPoint";
        |""".stripMargin
   }
@@ -65,7 +65,7 @@ object H2 {
   //Segment View
   def getCreateSegmentViewSQL(dimensions: Dimensions): String = {
     s"""CREATE TABLE Segment
-       |(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BYTEA, gaps BYTEA${getDimensionColumns(dimensions)})
+       |(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BYTEA, gaps BYTEA${H2.getDimensionColumns(dimensions)})
        |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
        |""".stripMargin
   }

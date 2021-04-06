@@ -24,15 +24,16 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
 
   /** Instance Variables **/
   //TODO: determine if the segments should be filtered by the segment view like done for Spark
+  private val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[DerbyStorage]
+  private val dimensionsCache = this.storage.dimensionsCache
+  private val currentRow = new Array[Object](if (dimensionsCache.isEmpty) 3 else 3 + dimensionsCache(1).length) //0 is null
   private var dataPoints: Iterator[DataPoint] = _
-  private val currentRow = new Array[Object](3)
 
   /* Documentation:
    * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfrestr.html
    * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfcontext.html
    * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfoptimizer.html */
   override def initScan(columns: Array[String], filter: Restriction): Unit = {
-    val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[DerbyStorage]
     this.dataPoints = (storage.getSegmentGroups(filter) ++ RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
       .flatMap(sg => sg.toSegments(storage))
       .flatMap(segment => segment.grid().iterator().asScala)
@@ -44,6 +45,13 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
       this.currentRow(0) = dataPoint.sid.asInstanceOf[Object]
       this.currentRow(1) = new Timestamp(dataPoint.timestamp).asInstanceOf[Object]
       this.currentRow(2) = dataPoint.value.asInstanceOf[Object]
+
+      //TODO: determine if foreach or indexes are faster and generate a method that add the members without assuming they are strings
+      var index = 3
+      for (member <- this.dimensionsCache(dataPoint.sid)) {
+        this.currentRow(index) = member.asInstanceOf[String]
+        index += 1
+      }
       true
     } else {
       false
@@ -54,6 +62,7 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
   override def getInt(columnIndex: Int): Int = this.currentRow(columnIndex - 1).asInstanceOf[Int]
   override def getFloat(columnIndex: Int): Float = this.currentRow(columnIndex - 1).asInstanceOf[Float]
   override def getTimestamp(columnIndex: Int): Timestamp = this.currentRow(columnIndex - 1).asInstanceOf[Timestamp]
+  override def getString(columnIndex: Int): String = this.currentRow(columnIndex - 1).asInstanceOf[String]
 
   override def getWarnings: SQLWarning = null //HACK: nothing can go wrong....
 
@@ -62,8 +71,6 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
   override def close(): Unit = ()
 
   /** Unimplemented methods **/
-  override def getString(columnIndex: Int): String = ???
-
   override def getBoolean(columnIndex: Int): Boolean = ???
 
   override def getByte(columnIndex: Int): Byte = ???

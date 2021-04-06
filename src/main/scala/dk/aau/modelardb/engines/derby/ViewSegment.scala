@@ -23,10 +23,12 @@ object ViewSegment {
 class ViewSegment extends java.sql.ResultSet with RestrictedVTI {
 
   /** Instance Variable **/
-  private var segments: Iterator[SegmentGroup] = _
-  private val currentRow = new Array[Object](7)
   private val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[DerbyStorage]
+  private val dimensionsCache = this.storage.dimensionsCache
+  private var segments: Iterator[SegmentGroup] = _
+  private val currentRow = new Array[Object](if (dimensionsCache.isEmpty) 7 else 7 + dimensionsCache(1).length) //0 is null
 
+  /** Public Methods **/
   /* Documentation:
    * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfrestr.html
    * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfcontext.html
@@ -47,6 +49,13 @@ class ViewSegment extends java.sql.ResultSet with RestrictedVTI {
       this.currentRow(4) = segment.mid.asInstanceOf[Object]
       this.currentRow(5) = new SerialBlob(segment.parameters)
       this.currentRow(6) = new SerialBlob(segment.offsets)
+
+      //TODO: determine if foreach or indexes are faster and generate a method that add the members without assuming they are strings
+      var index = 7
+      for (member <- this.dimensionsCache(segment.gid)) { //HACK: exploded so it is a sid
+        this.currentRow(index) = member.asInstanceOf[String]
+        index += 1
+      }
       true
     } else {
       false
@@ -57,6 +66,7 @@ class ViewSegment extends java.sql.ResultSet with RestrictedVTI {
   override def getInt(columnIndex: Int): Int = this.currentRow(columnIndex - 1).asInstanceOf[Int]
   override def getTimestamp(columnIndex: Int): Timestamp = this.currentRow(columnIndex - 1).asInstanceOf[Timestamp]
   override def getBlob(columnIndex: Int): Blob = this.currentRow(columnIndex - 1).asInstanceOf[Blob]
+  override def getString(columnIndex: Int): String = this.currentRow(columnIndex - 1).asInstanceOf[String]
 
   override def getWarnings: SQLWarning = null //HACK: nothing can go wrong....
 
@@ -74,8 +84,6 @@ class ViewSegment extends java.sql.ResultSet with RestrictedVTI {
   override def getLong(columnIndex: Int): Long = ???
 
   override def getLong(columnLabel: String): Long = ???
-
-  override def getString(columnIndex: Int): String = ???
 
   override def getBoolean(columnIndex: Int): Boolean = ???
 

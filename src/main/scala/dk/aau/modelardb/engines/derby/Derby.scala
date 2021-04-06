@@ -2,8 +2,9 @@ package dk.aau.modelardb.engines.derby
 
 import java.sql.{DriverManager, SQLException, Timestamp}
 import dk.aau.modelardb.Interface
+import dk.aau.modelardb.core.Dimensions.Types
 import dk.aau.modelardb.core.utility.Static
-import dk.aau.modelardb.core.{Configuration, Storage}
+import dk.aau.modelardb.core.{Configuration, Dimensions, Storage}
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 import dk.aau.modelardb.engines.derby.Derby._
 import org.apache.derby.vti.Restriction
@@ -19,16 +20,14 @@ class Derby(configuration: Configuration, storage: Storage) {
     val connection = DriverManager.getConnection("jdbc:derby:memory:;create=true")
     val stmt = connection.createStatement()
 
-    //TODO: extend the schema of both views with the columns of the user-defined dimensions at run-time
     /* Documentation:
      * https://db.apache.org/derby/docs/10.15/ref/rrefcreatefunctionstatement.html
      * https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
      * https://db.apache.org/derby/docs/10.15/ref/rrefsqlj15446.html */
-    stmt.execute(CreateSegmentFunctionSQL)
-    stmt.execute(CreateSegmentViewSQL)
-
-    stmt.execute(CreateDataPointFunctionSQL)
-    stmt.execute(CreateDataPointViewSQL)
+    stmt.execute(Derby.getCreateDataPointFunctionSQL(configuration.getDimensions))
+    stmt.execute(Derby.CreateDataPointViewSQL)
+    stmt.execute(Derby.getCreateSegmentFunctionSQL(configuration.getDimensions))
+    stmt.execute(Derby.CreateSegmentViewSQL)
 
     /* Documentation:
      * https://db.apache.org/derby/docs/10.15/ref/rrefsqljcreatetype.html
@@ -60,26 +59,29 @@ class Derby(configuration: Configuration, storage: Storage) {
 
 object Derby {
 
+  /** Public Methods and Variables **/
   //Data Point View
-  val CreateDataPointFunctionSQL =
-    """|CREATE FUNCTION DataPoint()
-       |RETURNS TABLE (sid INT, timestamp TIMESTAMP, value REAL)
+  def getCreateDataPointFunctionSQL(dimensions: Dimensions): String = {
+    s"""CREATE FUNCTION DataPoint()
+       |RETURNS TABLE (sid INT, timestamp TIMESTAMP, value REAL${Derby.getDimensionColumns(dimensions)})
        |LANGUAGE JAVA PARAMETER STYLE DERBY_JDBC_RESULT_SET
        |READS SQL DATA
        |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.ViewDataPoint.apply'
        |""".stripMargin
+  }
 
   val CreateDataPointViewSQL = "CREATE VIEW DataPoint as SELECT d.* FROM TABLE(DataPoint()) d"
 
   //Segment View
-  val CreateSegmentFunctionSQL =
-    """CREATE FUNCTION Segment()
-      |RETURNS TABLE (sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BLOB, gaps BLOB)
-      |LANGUAGE JAVA
-      |PARAMETER STYLE DERBY_JDBC_RESULT_SET
-      |READS SQL DATA
-      |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.ViewSegment.apply'
-      |""".stripMargin
+  def getCreateSegmentFunctionSQL(dimensions: Dimensions): String = {
+    s"""CREATE FUNCTION Segment()
+       |RETURNS TABLE (sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BLOB, gaps BLOB${Derby.getDimensionColumns(dimensions)})
+       |LANGUAGE JAVA
+       |PARAMETER STYLE DERBY_JDBC_RESULT_SET
+       |READS SQL DATA
+       |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.ViewSegment.apply'
+       |""".stripMargin
+  }
 
   val CreateSegmentViewSQL = "CREATE VIEW Segment as SELECT s.* FROM TABLE(Segment()) s"
 
@@ -158,4 +160,19 @@ object Derby {
   }
 
   val OperatorSymbols = Array("<", "=", "<=", ">", ">=", "IS NULL", "IS NOT NULL", "!=")
+
+  /** Private Methods **/
+  private def getDimensionColumns(dimensions: Dimensions): String = {
+    if (dimensions.getColumns.isEmpty) {
+      ""
+    } else {
+      dimensions.getColumns.zip(dimensions.getTypes).map {
+        case (name, Types.INT) => name + " INT"
+        case (name, Types.LONG) => name + " BIGINT"
+        case (name, Types.FLOAT) => name + " REAL"
+        case (name, Types.DOUBLE) => name + " DOUBLE"
+        case (name, Types.TEXT) => name + " LONG VARCHAR"
+      }.mkString(", ", ", ", "")
+    }
+  }
 }

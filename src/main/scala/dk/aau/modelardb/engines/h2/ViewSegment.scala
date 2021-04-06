@@ -1,7 +1,6 @@
 package dk.aau.modelardb.engines.h2
 
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
-
 import org.h2.api.TableEngine
 import org.h2.command.ddl.CreateTableData
 import org.h2.command.dml.AllColumnsForPlan
@@ -11,7 +10,7 @@ import org.h2.result.{Row, SearchRow, SortOrder}
 import org.h2.schema.Schema
 import org.h2.store.Data
 import org.h2.table._
-import org.h2.value.{Value, ValueBytes, ValueInt, ValueTimestamp}
+import org.h2.value.{Value, ValueBytes, ValueInt, ValueString, ValueTimestamp}
 
 import java.{lang, util}
 
@@ -168,6 +167,16 @@ class ViewSegmentIndex(table: Table) extends Index {
 }
 
 class ViewSegmentCursor(filter: TableFilter) extends Cursor {
+
+  /** Instance Variables **/
+  private val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[H2Storage]
+  private val dimensionsCache = this.storage.dimensionsCache
+  private val segments = (this.storage.getSegmentGroups(filter) ++
+    RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
+    .flatMap(_.explode(this.storage.groupMetadataCache, this.storage.groupDerivedCache))
+  private val currentRow = new Array[Value](if (dimensionsCache.isEmpty) 7 else 7 + dimensionsCache(1).length) //0 is null
+
+  /** Public Methods **/
   override def get(): Row = ???
 
   override def getSearchRow: SearchRow = {
@@ -184,6 +193,13 @@ class ViewSegmentCursor(filter: TableFilter) extends Cursor {
       this.currentRow(4) = ValueInt.get(segment.mid)
       this.currentRow(5) = ValueBytes.get(segment.parameters)
       this.currentRow(6) = ValueBytes.get(segment.offsets)
+
+      //TODO: determine if foreach or indexes are faster and generate a method that add the members without assuming they are strings
+      var index = 7
+      for (member <- this.dimensionsCache(segment.gid)) { //HACK: exploded so it is a sid
+        this.currentRow(index) = ValueString.get(member.asInstanceOf[String])
+        index += 1
+      }
       true
     } else {
       false
@@ -191,13 +207,6 @@ class ViewSegmentCursor(filter: TableFilter) extends Cursor {
   }
 
   override def previous(): Boolean = false
-
-  /** Instance Variables **/
-  private val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[H2Storage]
-  private val segments = (storage.getSegmentGroups(filter) ++
-    RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
-    .flatMap(_.explode(this.storage.groupMetadataCache, this.storage.groupDerivedCache))
-  private val currentRow = new Array[Value](7)
 }
 
 class ViewSegmentRow(currentRow: Array[Value]) extends Row {

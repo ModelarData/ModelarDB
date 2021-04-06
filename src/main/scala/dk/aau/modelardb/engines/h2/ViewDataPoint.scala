@@ -171,6 +171,18 @@ class ViewDataIndex(table: Table) extends Index {
 }
 
 class ViewDataCursor(filter: TableFilter) extends Cursor {
+
+  /** Instance Variables **/
+  //TODO: determine if the segments should be filtered by the segment view like done for Spark
+  private val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[H2Storage]
+  private val dimensionsCache = this.storage.dimensionsCache
+  private val currentRow = new Array[Value](if (dimensionsCache.isEmpty) 3 else 3 + dimensionsCache(1).length) //0 is null
+  private val dataPoints: Iterator[DataPoint] = (this.storage.getSegmentGroups(filter) ++
+    RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
+    .flatMap(sg => sg.toSegments(this.storage))
+    .flatMap(segment => segment.grid().iterator().asScala)
+
+  /** Public Methods **/
   override def get(): Row = ???
 
   override def getSearchRow: SearchRow = {
@@ -197,16 +209,6 @@ class ViewDataCursor(filter: TableFilter) extends Cursor {
   }
 
   override def previous(): Boolean = false
-
-  /** Instance Variables **/
-  //TODO: determine if the segments should be filtered by the segment view like done for Spark
-  private val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[H2Storage]
-  private val dimensionsCache = storage.dimensionsCache
-  private val dataPoints: Iterator[DataPoint] = (storage.getSegmentGroups(filter) ++
-    RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
-    .flatMap(sg => sg.toSegments(this.storage))
-    .flatMap(segment => segment.grid().iterator().asScala)
-  private val currentRow = new Array[Value](if (dimensionsCache.isEmpty) 3 else 3 + dimensionsCache(1).length) //0 is null
 }
 
 class ViewDataRow(currentRow: Array[Value]) extends Row {
