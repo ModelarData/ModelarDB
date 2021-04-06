@@ -36,8 +36,7 @@ public class AsyncTimeSeriesSocket extends TimeSeries implements AsyncTimeSeries
         super(source, sid, resolution);
         String[] hostAndPort = source.split(":");
         this.host = hostAndPort[0];
-        int port = Integer.parseInt(hostAndPort[1]);
-        this.port = port;
+        this.port = Integer.parseInt(hostAndPort[1]);
 
         //A small buffer is used so more time series can be ingested in parallel
         this.bufferSize = 1024;

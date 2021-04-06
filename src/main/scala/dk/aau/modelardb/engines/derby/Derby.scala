@@ -86,20 +86,20 @@ object Derby {
   val CreateSegmentViewSQL = "CREATE VIEW Segment as SELECT s.* FROM TABLE(Segment()) s"
 
   //Segment View UDAFs
-  val CreateSegmentTypeSQL =
+  val CreateSegmentTypeSQL: String =
     """CREATE TYPE segment
       |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.Segment'
       |LANGUAGE JAVA
       |""".stripMargin
 
-  val CreateToSegmentFunctionSQL =
+  val CreateToSegmentFunctionSQL: String =
     """CREATE FUNCTION TO_SEGMENT(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters LONG VARCHAR FOR BIT DATA, gaps LONG VARCHAR FOR BIT DATA)
       |RETURNS segment
       |PARAMETER STYLE JAVA NO SQL
       |LANGUAGE JAVA
       |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.Segment.toSegment'""".stripMargin
 
-  val CreateCountUDAFSQL = "CREATE DERBY AGGREGATE count_s FOR segment EXTERNAL NAME 'dk.aau.modelardb.engines.derby.CountS'"
+  val CreateCountUDAFSQL: String = "CREATE DERBY AGGREGATE count_s FOR segment EXTERNAL NAME 'dk.aau.modelardb.engines.derby.CountS'"
 
 
   def restrictionToSQLPredicates(restriction: Restriction, sgc: Array[Int]): String = {

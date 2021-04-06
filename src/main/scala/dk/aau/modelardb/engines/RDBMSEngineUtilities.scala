@@ -54,7 +54,7 @@ class RDBMSEngineUtilities(configuration: Configuration, storage: H2Storage) { /
   def getInMemorySegmentGroups(): Iterator[SegmentGroup] = {
     //TODO: determine how to ingest and execute queries in parallel without ever introducing duplicate data points
     this.cacheLock.readLock().lock()
-    val cachedTemporarySegments = this.temporarySegments.values.flatMap(sg => sg).toArray
+    val cachedTemporarySegments = this.temporarySegments.values.flatten.toArray
     val cachedFinalizedSegments = this.finalizedSegments.take(this.finalizedSegmentsIndex)
     this.cacheLock.readLock().unlock()
     cachedTemporarySegments.iterator ++ cachedFinalizedSegments.iterator

@@ -129,7 +129,7 @@ class CassandraStorage(connectionString: String) extends Storage with DerbyStora
     session.close()
 
     //Stores the current max sid for later as it is assumed to not be increased outside ModelarDB
-    this.currentMaxSID = getMaxSID
+    this.currentMaxSID = getMaxSID()
   }
 
   override def getMaxSID(): Int = {
@@ -216,7 +216,7 @@ class CassandraStorage(connectionString: String) extends Storage with DerbyStora
 
   override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): RDD[Row] = {
     //The function mapping from Cassandra to Spark rows must be stored in a local variable to not serialize the object
-    val rowsToRows = getRowsToRows
+    val rowsToRows = getRowsToRows()
     val rdd = sparkSession.sparkContext.cassandraTable(this.keyspace, "segment")
 
     //Constructs a CQL WHERE clause and the maximum start time Apache Spark should read rows until

@@ -68,5 +68,5 @@ class CountS extends Aggregator[Segment, Long, CountS] {
 
   /** Instance Variables **/
   var count: Long = 0
-  var gmc: Array[Array[Int]] = null
+  var gmc: Array[Array[Int]] = _
 }

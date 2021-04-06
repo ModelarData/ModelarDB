@@ -73,12 +73,12 @@ public class Partitioner {
         //All derived data sources that do not map to a new data source must map to a sid
         try {
             final int finalCMS = cms;
-            derivedDataSources.entrySet().forEach(e -> {
-                int sid = Integer.parseInt(e.getKey());
+            derivedDataSources.forEach((key, value) -> {
+                int sid = Integer.parseInt(key);
                 if (sid < 1 || sid > finalCMS) {
                     throw new IllegalArgumentException("CORE: sid " + sid + " in modelardb.source.derived is out of range");
                 }
-                derivedTimeSeries.put(sid, e.getValue());
+                derivedTimeSeries.put(sid, value);
             });
         } catch (NumberFormatException nfe) {
             String valueBeingParsed = nfe.getMessage().substring(18);

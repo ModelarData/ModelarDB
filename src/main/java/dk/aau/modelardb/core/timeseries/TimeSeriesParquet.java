@@ -67,14 +67,14 @@ public class TimeSeriesParquet extends TimeSeries {
                 return true;
             }
 
-            this.readStore = this.fileReader.readNextRowGroup();
-            if (this.readStore != null) {
+            PageReadStore readStore = this.fileReader.readNextRowGroup();
+            if (readStore != null) {
                 MessageType schema = this.fileReader.getFooter().getFileMetaData().getSchema();
                 GroupRecordConverter grc = new GroupRecordConverter(schema);
                 MessageColumnIO columnIO = new ColumnIOFactory().getColumnIO(schema);
-                this.recordReader = columnIO.getRecordReader(this.readStore, grc);
+                this.recordReader = columnIO.getRecordReader(readStore, grc);
                 this.rowIndex = 0;
-                this.rowCount = this.readStore.getRowCount();
+                this.rowCount = readStore.getRowCount();
                 return true;
             } else {
                 return false;
@@ -105,6 +105,5 @@ public class TimeSeriesParquet extends TimeSeries {
     private int rowIndex;
     private long rowCount;
     private ParquetFileReader fileReader;
-    private PageReadStore readStore;
     private RecordReader recordReader;
 }

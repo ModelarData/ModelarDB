@@ -51,15 +51,6 @@ public class Static {
         return bb.array();
     }
 
-    public static int indexOf(Object o, Object[] objs) {
-        for (int i = 0; i < objs.length; i++) {
-            if (objs[i].equals(o)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
     public static boolean contains(int i, int[] xs) {
         for (int x : xs) {
             if (x == i) {
@@ -170,12 +161,6 @@ public class Static {
         } catch (NumberFormatException nfe){
             return false;
         }
-    }
-
-    public static void SIGTERM() throws IOException {
-        String name = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
-        String pid = name.split("@")[0];
-        Runtime.getRuntime().exec("kill " + pid);
     }
 
     public static void info(String line) {

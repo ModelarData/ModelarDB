@@ -13,7 +13,7 @@ import org.h2.value.{Value, ValueFloat, ValueInt, ValueString, ValueTimestamp}
 import dk.aau.modelardb.core.DataPoint
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
-import scala.collection.JavaConverters.asScalaIteratorConverter
+import scala.collection.JavaConverters._
 
 //Documentation: https://www.h2database.com/html/features.html#pluggable_tables
 class ViewDataPoint extends TableEngine {

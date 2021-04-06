@@ -212,9 +212,7 @@ public class Dimensions {
         if  ( ! this.rows.isEmpty()) {
             indent = this.rows.keySet().iterator().next().length() + 3;
         }
-        for (int i = 0; i < indent; i++) {
-            sb.append(' ');
-        }
+        sb.append(" ".repeat(indent));
 
         //Adds the header
         int withComma = this.columns.length - 1;

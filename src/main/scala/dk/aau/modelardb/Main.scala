@@ -16,13 +16,14 @@ package dk.aau.modelardb
 
 import java.io.File
 import java.nio.file.{FileSystems, Paths}
-import java.util.{HashMap, TimeZone}
+import java.util.TimeZone
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
 import dk.aau.modelardb.engines.EngineFactory
 import dk.aau.modelardb.engines.spark.SparkProjector
 import dk.aau.modelardb.storage.StorageFactory
 
+import java.util
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
@@ -65,7 +66,7 @@ object Main {
     val configuration = new Configuration()
     val models = ArrayBuffer[String]()
     val sources = ArrayBuffer[String]()
-    val derivedSources = new HashMap[String, ArrayBuffer[Pair[String, ValueFunction]]]()
+    val derivedSources = new util.HashMap[String, ArrayBuffer[Pair[String, ValueFunction]]]()
     val correlations = ArrayBuffer[Correlation]()
 
 
@@ -128,7 +129,7 @@ object Main {
 
     configuration.add("modelardb.model", models.toArray)
     configuration.add("modelardb.source", sources.toArray)
-    val finalDerivedSources = new HashMap[String, Array[Pair[String, ValueFunction]]]()
+    val finalDerivedSources = new util.HashMap[String, Array[Pair[String, ValueFunction]]]()
     val dsIter = derivedSources.entrySet().iterator()
     while (dsIter.hasNext) {
       val entry = dsIter.next()

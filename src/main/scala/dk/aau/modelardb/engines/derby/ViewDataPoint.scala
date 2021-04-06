@@ -8,7 +8,7 @@ import java.util.Calendar
 import org.apache.derby.vti.{RestrictedVTI, Restriction}
 import dk.aau.modelardb.core.DataPoint
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
-import scala.collection.JavaConverters.asScalaIteratorConverter
+import scala.collection.JavaConverters._
 
 /* Documentation:
  * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfbasic.html
