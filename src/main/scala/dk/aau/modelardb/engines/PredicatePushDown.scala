@@ -48,10 +48,10 @@ object PredicatePushDown {
   }
 
   //Timestamp => BigInt
-  def toLongThroughTimestamp(columnValue: AnyRef): Timestamp= {
+  def toLongThroughTimestamp(columnValue: AnyRef): Long = {
     columnValue match {
-      case ts: Timestamp => ts
-      case str: String => Timestamp.valueOf(str)
+      case ts: Timestamp => ts.getTime
+      case str: String => Timestamp.valueOf(str).getTime
       case cl => throw new SQLException(s"ModelarDB: a ${cl.getClass} cannot be converted to a Timestamp")
     }
   }

@@ -62,6 +62,7 @@ class DerbyTest extends AnyFlatSpec with MockFactory with Matchers {
       storage.groupMetadataCache = Array(Array(), Array(resolution, 1, 1), Array(resolution, 1, 1))
       storage.groupDerivedCache = new java.util.HashMap[Integer, Array[Int]]()
       storage.modelCache = Array(model, model)
+      storage.dimensionsCache = Array(null, Array())
 
       val dimensions = new Dimensions(Array())
 
@@ -75,7 +76,7 @@ class DerbyTest extends AnyFlatSpec with MockFactory with Matchers {
 
       RDBMSEngineUtilities.initialize(config, storage)
 
-      statement.execute(Derby.CreateSegmentFunctionSQL)
+      statement.execute(Derby.getCreateSegmentFunctionSQL(new Dimensions(Array())))
       statement.execute(Derby.CreateSegmentViewSQL)
 
       val rs = statement.executeQuery("""SELECT * FROM segment""")
@@ -119,13 +120,14 @@ class DerbyTest extends AnyFlatSpec with MockFactory with Matchers {
       storage.groupDerivedCache = new java.util.HashMap[Integer, Array[Int]]()
       storage.modelCache = Array(model, model)
       storage.sourceGroupCache = Array(gid, gid)
+      storage.dimensionsCache = Array(null, Array())
 
       val config = new Configuration()
       config.add("modelardb.batch", 1)
 
       RDBMSEngineUtilities.initialize(config, storage)
 
-      statement.execute(Derby.CreateSegmentFunctionSQL)
+      statement.execute(Derby.getCreateSegmentFunctionSQL(new Dimensions(Array())))
       statement.execute(Derby.CreateSegmentViewSQL)
 
       val inputSql = s"""SELECT *

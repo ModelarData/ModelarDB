@@ -56,6 +56,7 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
       storage.groupMetadataCache = Array(Array(), Array(resolution, 1, 1), Array(resolution, 1, 1))
       storage.groupDerivedCache = new java.util.HashMap[Integer, Array[Int]]()
       storage.modelCache = Array(model, model)
+      storage.dimensionsCache = Array(null, Array())
 
       val config = new Configuration()
       config.add("modelardb.batch", 1)

@@ -173,7 +173,7 @@ class ViewSegmentCursor(filter: TableFilter) extends Cursor {
   private val segments = (this.storage.getSegmentGroups(filter) ++
     RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
     .flatMap(_.explode(this.storage.groupMetadataCache, this.storage.groupDerivedCache))
-  private val currentRow = new Array[Value](if (dimensionsCache.length == 1) 7 else 7 + dimensionsCache(1).length) //0 is null
+  private val currentRow = new Array[Value](if (this.dimensionsCache.length == 1) 7 else 7 + this.dimensionsCache(1).length) //0 is null
   private val currentViewRow = new ViewRow()
 
   /** Public Methods **/

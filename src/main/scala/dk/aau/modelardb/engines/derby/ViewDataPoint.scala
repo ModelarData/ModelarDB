@@ -27,14 +27,14 @@ class ViewDataPoint extends ResultSet with RestrictedVTI {
   private val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[DerbyStorage]
   private val dimensionsCache = this.storage.dimensionsCache
   private var dataPoints: Iterator[DataPoint] = _
-  private val currentRow = new Array[Object](if (dimensionsCache.length == 1) 3 else 3 + dimensionsCache(1).length) //0 is null
+  private val currentRow = new Array[Object](if (this.dimensionsCache.length == 1) 3 else 3 + this.dimensionsCache(1).length) //0 is null
 
   /* Documentation:
    * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfrestr.html
    * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfcontext.html
    * https://db.apache.org/derby/docs/10.15/devguide/cdevspecialtfoptimizer.html */
   override def initScan(columns: Array[String], filter: Restriction): Unit = {
-    this.dataPoints = (storage.getSegmentGroups(filter) ++ RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
+    this.dataPoints = (this.storage.getSegmentGroups(filter) ++ RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
       .flatMap(sg => sg.toSegments(storage))
       .flatMap(segment => segment.grid().iterator().asScala)
   }
