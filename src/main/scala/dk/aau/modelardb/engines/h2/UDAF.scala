@@ -13,6 +13,7 @@ import scala.collection.mutable
 /* Documentation:
  * http://www.h2database.com/javadoc/org/h2/api/Aggregate.html
  * http://www.h2database.com/javadoc/org/h2/api/AggregateFunction.html */
+//Simple Aggregates
 //Count
 class CountS extends AggregateFunction {
 
@@ -159,10 +160,9 @@ class AvgS extends AggregateFunction {
   private var updated = false
 }
 
-
-//TODO: determine if a user-defined aggregate can return multiple values?
-//TimeCount
-class CountMonth extends AggregateFunction {
+//TODO: determine if a user-defined aggregate can return multiple rows?
+//Time Aggregates
+abstract class TimeAggregate(level: Int, bufferSize: Int, initialValue: Double) extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
@@ -174,26 +174,93 @@ class CountMonth extends AggregateFunction {
 
   override def add(row: Any): Unit = {
     val segment = UDAF.rowToSegment(row)
-    segment.cube(this.calendar, 2, this.aggregate, this.result)
+    segment.cube(this.calendar, level, this.aggregate, this.current)
   }
 
   override def getResult: AnyRef = {
+    val result = mutable.HashMap[Int, Double]()
+    this.current.zipWithIndex.filter(_._1 != initialValue).foreach(t => {
+      result(t._2) = t._1
+    })
+    scala.collection.immutable.SortedMap[Int, Long]() ++ result
+  }
+
+  /** Instance Variables **/
+  private val calendar = Calendar.getInstance()
+  protected val current: Array[Double] = Array.fill(bufferSize){initialValue}
+  protected val aggregate: CubeFunction
+}
+
+//CountTime
+class CountTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, 0.0) {
+
+  /** Public Methods **/
+  override def getResult: AnyRef = {
     val result = mutable.HashMap[Int, Long]()
-    this.result.zipWithIndex.filter(_._1 != 0).foreach(t => {
+    this.current.zipWithIndex.filter(_._1 != 0).foreach(t => {
       result(t._2) = t._1.longValue()
     })
     scala.collection.immutable.SortedMap[Int, Long]() ++ result
   }
 
   /** Instance Variables **/
-  private val result: Array[Double] = Array.fill(13){0}
-  private val calendar = Calendar.getInstance()
-  private val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
+  override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
     total(field) = total(field) + segment.length.toDouble
   }
 }
+class CountMonth extends CountTime(2, 13)
 
+//MinTime
+class MinTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, Double.MaxValue) {
+  override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
+    total(field) = Math.min(total(field), segment.min())
+  }
+}
+class MinMonth extends MinTime(2, 13)
 
+//MaxTime
+class MaxTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, Double.MinValue) {
+  override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
+    total(field) = Math.max(total(field), segment.max())
+  }
+}
+class MaxMonth extends MaxTime(2, 13)
+
+//SumTime
+class SumTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, 0.0) {
+  override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
+    total(field) = total(field) + segment.sum()
+  }
+}
+class SumMonth extends SumTime(2, 13)
+
+//AgTime
+class AvgTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, 2 * bufferSize, 0.0) {
+
+  /** Public Methods **/
+  override def getResult: AnyRef = {
+    val sums = this.current.length / 2
+    val result = mutable.HashMap[Int, Double]()
+    for (i <- 0 until sums) {
+      val count = sums + i - 1
+      if (this.current(count) != 0.0) {
+        result(i) = this.current(i) / this.current(count)
+      }
+    }
+    scala.collection.immutable.SortedMap[Int, Double]() ++ result
+  }
+
+  /** Instance Variables **/
+  override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
+    //HACK: as field is continuous all of the counts are stored after the sum
+    val count = bufferSize + field - 1
+    total(field) = total(field) + segment.sum
+    total(count) = total(count) + segment.length
+  }
+}
+class AvgMonth extends AvgTime(2, 13)
+
+//UDFs
 object UDAF {
   /** Type Variables **/
   private val mc = H2.getH2Storage().modelCache

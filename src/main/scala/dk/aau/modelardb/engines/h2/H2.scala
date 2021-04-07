@@ -30,6 +30,10 @@ class H2(configuration: Configuration, storage: Storage) {
     stmt.execute(H2.getCreateUDAFSQL("AVG_S"))
 
     stmt.execute(H2.getCreateUDAFSQL("COUNT_MONTH"))
+    stmt.execute(H2.getCreateUDAFSQL("MIN_MONTH"))
+    stmt.execute(H2.getCreateUDAFSQL("MAX_MONTH"))
+    stmt.execute(H2.getCreateUDAFSQL("SUM_MONTH"))
+    stmt.execute(H2.getCreateUDAFSQL("AVG_MONTH"))
     stmt.close()
     H2.h2storage = storage.asInstanceOf[H2Storage]
 
