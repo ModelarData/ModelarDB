@@ -47,7 +47,6 @@ public class Configuration {
 
     public boolean contains(String value) {
         return this.values.containsKey(value);
-
     }
 
     public void containsOrThrow(String... values) {
@@ -192,6 +191,10 @@ public class Configuration {
                     throw new UnsupportedOperationException("ModelarDB: modelardb.ingestors must be a positive number of ingestors");
                 }
                 break;
+            case "modelardb.timezone":
+                if ( ! (value instanceof String) || ! TimeZone.getTimeZone((String) value).getID().equals(value)) {
+                    throw new UnsupportedOperationException("ModelarDB: modelardb.timezone must be a valid time zone id");
+                }
         }
     }
 
