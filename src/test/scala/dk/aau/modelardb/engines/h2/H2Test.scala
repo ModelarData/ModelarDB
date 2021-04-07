@@ -4,7 +4,7 @@ import dk.aau.modelardb.core.models.ModelFactory
 import dk.aau.modelardb.core.{Configuration, Dimensions, SegmentGroup}
 import dk.aau.modelardb.engines.RDBMSEngineUtilities
 import dk.aau.modelardb.storage.JDBCStorage
-import org.h2.expression.condition.Comparison
+import org.h2.expression.condition.{Comparison, ConditionAndOr}
 import org.h2.jdbc.JdbcSQLDataException
 import org.h2.table.TableFilter
 import org.scalamock.scalatest.MockFactory
@@ -32,6 +32,8 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
     compareTypeField.setAccessible(true)
     val compareTypeMethod = classOf[Comparison].getDeclaredMethod("getCompareOperator", classOf[Int])
     compareTypeMethod.setAccessible(true)
+    val andOrTypeField = classOf[ConditionAndOr].getDeclaredField("andOrType")
+    andOrTypeField.setAccessible(true)
   }
 
 

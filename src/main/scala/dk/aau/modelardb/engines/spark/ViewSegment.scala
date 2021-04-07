@@ -64,7 +64,7 @@ class ViewSegment(dimensions: Array[StructField]) (@transient val sqlContext: SQ
       case sources.LessThan("sid", sid: Int) => sources.In("gid", PredicatePushDown.sidRangeToGidIn(0, sid - 1, sgc))
       case sources.LessThanOrEqual("sid", sid: Int) => sources.In("gid", PredicatePushDown.sidRangeToGidIn(0, sid, sgc))
       case sources.In("sid", values: Array[Any]) => sources.In("gid", PredicatePushDown.sidInToGidIn(values, sgc))
-      case sources.EqualTo(column: String, value: Any) if idc.containsKey(column) =>
+      case sources.EqualTo(column: String, value: Any) if idc.containsKey(column.toUpperCase) => //idc's keys are uppercase for consistency
         sources.In("gid", PredicatePushDown.dimensionEqualToGidIn(column, value, idc))
       case f => f
     }

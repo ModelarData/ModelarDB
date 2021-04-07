@@ -8,7 +8,8 @@ import dk.aau.modelardb.core.{Configuration, Dimensions, Storage}
 import dk.aau.modelardb.engines.{PredicatePushDown, RDBMSEngineUtilities}
 import dk.aau.modelardb.engines.derby.Derby._
 import org.apache.derby.vti.Restriction
-import org.apache.derby.vti.Restriction.ColumnQualifier.{ORDER_OP_EQUALS, ORDER_OP_GREATEROREQUALS, ORDER_OP_GREATERTHAN, ORDER_OP_ISNOTNULL, ORDER_OP_ISNULL, ORDER_OP_LESSOREQUALS, ORDER_OP_LESSTHAN, ORDER_OP_NOT_EQUALS}
+import org.apache.derby.vti.Restriction.ColumnQualifier._
+import java.util.HashMap
 
 class Derby(configuration: Configuration, storage: Storage) {
   /** Public Methods **/
@@ -101,35 +102,37 @@ object Derby {
 
   val CreateCountUDAFSQL: String = "CREATE DERBY AGGREGATE count_s FOR segment EXTERNAL NAME 'dk.aau.modelardb.engines.derby.CountS'"
 
-
-  def restrictionToSQLPredicates(restriction: Restriction, sgc: Array[Int]): String = {
-    //TODO: Determine if Derby really does not support predicate push-down for IN clauses
-    if (restriction == null) {
-      ""
-    } else {
-      restriction match {
-        case col: Restriction.ColumnQualifier =>
-          val name = col.getColumnName
-          val op = col.getComparisonOperator
-          val value = col.getConstantOperand
-
-          (name, op, value) match {
-            //SID
-            case ("SID", ORDER_OP_EQUALS, value) => s" GID = " + PredicatePushDown.sidPointToGidPoint(value.asInstanceOf[Int], sgc)
-            //TIMESTAMP
-            //START TIME
-            case ("START_TIME", op, value) => s"START_TIME ${lookupOperator(op)} ${PredicatePushDown.toLongThroughTimestamp(value)} "
-            //END TIME
-            case ("END_TIME", op, value) => s"END_TIME ${lookupOperator(op)} ${PredicatePushDown.toLongThroughTimestamp(value)} "
-            //DIMENSIONS
-            case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
-          }
-        case and: Restriction.AND =>
-          restrictionToSQLPredicates(and.getLeftChild, sgc) + " AND " + restrictionToSQLPredicates(and.getRightChild, sgc)
-        case or: Restriction.OR =>
-          restrictionToSQLPredicates(or.getLeftChild, sgc) + " OR " + restrictionToSQLPredicates(or.getRightChild, sgc)
-        case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
-      }
+  def restrictionToSQLPredicates(restriction: Restriction, sgc: Array[Int], idc: HashMap[String, HashMap[Object, Array[Integer]]]): String = {
+    restriction match {
+      //NO PREDICATES (and IN...)
+      case null => ""
+      //COLUMN OPERATOR VALUE
+      case col: Restriction.ColumnQualifier =>
+        val name = col.getColumnName
+        val op = col.getComparisonOperator
+        val value = col.getConstantOperand
+        (name, op, value) match {
+          //SID
+          case ("SID", ORDER_OP_EQUALS, value) => s" GID = " + PredicatePushDown.sidPointToGidPoint(value.asInstanceOf[Int], sgc)
+          //TIMESTAMP
+          case ("TIMESTAMP", ORDER_OP_GREATERTHAN, value) => " END_TIME > " + PredicatePushDown.toLongThroughTimestamp(value)
+          case ("TIMESTAMP", ORDER_OP_GREATEROREQUALS, value) => "END_TIME >= " + PredicatePushDown.toLongThroughTimestamp(value)
+          case ("TIMESTAMP", ORDER_OP_LESSTHAN, value) => " START_TIME < " + PredicatePushDown.toLongThroughTimestamp(value)
+          case ("TIMESTAMP", ORDER_OP_LESSOREQUALS, value) => "START_TIME <= " + PredicatePushDown.toLongThroughTimestamp(value)
+          case ("TIMESTAMP", ORDER_OP_EQUALS, value) => "(START_TIME <= " + PredicatePushDown.toLongThroughTimestamp(value) +
+            " AND END_TIME >= " + PredicatePushDown.toLongThroughTimestamp(value) + ")"
+          //DIMENSIONS
+          case (column, ORDER_OP_EQUALS, value) if idc.containsKey(column) =>
+            PredicatePushDown.dimensionEqualToGidIn(column, value, idc).mkString("GID IN (", ",", ")")
+          case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
+        }
+      //AND
+      case and: Restriction.AND =>
+        "(" + restrictionToSQLPredicates(and.getLeftChild, sgc, idc) + " AND " + restrictionToSQLPredicates(and.getRightChild, sgc, idc) + ")"
+      //OR
+      case or: Restriction.OR =>
+        "(" + restrictionToSQLPredicates(or.getLeftChild, sgc, idc) + " OR " + restrictionToSQLPredicates(or.getRightChild, sgc, idc) + ")"
+      case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
     }
   }
 
@@ -143,21 +146,11 @@ object Derby {
         case (name, Types.LONG) => name + " BIGINT"
         case (name, Types.FLOAT) => name + " REAL"
         case (name, Types.DOUBLE) => name + " DOUBLE"
-        case (name, Types.TEXT) => name + " LONG VARCHAR"
+        //LONG VARCHAR is not used as comparisons between 'LONG VARCHAR (UCS_BASIC)' and 'CHAR (UCS_BASIC)' are not
+        // supported, and columns of type 'LONG VARCHAR' may not be used in CREATE INDEX, ORDER BY, GROUP BY, UNION,
+        // INTERSECT, EXCEPT or DISTINCT statements because comparisons are not supported for that type.
+        case (name, Types.TEXT) => name + " VARCHAR(256)"
       }.mkString(", ", ", ", "")
-    }
-  }
-
-  private def lookupOperator(opCode: Int): String = {
-    opCode match {
-      case ORDER_OP_EQUALS => "="
-      case ORDER_OP_GREATEROREQUALS => ">="
-      case ORDER_OP_GREATERTHAN => ">"
-      case ORDER_OP_ISNOTNULL => "IS NOT NULL"
-      case ORDER_OP_ISNULL => "IS NULL"
-      case ORDER_OP_LESSOREQUALS => "<="
-      case ORDER_OP_LESSTHAN => "<"
-      case ORDER_OP_NOT_EQUALS => "!="
     }
   }
 }

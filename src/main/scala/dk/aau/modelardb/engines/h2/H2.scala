@@ -6,10 +6,11 @@ import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{Configuration, Dimensions, Storage}
 import dk.aau.modelardb.engines.{PredicatePushDown, RDBMSEngineUtilities}
 import dk.aau.modelardb.core.Dimensions.Types
-import org.h2.expression.condition.{Comparison, ConditionInConstantSet}
-import org.h2.expression.{ExpressionColumn, ValueExpression}
-import org.h2.table.TableFilter
-import org.h2.value.ValueInt
+import org.h2.expression.condition.{Comparison, ConditionAndOr, ConditionInConstantSet}
+import org.h2.expression.{Expression, ExpressionColumn, ValueExpression}
+import org.h2.value.{ValueInt, ValueTimestamp}
+import java.util.TimeZone
+import java.util.HashMap
 
 class H2(configuration: Configuration, storage: Storage) {
   /** Public Methods **/
@@ -53,6 +54,8 @@ object H2 {
   this.compareTypeField.setAccessible(true)
   private val compareTypeMethod = classOf[Comparison].getDeclaredMethod("getCompareOperator", classOf[Int])
   this.compareTypeMethod.setAccessible(true)
+  private val andOrTypeField = classOf[ConditionAndOr].getDeclaredField("andOrType")
+  this.andOrTypeField.setAccessible(true)
 
   /** Public Methods **/
   //Data Point View
@@ -81,26 +84,34 @@ object H2 {
     this.h2storage
   }
 
-  def tableFilterToSQLPredicates(filter: TableFilter, sgc: Array[Int]): String = {
-    //TODO: determine if the optimize method actually does anything and if it should be called before parsing the predicates
-    //TODO: decide if data point view => segment view predicates should be converted here (must be implemented for
-    // each of the storage format) or in segment view like for Spark (slower as three queries are run instead of two)
-    //TODO: Implement a proper recursive parser for H2's "AST" using a stack or @tailrec to ensure it is tail recursive
-    //TODO: Determine if the comparison operator really cannot be extracted in a proper way
-    filter.getSelect.getCondition() match {
+  def expressionToSQLPredicates(expression: Expression, sgc: Array[Int], idc: HashMap[String, HashMap[Object, Array[Integer]]]): String = {
+    expression match {
+      //NO PREDICATES
       case null => ""
+      //COLUMN OPERATOR VALUE
       case c: Comparison =>
         //HACK: Extracts the operator from the sub-tree using reflection as compareType seems to be completely inaccessible
         val operator = this.compareTypeMethod.invoke(c, this.compareTypeField.get(c)).asInstanceOf[String]
         val ec = c.getSubexpression(0).asInstanceOf[ExpressionColumn]
         val ve = c.getSubexpression(1).asInstanceOf[ValueExpression]
-        val columnNameAndOperator = ec.getColumnName + " " + operator
-        columnNameAndOperator match {
+        (ec.getColumnName, operator) match {
           //SID
-          case "SID =" => val sid = ve.getValue(null).asInstanceOf[ValueInt].getInt
-            s" GID = " + PredicatePushDown.sidPointToGidPoint(sid, sgc)
+          case ("SID", "=") => val sid = ve.getValue(null).asInstanceOf[ValueInt].getInt
+            " GID = " + PredicatePushDown.sidPointToGidPoint(sid, sgc)
+          //TIMESTAMP
+          case ("TIMESTAMP", ">") => " END_TIME > " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
+          case ("TIMESTAMP", ">=") => " END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
+          case ("TIMESTAMP", "<") => " STAT_TIME < " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
+          case ("TIMESTAMP", "<=") => " START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
+          case ("TIMESTAMP", "=") =>
+            " (START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime +
+              " AND END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime + ")"
+          //DIMENSIONS
+          case (columnName, "=") if idc.containsKey(columnName) =>
+            PredicatePushDown.dimensionEqualToGidIn(columnName, ve.getValue(null).getObject(), idc).mkString("GID IN (", ",", ")")
           case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
         }
+      //IN
       case cin: ConditionInConstantSet =>
         cin.getSubexpression(0).getColumnName match {
           case "SID" =>
@@ -111,6 +122,14 @@ object H2 {
             PredicatePushDown.sidInToGidIn(sids, sgc).mkString("GID IN (", ",", ")")
           case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
         }
+      //AND
+      case cao: ConditionAndOr if this.andOrTypeField.getInt(cao) == ConditionAndOr.AND => "(" +
+        expressionToSQLPredicates(cao.getSubexpression(0), sgc, idc) + " AND " +
+        expressionToSQLPredicates(cao.getSubexpression(1), sgc, idc) + ")"
+      //OR
+      case cao: ConditionAndOr if this.andOrTypeField.getInt(cao) == ConditionAndOr.OR => "(" +
+        expressionToSQLPredicates(cao.getSubexpression(0), sgc, idc) + " OR " +
+        expressionToSQLPredicates(cao.getSubexpression(1), sgc, idc) + ")"
       case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
     }
   }

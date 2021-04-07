@@ -160,12 +160,12 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
   }
 
   override def getSegmentGroups(filter: Restriction): Iterator[SegmentGroup] = {
-    getSegmentGroups(Derby.restrictionToSQLPredicates(filter, this.sourceGroupCache).strip())
+    getSegmentGroups(Derby.restrictionToSQLPredicates(filter, this.sourceGroupCache, this.inverseDimensionsCache).strip())
   }
 
   //H2Storage
   override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
-    getSegmentGroups(H2.tableFilterToSQLPredicates(filter, this.sourceGroupCache).strip())
+    getSegmentGroups(H2.expressionToSQLPredicates(filter.getSelect.getCondition(), this.sourceGroupCache, this.inverseDimensionsCache).strip())
   }
 
   //SparkStorage
@@ -210,10 +210,10 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
 
   private def getSegmentGroups(predicates: String): Iterator[SegmentGroup] = {
     val stmt = this.connection.createStatement()
+    Static.info(s"ModelarDB: constructed predicates ($predicates)")
     val results = if (predicates.isEmpty) {
       stmt.executeQuery("SELECT * FROM segment")
     } else {
-      Static.info(s"ModelarDB: constructed predicates ($predicates)")
       stmt.executeQuery("SELECT * FROM segment WHERE " + predicates)
     }
     new Iterator[SegmentGroup] {

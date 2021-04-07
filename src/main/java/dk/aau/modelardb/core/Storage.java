@@ -151,7 +151,8 @@ public abstract class Storage {
                 Arrays.sort(inner); //Sorted to make it simpler to read when debugging
                 innerAsArray.put(ies.getKey(), inner);
             }
-            this.inverseDimensionsCache.put(oes.getKey(), innerAsArray);
+            //Some engines converts all columns to uppercase so the caches key must also be so
+            this.inverseDimensionsCache.put(oes.getKey().toUpperCase(), innerAsArray);
         }
 
         //Finally the sorted groupMetadataCache is created and consists of resolution and sids
