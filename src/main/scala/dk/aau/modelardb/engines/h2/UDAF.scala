@@ -9,7 +9,6 @@ import org.h2.api.AggregateFunction
 import java.util.Calendar
 import scala.collection.mutable
 
-
 /* Documentation:
  * http://www.h2database.com/javadoc/org/h2/api/Aggregate.html
  * http://www.h2database.com/javadoc/org/h2/api/AggregateFunction.html */
@@ -263,7 +262,7 @@ class AvgMonth extends AvgTime(2, 13)
 //UDFs
 object UDAF {
   /** Type Variables **/
-  private val mc = H2.getH2Storage().modelCache
+  private val mc = H2.h2Storage.modelCache
 
   /** Public Methods **/
   def rowToSegment(row: Any): Segment = {

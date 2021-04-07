@@ -41,8 +41,15 @@ class Derby(configuration: Configuration, storage: Storage) {
     /* Documentation:
      * https://db.apache.org/derby/docs/10.15/ref/rrefsqljcreateaggregate.html
      * https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html */
-    stmt.execute(CreateCountUDAFSQL)
+    stmt.execute(Derby.getCreateUDAFSQL("COUNT_S"))
+    stmt.execute(Derby.getCreateUDAFSQL("MIN_S"))
+    stmt.execute(Derby.getCreateUDAFSQL("MAX_S"))
+    stmt.execute(Derby.getCreateUDAFSQL("SUM_S"))
+    stmt.execute(Derby.getCreateUDAFSQL("AVG_S"))
+
+    stmt.execute(Derby.getCreateUDAFSQL("COUNT_MONTH"))
     stmt.close()
+    Derby.derbyStorage = storage.asInstanceOf[DerbyStorage]
 
     //Ingestion
     RDBMSEngineUtilities.initialize(configuration, storage)
@@ -59,6 +66,9 @@ class Derby(configuration: Configuration, storage: Storage) {
 }
 
 object Derby {
+
+  /** Type Variables * */
+  var derbyStorage: DerbyStorage = _
 
   /** Public Methods and Variables **/
   //Data Point View
@@ -89,7 +99,7 @@ object Derby {
   //Segment View UDAFs
   val CreateSegmentTypeSQL: String =
     """CREATE TYPE segment
-      |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.Segment'
+      |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.SegmentData'
       |LANGUAGE JAVA
       |""".stripMargin
 
@@ -98,9 +108,13 @@ object Derby {
       |RETURNS segment
       |PARAMETER STYLE JAVA NO SQL
       |LANGUAGE JAVA
-      |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.Segment.toSegment'""".stripMargin
+      |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.SegmentData.apply'""".stripMargin
 
-  val CreateCountUDAFSQL: String = "CREATE DERBY AGGREGATE count_s FOR segment EXTERNAL NAME 'dk.aau.modelardb.engines.derby.CountS'"
+  def getCreateUDAFSQL(sqlName: String): String = {
+    val splitSQLName = sqlName.split("_")
+    val className = splitSQLName.map(_.toLowerCase.capitalize).mkString("")
+    s"""CREATE DERBY AGGREGATE $sqlName FOR segment EXTERNAL NAME 'dk.aau.modelardb.engines.derby.$className'"""
+  }
 
   def restrictionToSQLPredicates(restriction: Restriction, sgc: Array[Int], idc: HashMap[String, HashMap[Object, Array[Integer]]]): String = {
     restriction match {
