@@ -11,7 +11,7 @@ import org.scalamock.scalatest.MockFactory
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
-import java.sql.{DriverManager, SQLDataException, SQLException, Statement, Timestamp}
+import java.sql.{DriverManager, SQLDataException, SQLException, Statement}
 import java.time.Instant
 
 class DerbyTest extends AnyFlatSpec with MockFactory with Matchers {
@@ -133,16 +133,13 @@ class DerbyTest extends AnyFlatSpec with MockFactory with Matchers {
       val inputSql = s"""SELECT *
                   |FROM segment
                   |WHERE sid = 1
-                  |AND start_time BETWEEN '${Timestamp.from(startTime).toString}' AND '${Timestamp.from(endTime).toString}'
                   |""".stripMargin
       statement.executeQuery(inputSql)
 
       val restriction = c1.value
-      val outputSql = Derby.restrictionToSQLPredicates(restriction, storage.sourceGroupCache)
+      val outputSql = Derby.restrictionToSQLPredicates(restriction, storage.sourceGroupCache, storage.inverseDimensionsCache)
 
       outputSql should include ("GID = 1")
-      outputSql should include (s"START_TIME >= ${startTime.toEpochMilli}")
-      outputSql should include (s"START_TIME <= ${endTime.toEpochMilli}")
 
     }
   }
