@@ -81,8 +81,9 @@ object Derby {
   def getCreateDataPointFunctionSQL(dimensions: Dimensions): String = {
     s"""CREATE FUNCTION DataPoint()
        |RETURNS TABLE (sid INT, timestamp TIMESTAMP, value REAL${Derby.getDimensionColumns(dimensions)})
-       |LANGUAGE JAVA PARAMETER STYLE DERBY_JDBC_RESULT_SET
-       |READS SQL DATA
+       |LANGUAGE JAVA
+       |PARAMETER STYLE DERBY_JDBC_RESULT_SET
+       |NO SQL
        |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.ViewDataPoint.apply'
        |""".stripMargin
   }
@@ -97,12 +98,12 @@ object Derby {
        |RETURNS TABLE (sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters LONG VARCHAR FOR BIT DATA, gaps LONG VARCHAR FOR BIT DATA${Derby.getDimensionColumns(dimensions)})
        |LANGUAGE JAVA
        |PARAMETER STYLE DERBY_JDBC_RESULT_SET
-       |READS SQL DATA
+       |NO SQL
        |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.ViewSegment.apply'
        |""".stripMargin
   }
 
-  val CreateSegmentViewSQL = "CREATE VIEW Segment as SELECT s.* FROM TABLE(Segment()) s"
+  val CreateSegmentViewSQL = "CREATE VIEW Segment AS SELECT s.* FROM TABLE(Segment()) s"
 
   //Segment View UDAFs
   val CreateSegmentTypeSQL: String =
@@ -114,8 +115,9 @@ object Derby {
   val CreateToSegmentFunctionSQL: String =
     """CREATE FUNCTION TO_SEGMENT(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters LONG VARCHAR FOR BIT DATA, gaps LONG VARCHAR FOR BIT DATA)
       |RETURNS segment
-      |PARAMETER STYLE JAVA NO SQL
       |LANGUAGE JAVA
+      |PARAMETER STYLE JAVA
+      |NO SQL
       |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.SegmentData.apply'""".stripMargin
 
   val CreateMapTypeSQL: String =
@@ -127,7 +129,10 @@ object Derby {
   def getCreateUDAFSQL(sqlName: String, returnType: String): String = {
     val splitSQLName = sqlName.split("_")
     val className = splitSQLName.map(_.toLowerCase.capitalize).mkString("")
-    s"""CREATE DERBY AGGREGATE $sqlName FOR segment RETURNS $returnType EXTERNAL NAME 'dk.aau.modelardb.engines.derby.$className'"""
+    s"""CREATE DERBY AGGREGATE $sqlName FOR segment
+       |RETURNS $returnType
+       |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.$className'
+       |""".stripMargin
   }
 
   def restrictionToSQLPredicates(restriction: Restriction, sgc: Array[Int], idc: HashMap[String, HashMap[Object, Array[Integer]]]): String = {

@@ -62,6 +62,7 @@ object H2 {
 
   /** Public Methods **/
   //Data Point View
+  //Documentation: https://www.h2database.com/html/features.html#pluggable_tables
   def getCreateDataPointViewSQL(dimensions: Dimensions): String = {
     s"""CREATE TABLE DataPoint(sid INT, timestamp TIMESTAMP, value REAL${H2.getDimensionColumns(dimensions)})
        |ENGINE "dk.aau.modelardb.engines.h2.ViewDataPoint";
@@ -69,9 +70,10 @@ object H2 {
   }
 
   //Segment View
+  //Documentation: https://www.h2database.com/html/features.html#pluggable_tables
   def getCreateSegmentViewSQL(dimensions: Dimensions): String = {
     s"""CREATE TABLE Segment
-       |(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BYTEA, gaps BYTEA${H2.getDimensionColumns(dimensions)})
+       |(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BINARY, gaps BINARY${H2.getDimensionColumns(dimensions)})
        |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
        |""".stripMargin
   }
