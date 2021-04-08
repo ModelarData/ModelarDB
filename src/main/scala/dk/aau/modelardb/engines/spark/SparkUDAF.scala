@@ -157,7 +157,7 @@ class AvgS extends Aggregator[Input, (Double, Long), Option[Double]] {
 
   override def reduce(currentAvg: (Double, Long), input: Input): (Double, Long) = {
     val segment = this.inputToSegment(input)
-    (currentAvg._1 + segment.sum() / this.scalingCache(input.sid), currentAvg._2 + segment.length())
+    (currentAvg._1 + (segment.sum() / this.scalingCache(input.sid)), currentAvg._2 + segment.length())
   }
 
   override def merge(total1: (Double, Long), total2: (Double, Long)): (Double, Long) = {
@@ -280,7 +280,7 @@ class TimeMax(override val level: Int, override val size: Int) extends TimeUDAF[
 
   /** Instance Variables **/
   override protected val aggregate: CubeFunction = (segment: Segment, sid: Int, field: Int, total: Array[Double]) => {
-    total(field) = Math.max(total(field).toFloat, segment.max / scalingCache(sid))
+    total(field) = Math.max(total(field).toFloat, segment.max / this.scalingCache(sid))
   }
   override protected val default: Double = Double.NegativeInfinity
 }
@@ -306,7 +306,7 @@ class TimeSum(override val level: Int, override val size: Int) extends TimeUDAF[
   override protected val aggregate: CubeFunction = (segment: Segment, sid: Int, field: Int, total: Array[Double]) => {
     //HACK: as field is continuous all indicators that values were added are stored after the sum
     val hasSum = (size / 2) + field - 1
-    total(field) = total(field) + (segment.sum() / scalingCache(sid))
+    total(field) = total(field) + (segment.sum() / this.scalingCache(sid))
     total(hasSum) = 1.0
   }
 }
@@ -332,7 +332,7 @@ class TimeAvg(override val level: Int, override val size: Int) extends TimeUDAF[
   override protected val aggregate: CubeFunction = (segment: Segment, sid: Int, field: Int, total: Array[Double]) => {
     //HACK: as field is continuous all of the counts are stored after the sum
     val count = (size / 2) + field - 1
-    total(field) = total(field) + segment.sum / scalingCache(sid)
+    total(field) = total(field) + (segment.sum / this.scalingCache(sid))
     total(count) = total(count) + segment.length
   }
 }

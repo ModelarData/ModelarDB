@@ -85,10 +85,11 @@ class MinS extends Aggregator[SegmentData, Float, MinS] {
   /** Public Methods  **/
   override def init(): Unit = {
     this.mc = RDBMSEngineUtilities.getStorage.modelCache
+    this.sfc = RDBMSEngineUtilities.getStorage.sourceScalingFactorCache
   }
 
   override def accumulate(v: SegmentData): Unit = {
-    this.min = Math.min(this.min, v.decompress(mc).min())
+    this.min = Math.min(this.min, v.decompress(mc).min() / this.sfc(v.sid))
   }
 
   override def merge(a: MinS): Unit = {
@@ -96,12 +97,17 @@ class MinS extends Aggregator[SegmentData, Float, MinS] {
   }
 
   override def terminate(): Float = {
-    this.min
+    if (this.min == Float.PositiveInfinity) {
+      null.asInstanceOf[Float]
+    } else {
+      this.min
+    }
   }
 
   /** Instance Variables **/
-  private var min: Float = Float.MaxValue
+  private var min: Float = Float.PositiveInfinity
   private var mc: Array[Model] = _
+  private var sfc: Array[Float] = _
 }
 
 //Max
@@ -110,10 +116,11 @@ class MaxS extends Aggregator[SegmentData, Float, MaxS] {
   /** Public Methods  **/
   override def init(): Unit = {
     this.mc = RDBMSEngineUtilities.getStorage.modelCache
+    this.sfc = RDBMSEngineUtilities.getStorage.sourceScalingFactorCache
   }
 
   override def accumulate(v: SegmentData): Unit = {
-    this.max = Math.max(this.max, v.decompress(this.mc).max())
+    this.max = Math.max(this.max, v.decompress(this.mc).max() / this.sfc(v.sid))
   }
 
   override def merge(a: MaxS): Unit = {
@@ -121,12 +128,17 @@ class MaxS extends Aggregator[SegmentData, Float, MaxS] {
   }
 
   override def terminate(): Float = {
-    this.max
+    if (this.max == Float.NegativeInfinity) {
+      null.asInstanceOf[Float]
+    } else {
+      this.max
+    }
   }
 
   /** Instance Variables **/
-  private var max: Float = Float.MinValue
+  private var max: Float = Float.NegativeInfinity
   private var mc: Array[Model] = _
+  private var sfc: Array[Float] = _
 }
 
 //Sum
@@ -135,23 +147,32 @@ class SumS extends Aggregator[SegmentData, Float, SumS] {
   /** Public Methods  **/
   override def init(): Unit = {
     this.mc = RDBMSEngineUtilities.getStorage.modelCache
+    this.sfc = RDBMSEngineUtilities.getStorage.sourceScalingFactorCache
   }
 
   override def accumulate(v: SegmentData): Unit = {
-    this.sum = this.sum + v.decompress(this.mc).sum()
+    this.sum = this.sum + (v.decompress(this.mc).sum() / this.sfc(v.sid))
+    this.updated = true
   }
 
   override def merge(a: SumS): Unit = {
     this.sum = this.sum + a.sum
+    this.updated = this.updated || a.updated
   }
 
   override def terminate(): Float = {
-    this.sum.toFloat
+    if (this.updated) {
+      this.sum.toFloat
+    } else {
+      null.asInstanceOf[Float]
+    }
   }
 
   /** Instance Variables **/
   private var sum: Double = 0.0
   private var mc: Array[Model] = _
+  private var sfc: Array[Float] = _
+  private var updated = false
 }
 
 //Avg
@@ -160,12 +181,13 @@ class AvgS extends Aggregator[SegmentData, Float, AvgS] {
   /** Public Methods  **/
   override def init(): Unit = {
     this.mc = RDBMSEngineUtilities.getStorage.modelCache
+    this.sfc = RDBMSEngineUtilities.getStorage.sourceScalingFactorCache
   }
 
   override def accumulate(v: SegmentData): Unit = {
     val segment = v.decompress(this.mc)
-    this.sum = this.sum + segment.sum()
-    this.count = this.count + segment.length()
+    this.sum += segment.sum() / this.sfc(v.sid)
+    this.count += segment.length()
   }
 
   override def merge(a: AvgS): Unit = {
@@ -174,13 +196,18 @@ class AvgS extends Aggregator[SegmentData, Float, AvgS] {
   }
 
   override def terminate(): Float = {
-    (this.sum / this.count).toFloat
+    if (this.count == 0) {
+      null.asInstanceOf[Float]
+    } else {
+      (this.sum / this.count).toFloat
+    }
   }
 
   /** Instance Variables **/
   private var sum: Double = 0.0
   private var count: Long = 0
   private var mc: Array[Model] = _
+  private var sfc: Array[Float] = _
 }
 
 //TODO: determine if a user-defined aggregate can return multiple rows?
@@ -195,6 +222,7 @@ abstract class TimeAggregate(level: Int, bufferSize: Int, initialValue: Double) 
   /** Public Methods  **/
   override def init(): Unit = {
     this.mc = RDBMSEngineUtilities.getStorage.modelCache
+    this.sfc = RDBMSEngineUtilities.getStorage.sourceScalingFactorCache
   }
 
   override def accumulate(v: SegmentData): Unit = {
@@ -209,15 +237,21 @@ abstract class TimeAggregate(level: Int, bufferSize: Int, initialValue: Double) 
 
   override def terminate(): DerbyMap = {
     val result = mutable.HashMap[Int, AnyVal]()
-    this.current.zipWithIndex.filter(_._1 != 0.0).foreach(t => {
+    this.current.zipWithIndex.filter(_._1 != initialValue).foreach(t => {
       result(t._2) = t._1
     })
-    new DerbyMap(result)
+
+    if (result.isEmpty) {
+      null
+    } else {
+      new DerbyMap(result)
+    }
   }
 
   /** Instance Variables **/
   private val calendar = Calendar.getInstance()
   private var mc: Array[Model] = _
+  protected var sfc: Array[Float] = _
   protected val current: Array[Double] = Array.fill(bufferSize){initialValue}
   protected val aggregate: CubeFunction
 }
@@ -231,7 +265,12 @@ class CountTime(level: Int, bufferSize: Int) extends TimeAggregate(level, buffer
     this.current.zipWithIndex.filter(_._1 != 0.0).foreach(t => {
       result(t._2) = t._1.toLong
     })
-    new DerbyMap(result)
+
+    if (result.isEmpty) {
+      null
+    } else {
+      new DerbyMap(result)
+    }
   }
 
   /** Instance Variables **/
@@ -242,17 +281,17 @@ class CountTime(level: Int, bufferSize: Int) extends TimeAggregate(level, buffer
 class CountMonth extends CountTime(2, 13)
 
 //MinTime
-class MinTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, Double.MaxValue) {
+class MinTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, Double.PositiveInfinity) {
   override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
-    total(field) = Math.min(total(field), segment.min())
+    total(field) = Math.min(total(field), segment.min() / this.sfc(segment.sid))
   }
 }
 class MinMonth extends MinTime(2, 13)
 
 //MaxTime
-class MaxTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, Double.MinValue) {
+class MaxTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, Double.NegativeInfinity) {
   override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
-    total(field) = Math.max(total(field), segment.max())
+    total(field) = Math.max(total(field), segment.max() / this.sfc(segment.sid))
   }
 }
 class MaxMonth extends MaxTime(2, 13)
@@ -260,7 +299,7 @@ class MaxMonth extends MaxTime(2, 13)
 //SumTime
 class SumTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, 0.0) {
   override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
-    total(field) = total(field) + segment.sum()
+    total(field) = total(field) + (segment.sum() / this.sfc(segment.sid))
   }
 }
 class SumMonth extends SumTime(2, 13)
@@ -278,14 +317,19 @@ class AvgTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInte
         result(i) = this.current(i) / this.current(count)
       }
     }
-    new DerbyMap(result)
+
+    if (result.isEmpty) {
+      null
+    } else {
+      new DerbyMap(result)
+    }
   }
 
   /** Instance Variables **/
   override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
     //HACK: as field is continuous all of the counts are stored after the sum
     val count = bufferSize + field - 1
-    total(field) = total(field) + segment.sum
+    total(field) = total(field) + (segment.sum / this.sfc(segment.sid))
     total(count) = total(count) + segment.length
   }
 }

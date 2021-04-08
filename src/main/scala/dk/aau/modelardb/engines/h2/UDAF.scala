@@ -47,6 +47,7 @@ class MinS extends AggregateFunction {
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
     this.mc = RDBMSEngineUtilities.getStorage.modelCache
+    this.sfc  = RDBMSEngineUtilities.getStorage.sourceScalingFactorCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -54,15 +55,15 @@ class MinS extends AggregateFunction {
   }
 
   override def add(row: Any): Unit = {
-    this.min = Math.min(this.min, rowToSegment(row).min())
-    this.updated = true
+    val segment = rowToSegment(row)
+    this.min = Math.min(this.min, segment.min() / this.sfc(segment.sid))
   }
 
   override def getResult: AnyRef = {
-    if (updated) {
-      this.min.asInstanceOf[AnyRef]
-    } else {
+    if (this.min == Float.PositiveInfinity) {
       null
+    } else {
+      this.min.asInstanceOf[AnyRef]
     }
   }
 
@@ -75,9 +76,9 @@ class MinS extends AggregateFunction {
   }
 
   /** Instance Variables **/
-  private var min: Float = Float.MaxValue
-  private var updated = false
+  private var min: Float = Float.PositiveInfinity
   private var mc: Array[Model] = _
+  private var sfc: Array[Float] = _
 }
 
 //Max
@@ -86,6 +87,7 @@ class MaxS extends AggregateFunction {
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
     this.mc = RDBMSEngineUtilities.getStorage.modelCache
+    this.sfc  = RDBMSEngineUtilities.getStorage.sourceScalingFactorCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -93,15 +95,15 @@ class MaxS extends AggregateFunction {
   }
 
   override def add(row: Any): Unit = {
-    this.max = Math.max(this.max, rowToSegment(row).max())
-    this.updated = true
+    val segment = rowToSegment(row)
+    this.max = Math.max(this.max, segment.max() / this.sfc(segment.sid))
   }
 
   override def getResult: AnyRef = {
-    if (updated) {
-      this.max.asInstanceOf[AnyRef]
-    } else {
+    if (this.max == Float.NegativeInfinity) {
       null
+    } else {
+      this.max.asInstanceOf[AnyRef]
     }
   }
 
@@ -114,9 +116,9 @@ class MaxS extends AggregateFunction {
   }
 
   /** Instance Variables **/
-  private var max: Float = Float.MinValue
-  private var updated = false
+  private var max: Float = Float.NegativeInfinity
   private var mc: Array[Model] = _
+  private var sfc: Array[Float] = _
 }
 
 //Sum
@@ -125,6 +127,7 @@ class SumS extends AggregateFunction {
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
     this.mc = RDBMSEngineUtilities.getStorage.modelCache
+    this.sfc  = RDBMSEngineUtilities.getStorage.sourceScalingFactorCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -132,12 +135,13 @@ class SumS extends AggregateFunction {
   }
 
   override def add(row: Any): Unit = {
-    this.sum += rowToSegment(row).sum()
-    this.updated = true
+    val segment = rowToSegment(row)
+    this.sum += rowToSegment(row).sum() / this.sfc(segment.sid)
+    this.added = true
   }
 
   override def getResult: AnyRef = {
-    if (updated) {
+    if (this.added) {
       this.sum.toFloat.asInstanceOf[AnyRef]
     } else {
       null
@@ -154,8 +158,9 @@ class SumS extends AggregateFunction {
 
   /** Instance Variables **/
   private var sum: Double = 0.0
-  private var updated = false
+  private var added = false
   private var mc: Array[Model] = _
+  private var sfc: Array[Float] = _
 }
 
 //Avg
@@ -164,6 +169,7 @@ class AvgS extends AggregateFunction {
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
     this.mc = RDBMSEngineUtilities.getStorage.modelCache
+    this.sfc  = RDBMSEngineUtilities.getStorage.sourceScalingFactorCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -172,16 +178,15 @@ class AvgS extends AggregateFunction {
 
   override def add(row: Any): Unit = {
     val segment = rowToSegment(row)
-    this.sum += segment.sum()
+    this.sum += segment.sum() / this.sfc(segment.sid)
     this.count += segment.length()
-    this.updated = true
   }
 
   override def getResult: AnyRef = {
-    if (updated) {
-      (this.sum / this.count).toFloat.asInstanceOf[AnyRef]
-    } else {
+    if (this.count == 0) {
       null
+    } else {
+      (this.sum / this.count).toFloat.asInstanceOf[AnyRef]
     }
   }
 
@@ -196,8 +201,8 @@ class AvgS extends AggregateFunction {
   /** Instance Variables **/
   private var sum: Double = 0.0
   private var count: Long = 0
-  private var updated = false
   private var mc: Array[Model] = _
+  private var sfc: Array[Float] = _
 }
 
 //TODO: determine if a user-defined aggregate can return multiple rows?
@@ -207,6 +212,7 @@ abstract class TimeAggregate(level: Int, bufferSize: Int, initialValue: Double) 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
     this.mc = RDBMSEngineUtilities.getStorage.modelCache
+    this.sfc  = RDBMSEngineUtilities.getStorage.sourceScalingFactorCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -222,7 +228,12 @@ abstract class TimeAggregate(level: Int, bufferSize: Int, initialValue: Double) 
     this.current.zipWithIndex.filter(_._1 != initialValue).foreach(t => {
       result(t._2) = t._1
     })
-    scala.collection.immutable.SortedMap[Int, Long]() ++ result
+
+    if (result.isEmpty) {
+      null
+    } else {
+      scala.collection.immutable.SortedMap[Int, Double]() ++ result
+    }
   }
 
   def rowToSegment(row: Any): Segment = {
@@ -236,6 +247,7 @@ abstract class TimeAggregate(level: Int, bufferSize: Int, initialValue: Double) 
   /** Instance Variables **/
   private val calendar = Calendar.getInstance()
   private var mc: Array[Model] = _
+  protected var sfc: Array[Float] = _
   protected val current: Array[Double] = Array.fill(bufferSize){initialValue}
   protected val aggregate: CubeFunction
 }
@@ -249,7 +261,12 @@ class CountTime(level: Int, bufferSize: Int) extends TimeAggregate(level, buffer
     this.current.zipWithIndex.filter(_._1 != 0).foreach(t => {
       result(t._2) = t._1.longValue()
     })
-    scala.collection.immutable.SortedMap[Int, Long]() ++ result
+
+    if (result.isEmpty) {
+      null
+    } else {
+      scala.collection.immutable.SortedMap[Int, Long]() ++ result
+    }
   }
 
   /** Instance Variables **/
@@ -262,7 +279,7 @@ class CountMonth extends CountTime(2, 13)
 //MinTime
 class MinTime(level: Int, bufferSize: Int) extends TimeAggregate(level, bufferSize, Double.MaxValue) {
   override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
-    total(field) = Math.min(total(field), segment.min())
+    total(field) = Math.min(total(field), segment.min() / this.sfc(segment.sid))
   }
 }
 class MinMonth extends MinTime(2, 13)
@@ -270,7 +287,7 @@ class MinMonth extends MinTime(2, 13)
 //MaxTime
 class MaxTime(level: Int, bufferSize: Int) extends TimeAggregate(level, bufferSize, Double.MinValue) {
   override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
-    total(field) = Math.max(total(field), segment.max())
+    total(field) = Math.max(total(field), segment.max() / this.sfc(segment.sid))
   }
 }
 class MaxMonth extends MaxTime(2, 13)
@@ -278,7 +295,7 @@ class MaxMonth extends MaxTime(2, 13)
 //SumTime
 class SumTime(level: Int, bufferSize: Int) extends TimeAggregate(level, bufferSize, 0.0) {
   override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
-    total(field) = total(field) + segment.sum()
+    total(field) = total(field) + (segment.sum() / this.sfc(segment.sid))
   }
 }
 class SumMonth extends SumTime(2, 13)
@@ -296,14 +313,19 @@ class AvgTime(level: Int, bufferSize: Int) extends TimeAggregate(level, 2 * buff
         result(i) = this.current(i) / this.current(count)
       }
     }
-    scala.collection.immutable.SortedMap[Int, Double]() ++ result
+
+    if (result.isEmpty) {
+      null
+    } else {
+      scala.collection.immutable.SortedMap[Int, Double]() ++ result
+    }
   }
 
   /** Instance Variables **/
   override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
     //HACK: as field is continuous all of the counts are stored after the sum
     val count = bufferSize + field - 1
-    total(field) = total(field) + segment.sum
+    total(field) = total(field) + (segment.sum / this.sfc(segment.sid))
     total(count) = total(count) + segment.length
   }
 }

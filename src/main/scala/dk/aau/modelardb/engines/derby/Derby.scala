@@ -48,10 +48,10 @@ class Derby(configuration: Configuration, storage: Storage) {
      * https://db.apache.org/derby/docs/10.15/ref/rrefsqljcreateaggregate.html
      * https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html */
     stmt.execute(Derby.getCreateUDAFSQL("COUNT_S", "bigint"))
-    stmt.execute(Derby.getCreateUDAFSQL("MIN_S", "float"))
-    stmt.execute(Derby.getCreateUDAFSQL("MAX_S", "float"))
-    stmt.execute(Derby.getCreateUDAFSQL("SUM_S", "float"))
-    stmt.execute(Derby.getCreateUDAFSQL("AVG_S", "float"))
+    stmt.execute(Derby.getCreateUDAFSQL("MIN_S", "real"))
+    stmt.execute(Derby.getCreateUDAFSQL("MAX_S", "real"))
+    stmt.execute(Derby.getCreateUDAFSQL("SUM_S", "real"))
+    stmt.execute(Derby.getCreateUDAFSQL("AVG_S", "real"))
 
     stmt.execute(Derby.getCreateUDAFSQL("COUNT_MONTH", "map"))
     stmt.execute(Derby.getCreateUDAFSQL("MIN_MONTH", "map"))
