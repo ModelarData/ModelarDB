@@ -12,6 +12,7 @@ import java.util.Calendar
 import scala.collection.mutable
 
 //Documentation: https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html
+//Segment Type
 object SegmentData {
   def apply(sid: Int, start_time: Timestamp , end_time: Timestamp, resolution: Int, mid: Int, params: Array[Byte], gaps: Array[Byte]): SegmentData = {
     new SegmentData(sid, start_time.getTime, end_time.getTime, resolution, mid, params, gaps)
@@ -28,6 +29,7 @@ class SegmentData(val sid: Int, val start_time: Long, val end_time: Long, val re
 }
 
 //Documentation: https://db.apache.org/derby/docs/10.15/devguide/cdevspecialuda.html
+//Simple Aggregates
 //Count
 class CountBig extends Aggregator[Int, Long, CountBig] {
 
@@ -82,7 +84,7 @@ class MinS extends Aggregator[SegmentData, Float, MinS] {
 
   /** Public Methods  **/
   override def init(): Unit = {
-    this.mc = Derby.derbyStorage.modelCache
+    this.mc = RDBMSEngineUtilities.getStorage.modelCache
   }
 
   override def accumulate(v: SegmentData): Unit = {
@@ -107,7 +109,7 @@ class MaxS extends Aggregator[SegmentData, Float, MaxS] {
 
   /** Public Methods  **/
   override def init(): Unit = {
-    this.mc = Derby.derbyStorage.modelCache
+    this.mc = RDBMSEngineUtilities.getStorage.modelCache
   }
 
   override def accumulate(v: SegmentData): Unit = {
@@ -132,7 +134,7 @@ class SumS extends Aggregator[SegmentData, Float, SumS] {
 
   /** Public Methods  **/
   override def init(): Unit = {
-    this.mc = Derby.derbyStorage.modelCache
+    this.mc = RDBMSEngineUtilities.getStorage.modelCache
   }
 
   override def accumulate(v: SegmentData): Unit = {
@@ -157,7 +159,7 @@ class AvgS extends Aggregator[SegmentData, Float, AvgS] {
 
   /** Public Methods  **/
   override def init(): Unit = {
-    this.mc = Derby.derbyStorage.modelCache
+    this.mc = RDBMSEngineUtilities.getStorage.modelCache
   }
 
   override def accumulate(v: SegmentData): Unit = {
@@ -183,43 +185,108 @@ class AvgS extends Aggregator[SegmentData, Float, AvgS] {
 
 //TODO: determine if a user-defined aggregate can return multiple rows?
 //Time Aggregates
-class CountMonth extends Aggregator[SegmentData, Map[Int, Long], CountMonth] {
+class DerbyMap(values: mutable.HashMap[Int, AnyVal]) {
+  val result = scala.collection.immutable.SortedMap[Int, AnyVal]() ++ values
+  override def toString(): String = this.result.toString()
+}
+
+abstract class TimeAggregate(level: Int, bufferSize: Int, initialValue: Double) extends Aggregator[SegmentData, DerbyMap, TimeAggregate] {
 
   /** Public Methods  **/
   override def init(): Unit = {
-    this.mc = Derby.derbyStorage.modelCache
+    this.mc = RDBMSEngineUtilities.getStorage.modelCache
   }
 
   override def accumulate(v: SegmentData): Unit = {
-    val segment = v.decompress(this.mc)
-    segment.cube(this.calendar, 2, this.aggregate, this.current)
+    v.decompress(this.mc).cube(this.calendar, level, this.aggregate, this.current)
   }
 
-  override def merge(a: CountMonth): Unit = {
+  override def merge(a: TimeAggregate): Unit = {
     for (i <- this.current.indices){
       this.current(i) += a.current(i)
     }
   }
 
-  override def terminate(): Map[Int, Long] = {
-    val result = mutable.HashMap[Int, Long]()
+  override def terminate(): DerbyMap = {
+    val result = mutable.HashMap[Int, AnyVal]()
     this.current.zipWithIndex.filter(_._1 != 0.0).foreach(t => {
-      result(t._2) = t._1.toLong
+      result(t._2) = t._1
     })
-    //TODO: determine if multiple values can be returned https://db.apache.org/derby/docs/10.15/publishedapi/org.apache.derby.engine/org/apache/derby/agg/Aggregator.html#terminate()
-    //  - Return map error:     java.sql.SQLSyntaxErrorException: User defined aggregate 'APP'.'COUNT_MONTH' is bound to external class 'dk.aau.modelardb.engines.derby.CountMonth'. The parameter types of that class could not be resolved.
-    //  - Return array error: java.sql.SQLSyntaxErrorException: User defined aggregate 'APP'.'COUNT_MONTH' was declared to have this return Java type: 'class dk.aau.modelardb.engines.derby.SegmentData'. This does not extend the following actual bounding return Java type: 'class [J'.
-    scala.collection.immutable.SortedMap[Int, Long]() ++ result
+    new DerbyMap(result)
   }
 
   /** Instance Variables **/
-  private var mc: Array[Model] = _
   private val calendar = Calendar.getInstance()
-  //protected val current: Array[Double] = Array.fill(bufferSize){initialValue}
-  protected val current: Array[Double] = Array.fill(13){0.0}
-  //protected val aggregate: CubeFunction
- // override
+  private var mc: Array[Model] = _
+  protected val current: Array[Double] = Array.fill(bufferSize){initialValue}
+  protected val aggregate: CubeFunction
+}
+
+//CountTime
+class CountTime(level: Int, bufferSize: Int) extends TimeAggregate(level, bufferSize, 0.0) {
+
+  /** Public Methods **/
+  override def terminate(): DerbyMap = {
+    val result = mutable.HashMap[Int, AnyVal]()
+    this.current.zipWithIndex.filter(_._1 != 0.0).foreach(t => {
+      result(t._2) = t._1.toLong
+    })
+    new DerbyMap(result)
+  }
+
+  /** Instance Variables **/
   protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
     total(field) = total(field) + segment.length.toDouble
   }
 }
+class CountMonth extends CountTime(2, 13)
+
+//MinTime
+class MinTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, Double.MaxValue) {
+  override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
+    total(field) = Math.min(total(field), segment.min())
+  }
+}
+class MinMonth extends MinTime(2, 13)
+
+//MaxTime
+class MaxTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, Double.MinValue) {
+  override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
+    total(field) = Math.max(total(field), segment.max())
+  }
+}
+class MaxMonth extends MaxTime(2, 13)
+
+//SumTime
+class SumTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, 0.0) {
+  override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
+    total(field) = total(field) + segment.sum()
+  }
+}
+class SumMonth extends SumTime(2, 13)
+
+//AgTime
+class AvgTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, 2 * bufferSize, 0.0) {
+
+  /** Public Methods **/
+  override def terminate(): DerbyMap = {
+    val sums = this.current.length / 2
+    val result = mutable.HashMap[Int, AnyVal]()
+    for (i <- 0 until sums) {
+      val count = sums + i - 1
+      if (this.current(count) != 0.0) {
+        result(i) = this.current(i) / this.current(count)
+      }
+    }
+    new DerbyMap(result)
+  }
+
+  /** Instance Variables **/
+  override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
+    //HACK: as field is continuous all of the counts are stored after the sum
+    val count = bufferSize + field - 1
+    total(field) = total(field) + segment.sum
+    total(count) = total(count) + segment.length
+  }
+}
+class AvgMonth extends AvgTime(2, 13)

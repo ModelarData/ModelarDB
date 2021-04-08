@@ -35,7 +35,6 @@ class H2(configuration: Configuration, storage: Storage) {
     stmt.execute(H2.getCreateUDAFSQL("SUM_MONTH"))
     stmt.execute(H2.getCreateUDAFSQL("AVG_MONTH"))
     stmt.close()
-    H2.h2Storage = storage.asInstanceOf[H2Storage]
 
     //Ingestion
     RDBMSEngineUtilities.initialize(configuration, storage)
@@ -53,8 +52,7 @@ class H2(configuration: Configuration, storage: Storage) {
 
 object H2 {
 
-  /** Type Variables * */
-  var h2Storage: H2Storage = _
+  /** Instance Variables * */
   private val compareTypeField = classOf[Comparison].getDeclaredField("compareType")
   this.compareTypeField.setAccessible(true)
   private val compareTypeMethod = classOf[Comparison].getDeclaredMethod("getCompareOperator", classOf[Int])
@@ -78,7 +76,7 @@ object H2 {
        |""".stripMargin
   }
 
-  //Segment View UDAfs
+  //Segment View UDAFs
   def getCreateUDAFSQL(sqlName: String): String = {
     val splitSQLName = sqlName.split("_")
     val className = splitSQLName.map(_.toLowerCase.capitalize).mkString("")

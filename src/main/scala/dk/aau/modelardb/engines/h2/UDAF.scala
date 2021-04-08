@@ -1,7 +1,8 @@
 package dk.aau.modelardb.engines.h2
 
-import dk.aau.modelardb.core.models.Segment
+import dk.aau.modelardb.core.models.{Model, Segment}
 import dk.aau.modelardb.core.utility.CubeFunction
+import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
 import java.sql.{Connection, Timestamp}
 import org.h2.api.AggregateFunction
@@ -45,6 +46,7 @@ class MinS extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
+    this.mc = RDBMSEngineUtilities.getStorage.modelCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -52,7 +54,7 @@ class MinS extends AggregateFunction {
   }
 
   override def add(row: Any): Unit = {
-    this.min = Math.min(this.min, UDAF.rowToSegment(row).min())
+    this.min = Math.min(this.min, rowToSegment(row).min())
     this.updated = true
   }
 
@@ -64,9 +66,18 @@ class MinS extends AggregateFunction {
     }
   }
 
+  def rowToSegment(row: Any): Segment = {
+    val values = row.asInstanceOf[Array[Object]]
+    val model = this.mc(values(4).asInstanceOf[Int])
+    model.get(
+      values(0).asInstanceOf[Int], values(1).asInstanceOf[Timestamp].getTime, values(2).asInstanceOf[Timestamp].getTime,
+      values(3).asInstanceOf[Int], values(5).asInstanceOf[Array[Byte]], values(6).asInstanceOf[Array[Byte]])
+  }
+
   /** Instance Variables **/
   private var min: Float = Float.MaxValue
   private var updated = false
+  private var mc: Array[Model] = _
 }
 
 //Max
@@ -74,6 +85,7 @@ class MaxS extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
+    this.mc = RDBMSEngineUtilities.getStorage.modelCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -81,7 +93,7 @@ class MaxS extends AggregateFunction {
   }
 
   override def add(row: Any): Unit = {
-    this.max = Math.max(this.max, UDAF.rowToSegment(row).max())
+    this.max = Math.max(this.max, rowToSegment(row).max())
     this.updated = true
   }
 
@@ -93,9 +105,18 @@ class MaxS extends AggregateFunction {
     }
   }
 
+  def rowToSegment(row: Any): Segment = {
+    val values = row.asInstanceOf[Array[Object]]
+    val model = this.mc(values(4).asInstanceOf[Int])
+    model.get(
+      values(0).asInstanceOf[Int], values(1).asInstanceOf[Timestamp].getTime, values(2).asInstanceOf[Timestamp].getTime,
+      values(3).asInstanceOf[Int], values(5).asInstanceOf[Array[Byte]], values(6).asInstanceOf[Array[Byte]])
+  }
+
   /** Instance Variables **/
   private var max: Float = Float.MinValue
   private var updated = false
+  private var mc: Array[Model] = _
 }
 
 //Sum
@@ -103,6 +124,7 @@ class SumS extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
+    this.mc = RDBMSEngineUtilities.getStorage.modelCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -110,7 +132,7 @@ class SumS extends AggregateFunction {
   }
 
   override def add(row: Any): Unit = {
-    this.sum += UDAF.rowToSegment(row).sum()
+    this.sum += rowToSegment(row).sum()
     this.updated = true
   }
 
@@ -122,9 +144,18 @@ class SumS extends AggregateFunction {
     }
   }
 
+  def rowToSegment(row: Any): Segment = {
+    val values = row.asInstanceOf[Array[Object]]
+    val model = this.mc(values(4).asInstanceOf[Int])
+    model.get(
+      values(0).asInstanceOf[Int], values(1).asInstanceOf[Timestamp].getTime, values(2).asInstanceOf[Timestamp].getTime,
+      values(3).asInstanceOf[Int], values(5).asInstanceOf[Array[Byte]], values(6).asInstanceOf[Array[Byte]])
+  }
+
   /** Instance Variables **/
   private var sum: Double = 0.0
   private var updated = false
+  private var mc: Array[Model] = _
 }
 
 //Avg
@@ -132,6 +163,7 @@ class AvgS extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
+    this.mc = RDBMSEngineUtilities.getStorage.modelCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -139,7 +171,7 @@ class AvgS extends AggregateFunction {
   }
 
   override def add(row: Any): Unit = {
-    val segment = UDAF.rowToSegment(row)
+    val segment = rowToSegment(row)
     this.sum += segment.sum()
     this.count += segment.length()
     this.updated = true
@@ -153,10 +185,19 @@ class AvgS extends AggregateFunction {
     }
   }
 
+  def rowToSegment(row: Any): Segment = {
+    val values = row.asInstanceOf[Array[Object]]
+    val model = this.mc(values(4).asInstanceOf[Int])
+    model.get(
+      values(0).asInstanceOf[Int], values(1).asInstanceOf[Timestamp].getTime, values(2).asInstanceOf[Timestamp].getTime,
+      values(3).asInstanceOf[Int], values(5).asInstanceOf[Array[Byte]], values(6).asInstanceOf[Array[Byte]])
+  }
+
   /** Instance Variables **/
   private var sum: Double = 0.0
   private var count: Long = 0
   private var updated = false
+  private var mc: Array[Model] = _
 }
 
 //TODO: determine if a user-defined aggregate can return multiple rows?
@@ -165,6 +206,7 @@ abstract class TimeAggregate(level: Int, bufferSize: Int, initialValue: Double) 
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
+    this.mc = RDBMSEngineUtilities.getStorage.modelCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -172,8 +214,7 @@ abstract class TimeAggregate(level: Int, bufferSize: Int, initialValue: Double) 
   }
 
   override def add(row: Any): Unit = {
-    val segment = UDAF.rowToSegment(row)
-    segment.cube(this.calendar, level, this.aggregate, this.current)
+    rowToSegment(row).cube(this.calendar, level, this.aggregate, this.current)
   }
 
   override def getResult: AnyRef = {
@@ -184,14 +225,23 @@ abstract class TimeAggregate(level: Int, bufferSize: Int, initialValue: Double) 
     scala.collection.immutable.SortedMap[Int, Long]() ++ result
   }
 
+  def rowToSegment(row: Any): Segment = {
+    val values = row.asInstanceOf[Array[Object]]
+    val model = this.mc(values(4).asInstanceOf[Int])
+    model.get(
+      values(0).asInstanceOf[Int], values(1).asInstanceOf[Timestamp].getTime, values(2).asInstanceOf[Timestamp].getTime,
+      values(3).asInstanceOf[Int], values(5).asInstanceOf[Array[Byte]], values(6).asInstanceOf[Array[Byte]])
+  }
+
   /** Instance Variables **/
   private val calendar = Calendar.getInstance()
+  private var mc: Array[Model] = _
   protected val current: Array[Double] = Array.fill(bufferSize){initialValue}
   protected val aggregate: CubeFunction
 }
 
 //CountTime
-class CountTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, 0.0) {
+class CountTime(level: Int, bufferSize: Int) extends TimeAggregate(level, bufferSize, 0.0) {
 
   /** Public Methods **/
   override def getResult: AnyRef = {
@@ -210,7 +260,7 @@ class CountTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeIn
 class CountMonth extends CountTime(2, 13)
 
 //MinTime
-class MinTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, Double.MaxValue) {
+class MinTime(level: Int, bufferSize: Int) extends TimeAggregate(level, bufferSize, Double.MaxValue) {
   override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
     total(field) = Math.min(total(field), segment.min())
   }
@@ -218,7 +268,7 @@ class MinTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInte
 class MinMonth extends MinTime(2, 13)
 
 //MaxTime
-class MaxTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, Double.MinValue) {
+class MaxTime(level: Int, bufferSize: Int) extends TimeAggregate(level, bufferSize, Double.MinValue) {
   override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
     total(field) = Math.max(total(field), segment.max())
   }
@@ -226,7 +276,7 @@ class MaxTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInte
 class MaxMonth extends MaxTime(2, 13)
 
 //SumTime
-class SumTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, bufferSize, 0.0) {
+class SumTime(level: Int, bufferSize: Int) extends TimeAggregate(level, bufferSize, 0.0) {
   override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
     total(field) = total(field) + segment.sum()
   }
@@ -234,7 +284,7 @@ class SumTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInte
 class SumMonth extends SumTime(2, 13)
 
 //AgTime
-class AvgTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInterval, 2 * bufferSize, 0.0) {
+class AvgTime(level: Int, bufferSize: Int) extends TimeAggregate(level, 2 * bufferSize, 0.0) {
 
   /** Public Methods **/
   override def getResult: AnyRef = {
@@ -258,18 +308,3 @@ class AvgTime(timeInterval: Int, bufferSize: Int) extends TimeAggregate(timeInte
   }
 }
 class AvgMonth extends AvgTime(2, 13)
-
-//UDFs
-object UDAF {
-  /** Type Variables **/
-  private val mc = H2.h2Storage.modelCache
-
-  /** Public Methods **/
-  def rowToSegment(row: Any): Segment = {
-    val values = row.asInstanceOf[Array[Object]]
-    val model = mc(values(4).asInstanceOf[Int])
-    model.get(
-      values(0).asInstanceOf[Int], values(1).asInstanceOf[Timestamp].getTime, values(2).asInstanceOf[Timestamp].getTime,
-      values(3).asInstanceOf[Int], values(5).asInstanceOf[Array[Byte]], values(6).asInstanceOf[Array[Byte]])
-  }
-}

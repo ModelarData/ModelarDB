@@ -29,27 +29,36 @@ class Derby(configuration: Configuration, storage: Storage) {
     stmt.execute(Derby.CreateDataPointViewSQL)
     stmt.execute(Derby.getCreateSegmentFunctionSQL(configuration.getDimensions))
     stmt.execute(Derby.CreateSegmentViewSQL)
+    stmt.execute(Derby.CreateCountBigUDAFSQL)
+
+    //Documentation: https://db.apache.org/derby/docs/10.15/ref/crefsqlj31068.html
+    stmt.execute(CreateMapTypeSQL) //Apache Derby does not provide a map type
 
     /* Documentation:
      * https://db.apache.org/derby/docs/10.15/ref/rrefsqljcreatetype.html
      * https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html */
-    stmt.execute(CreateSegmentTypeSQL)
+    stmt.execute(CreateSegmentTypeSQL) //Apache Derby's UDAFs can only have one parameter
+
     /* Documentation:
      * https://db.apache.org/derby/docs/10.15/ref/rrefcreatefunctionstatement.html
      * https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html */
-    stmt.execute(CreateToSegmentFunctionSQL)
+    stmt.execute(CreateToSegmentFunctionSQL) //Apache Derby does not cast values to UDTs
+
     /* Documentation:
      * https://db.apache.org/derby/docs/10.15/ref/rrefsqljcreateaggregate.html
      * https://db.apache.org/derby/docs/10.15/ref/rrefsqljexternalname.html */
-    stmt.execute(Derby.getCreateUDAFSQL("COUNT_S"))
-    stmt.execute(Derby.getCreateUDAFSQL("MIN_S"))
-    stmt.execute(Derby.getCreateUDAFSQL("MAX_S"))
-    stmt.execute(Derby.getCreateUDAFSQL("SUM_S"))
-    stmt.execute(Derby.getCreateUDAFSQL("AVG_S"))
+    stmt.execute(Derby.getCreateUDAFSQL("COUNT_S", "bigint"))
+    stmt.execute(Derby.getCreateUDAFSQL("MIN_S", "float"))
+    stmt.execute(Derby.getCreateUDAFSQL("MAX_S", "float"))
+    stmt.execute(Derby.getCreateUDAFSQL("SUM_S", "float"))
+    stmt.execute(Derby.getCreateUDAFSQL("AVG_S", "float"))
 
-    stmt.execute(Derby.getCreateUDAFSQL("COUNT_MONTH"))
+    stmt.execute(Derby.getCreateUDAFSQL("COUNT_MONTH", "map"))
+    stmt.execute(Derby.getCreateUDAFSQL("MIN_MONTH", "map"))
+    stmt.execute(Derby.getCreateUDAFSQL("MAX_MONTH", "map"))
+    stmt.execute(Derby.getCreateUDAFSQL("SUM_MONTH", "map"))
+    stmt.execute(Derby.getCreateUDAFSQL("AVG_MONTH", "map"))
     stmt.close()
-    Derby.derbyStorage = storage.asInstanceOf[DerbyStorage]
 
     //Ingestion
     RDBMSEngineUtilities.initialize(configuration, storage)
@@ -67,10 +76,7 @@ class Derby(configuration: Configuration, storage: Storage) {
 
 object Derby {
 
-  /** Type Variables * */
-  var derbyStorage: DerbyStorage = _
-
-  /** Public Methods and Variables **/
+  /** Public Methods and Instance Variables **/
   //Data Point View
   def getCreateDataPointFunctionSQL(dimensions: Dimensions): String = {
     s"""CREATE FUNCTION DataPoint()
@@ -82,6 +88,8 @@ object Derby {
   }
 
   val CreateDataPointViewSQL = "CREATE VIEW DataPoint as SELECT d.* FROM TABLE(DataPoint()) d"
+
+  val CreateCountBigUDAFSQL = "CREATE DERBY AGGREGATE count_big FOR int RETURNS bigint EXTERNAL NAME 'dk.aau.modelardb.engines.derby.CountBig'"
 
   //Segment View
   def getCreateSegmentFunctionSQL(dimensions: Dimensions): String = {
@@ -110,10 +118,16 @@ object Derby {
       |LANGUAGE JAVA
       |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.SegmentData.apply'""".stripMargin
 
-  def getCreateUDAFSQL(sqlName: String): String = {
+  val CreateMapTypeSQL: String =
+    """CREATE TYPE map
+      |EXTERNAL NAME 'dk.aau.modelardb.engines.derby.DerbyMap'
+      |LANGUAGE JAVA
+      |""".stripMargin
+
+  def getCreateUDAFSQL(sqlName: String, returnType: String): String = {
     val splitSQLName = sqlName.split("_")
     val className = splitSQLName.map(_.toLowerCase.capitalize).mkString("")
-    s"""CREATE DERBY AGGREGATE $sqlName FOR segment EXTERNAL NAME 'dk.aau.modelardb.engines.derby.$className'"""
+    s"""CREATE DERBY AGGREGATE $sqlName FOR segment RETURNS $returnType EXTERNAL NAME 'dk.aau.modelardb.engines.derby.$className'"""
   }
 
   def restrictionToSQLPredicates(restriction: Restriction, sgc: Array[Int], idc: HashMap[String, HashMap[Object, Array[Integer]]]): String = {
