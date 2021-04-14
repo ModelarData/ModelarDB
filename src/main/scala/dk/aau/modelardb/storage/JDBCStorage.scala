@@ -46,7 +46,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
       val stmt = this.connection.createStatement()
       stmt.executeUpdate(s"CREATE TABLE model(mid INTEGER, name ${this.textType})")
       stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mid INTEGER, params ${this.blobType}, gaps ${this.blobType})")
-      stmt.executeUpdate(s"CREATE TABLE source(sid INTEGER, scaling FLOAT, resolution INTEGER, gid INTEGER${dimensions.getSchema(this.textType)})")
+      stmt.executeUpdate(s"CREATE TABLE source(sid INTEGER, scaling REAL, resolution INTEGER, gid INTEGER${dimensions.getSchema(this.textType)})")
     }
 
     //Prepares the necessary statements
