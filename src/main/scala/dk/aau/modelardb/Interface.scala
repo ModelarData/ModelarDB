@@ -83,7 +83,7 @@ object Interface {
         //The query is executed with the result returned as an HTTP response
         val results = scala.collection.mutable.ArrayBuffer[String]()
         execute(reader.readLine.trim(), line => results.append(line))
-        val out = results.mkString("\n")
+        val out = results.mkString("")
         httpExchange.sendResponseHeaders(200, out.length)
         val response = httpExchange.getResponseBody
         response.write(out.getBytes)
