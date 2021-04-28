@@ -199,8 +199,7 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
   private var storageCacheKey: Array[Filter] = Array(null)
   private var storageCacheRDD = this.emptyRDD
 
-  //TODO: Replace IndexedRDD with Spark Streaming's built-in stateful functions
-  private var temporaryRDD: IndexedRDD[Int, Array[Row]] = _ //getIndexedRDD
+  private var temporaryRDD: IndexedRDD[Int, Array[Row]] = getIndexedRDD()
   private var finalizedRDD = this.emptyRDD
   private var ingestedRDD = this.emptyRDD
 }

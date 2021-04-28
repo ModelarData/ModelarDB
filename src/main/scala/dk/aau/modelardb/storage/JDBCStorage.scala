@@ -181,8 +181,8 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
   }
 
   override def storeSegmentGroups(sparkSession: SparkSession, rdd: RDD[Row]): Unit = {
-    val groups = rdd.map(row => new SegmentGroup(row.getInt(0), row.getTimestamp(1).getTime,
-      row.getTimestamp(2).getTime, row.getInt(3), row.getAs[Array[Byte]](4), row.getAs[Array[Byte]](5))).collect()
+    val groups = rdd.collect().map(row => new SegmentGroup(row.getInt(0), row.getTimestamp(1).getTime,
+      row.getTimestamp(2).getTime, row.getInt(3), row.getAs[Array[Byte]](4), row.getAs[Array[Byte]](5)))
     storeSegmentGroups(groups, groups.length)
   }
 
