@@ -1,6 +1,6 @@
 package dk.aau.modelardb.engines.h2
 
-import dk.aau.modelardb.engines.RDBMSEngineUtilities
+import dk.aau.modelardb.core.SegmentGroup
 import org.h2.api.TableEngine
 import org.h2.command.ddl.CreateTableData
 import org.h2.command.dml.AllColumnsForPlan
@@ -168,11 +168,10 @@ class ViewSegmentIndex(table: Table) extends Index {
 class ViewSegmentCursor(filter: TableFilter) extends Cursor {
 
   /** Instance Variables **/
-  private val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[H2Storage]
-  private val dimensionsCache = this.storage.dimensionsCache
-  private val segments = (this.storage.getSegmentGroups(filter) ++
-    RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
-    .flatMap(_.explode(this.storage.groupMetadataCache, this.storage.groupDerivedCache))
+  private val dimensionsCache = H2.h2storage.dimensionsCache
+  private val groupMetadataCache = H2.h2storage.groupMetadataCache
+  private val segments: Iterator[SegmentGroup] = (H2.h2storage.getSegmentGroups(filter) ++ H2.h2.getInMemorySegmentGroups())
+    .flatMap(_.explode(this.groupMetadataCache, H2.h2storage.groupDerivedCache))
   private val currentRow = new Array[Value](if (this.dimensionsCache.length == 1) 7 else 7 + this.dimensionsCache(1).length) //0 is null
   private val currentViewRow = new ViewRow()
 
@@ -190,7 +189,7 @@ class ViewSegmentCursor(filter: TableFilter) extends Cursor {
       this.currentRow(0) = ValueInt.get(segment.gid) //HACK: exploded so it is a sid
       this.currentRow(1) = ValueTimestamp.fromMillis(segment.startTime, 0)
       this.currentRow(2) = ValueTimestamp.fromMillis(segment.endTime, 0)
-      this.currentRow(3) = ValueInt.get(storage.groupMetadataCache(segment.gid)(0))
+      this.currentRow(3) = ValueInt.get(this.groupMetadataCache(segment.gid)(0))
       this.currentRow(4) = ValueInt.get(segment.mid)
       this.currentRow(5) = ValueBytes.get(segment.parameters)
       this.currentRow(6) = ValueBytes.get(segment.offsets)

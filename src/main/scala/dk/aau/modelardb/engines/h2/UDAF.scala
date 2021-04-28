@@ -2,7 +2,6 @@ package dk.aau.modelardb.engines.h2
 
 import dk.aau.modelardb.core.models.{Model, Segment}
 import dk.aau.modelardb.core.utility.CubeFunction
-import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
 import java.sql.{Connection, Timestamp}
 import org.h2.api.AggregateFunction
@@ -46,8 +45,8 @@ class MinS extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
-    this.mc = RDBMSEngineUtilities.getStorage.modelCache
-    this.sfc  = RDBMSEngineUtilities.getStorage.sourceScalingFactorCache
+    this.mc = H2.h2storage.modelCache
+    this.sfc = H2.h2storage.sourceScalingFactorCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -86,8 +85,8 @@ class MaxS extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
-    this.mc = RDBMSEngineUtilities.getStorage.modelCache
-    this.sfc  = RDBMSEngineUtilities.getStorage.sourceScalingFactorCache
+    this.mc = H2.h2storage.modelCache
+    this.sfc = H2.h2storage.sourceScalingFactorCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -126,8 +125,8 @@ class SumS extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
-    this.mc = RDBMSEngineUtilities.getStorage.modelCache
-    this.sfc  = RDBMSEngineUtilities.getStorage.sourceScalingFactorCache
+    this.mc = H2.h2storage.modelCache
+    this.sfc = H2.h2storage.sourceScalingFactorCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -168,8 +167,8 @@ class AvgS extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
-    this.mc = RDBMSEngineUtilities.getStorage.modelCache
-    this.sfc  = RDBMSEngineUtilities.getStorage.sourceScalingFactorCache
+    this.mc = H2.h2storage.modelCache
+    this.sfc = H2.h2storage.sourceScalingFactorCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -211,8 +210,8 @@ abstract class TimeAggregate(level: Int, bufferSize: Int, initialValue: Double) 
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
-    this.mc = RDBMSEngineUtilities.getStorage.modelCache
-    this.sfc  = RDBMSEngineUtilities.getStorage.sourceScalingFactorCache
+    this.mc = H2.h2storage.modelCache
+    this.sfc = H2.h2storage.sourceScalingFactorCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {

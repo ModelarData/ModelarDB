@@ -8,7 +8,6 @@ resolvers += "Spark Packages Repo" at "https://dl.bintray.com/spark-packages/mav
 
 libraryDependencies ++= Seq(
   "org.scala-lang" % "scala-compiler" % scalaVersion.value,
-  "org.apache.derby" % "derby" % "10.15.2.0",
   "com.h2database" % "h2" % "1.4.200",
   "com.datastax.spark" %% "spark-cassandra-connector" % "3.0.0",
   "amplab" % "spark-indexedrdd" % "0.4.0",
@@ -21,23 +20,22 @@ libraryDependencies ++= Seq(
   "org.scalamock" %% "scalamock" % "5.1.0" % Test
 )
 
-/* To avoid assembly conflict with Derby classes */
-assemblyMergeStrategy in assembly := {
-  case PathList("module-info.class") => MergeStrategy.first
-  case x =>
-    val oldStrategy = (assemblyMergeStrategy in assembly).value
-    oldStrategy(x)
-}
 
-run in Compile := Defaults.runTask(fullClasspath in Compile, mainClass in (Compile, run), runner in (Compile, run)).evaluated
+/* Makes SBT include the dependencies marked as provided when run */
+(run in Compile) :=
+  Defaults.runTask(
+    fullClasspath in Compile,
+    mainClass in (Compile, run),
+    runner in (Compile, run)
+  ).evaluated
 
-/* Otherwise Derby throws a java.security.AccessControlException in tests */
-Test / testOptions += Tests.Setup(() => System.setSecurityManager(null))
-
-/* Disable log buffering when running tests for nicer output */
+/* Disables log buffering when running tests for nicer output */
 logBuffered in Test := false
 
-/* Github Package Repo */
+/* Creates a code coverage report in HTML using Jacoco */
+jacocoReportSettings := JacocoReportSettings(formats = Seq(JacocoReportFormats.ScalaHTML))
+
+/* Github Package Repository */
 val owner = "modelardata"
 val repo = "modelardb"
 publishMavenStyle := true
@@ -47,10 +45,6 @@ credentials +=
   Credentials(
     "GitHub Package Registry",
     "maven.pkg.github.com",
-    "_", // Username is ignored when using a token
-    sys.env.getOrElse("GITHUB_TOKEN", "") // Just use an empty string when no ENV VAR found to allow SBT to work locally
+    "_", // The username is ignored when using a GITHUB_TOKEN is used for login
+    sys.env.getOrElse("GITHUB_TOKEN", "") // getOrElse allows SBT to always run
   )
-
-
-jacocoReportSettings := JacocoReportSettings(formats = Seq(JacocoReportFormats.ScalaHTML))
-

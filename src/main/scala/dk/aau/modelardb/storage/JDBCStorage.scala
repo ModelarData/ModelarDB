@@ -19,8 +19,6 @@ import java.util
 import scala.collection.JavaConverters._
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
-import dk.aau.modelardb.engines.derby.{Derby, DerbyStorage}
-import org.apache.derby.vti.Restriction
 import dk.aau.modelardb.engines.h2.{H2, H2Storage}
 import org.h2.table.TableFilter
 import org.apache.spark.rdd.RDD
@@ -28,7 +26,7 @@ import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{Row, SparkSession}
 import dk.aau.modelardb.engines.spark.SparkStorage
 
-class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbyStorage with H2Storage with SparkStorage {
+class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Storage with SparkStorage {
 
   /** Public Methods **/
   //Storage
@@ -150,7 +148,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
     }
   }
 
-  //DerbyStorage
+  //H2Storage
   override def storeSegmentGroups(segments: Array[SegmentGroup], size: Int): Unit = {
     try {
       for (segmentGroup <- segments.take(size)) {
@@ -171,13 +169,9 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with DerbySt
     }
   }
 
-  override def getSegmentGroups(filter: Restriction): Iterator[SegmentGroup] = {
-    getSegmentGroups(Derby.restrictionToSQLPredicates(filter, this.sourceGroupCache, this.inverseDimensionsCache).strip())
-  }
-
-  //H2Storage
   override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
-    getSegmentGroups(H2.expressionToSQLPredicates(filter.getSelect.getCondition(), this.sourceGroupCache, this.inverseDimensionsCache).strip())
+    getSegmentGroups(H2.expressionToSQLPredicates(filter.getSelect.getCondition(),
+      this.sourceGroupCache, this.inverseDimensionsCache, true).strip())
   }
 
   //SparkStorage

@@ -11,7 +11,6 @@ import org.h2.schema.Schema
 import org.h2.table.{Column, IndexColumn, Table, TableBase, TableFilter, TableType}
 import org.h2.value.{Value, ValueFloat, ValueInt, ValueString, ValueTimestamp}
 import dk.aau.modelardb.core.DataPoint
-import dk.aau.modelardb.engines.RDBMSEngineUtilities
 
 import scala.collection.JavaConverters._
 
@@ -172,13 +171,9 @@ class ViewDataPointIndex(table: Table) extends Index {
 class ViewDataPointCursor(filter: TableFilter) extends Cursor {
 
   /** Instance Variables **/
-  //TODO: determine if the segments should be filtered by the segment view like done for Spark
-  private val storage = RDBMSEngineUtilities.getStorage.asInstanceOf[H2Storage]
-  private val dimensionsCache = this.storage.dimensionsCache
-  private val dataPoints: Iterator[DataPoint] = (this.storage.getSegmentGroups(filter) ++
-    RDBMSEngineUtilities.getUtilities.getInMemorySegmentGroups())
-    .flatMap(sg => sg.toSegments(this.storage))
-    .flatMap(segment => segment.grid().iterator().asScala)
+  private val dimensionsCache = H2.h2storage.dimensionsCache
+  private val dataPoints: Iterator[DataPoint] = (H2.h2storage.getSegmentGroups(filter) ++ H2.h2.getInMemorySegmentGroups())
+    .flatMap(sg => sg.toSegments(H2.h2storage)).flatMap(segment => segment.grid().iterator().asScala)
   private val currentRow = new Array[Value](if (this.dimensionsCache.length == 1) 3 else 3 + this.dimensionsCache(1).length) //0 is null
   private val currentViewRow = new ViewRow()
 

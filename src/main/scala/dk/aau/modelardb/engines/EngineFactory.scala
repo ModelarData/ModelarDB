@@ -15,6 +15,8 @@
 package dk.aau.modelardb.engines
 
 import dk.aau.modelardb.core.{Configuration, Storage}
+import dk.aau.modelardb.engines.h2.H2Storage
+import dk.aau.modelardb.engines.spark.SparkStorage
 
 object EngineFactory {
 
@@ -22,9 +24,8 @@ object EngineFactory {
   def startEngine(configuration: Configuration, storage: Storage): Unit = {
     //Extracts the name of the system from the engine connection string
     configuration.getString("modelardb.engine").takeWhile(_ != ':') match {
-      case "derby" => new dk.aau.modelardb.engines.derby.Derby(configuration, storage).start()
-      case "h2" => new dk.aau.modelardb.engines.h2.H2(configuration, storage).start()
-      case "spark" => new dk.aau.modelardb.engines.spark.Spark(configuration, storage).start()
+      case "h2" => new dk.aau.modelardb.engines.h2.H2(configuration, storage.asInstanceOf[H2Storage]).start()
+      case "spark" => new dk.aau.modelardb.engines.spark.Spark(configuration, storage.asInstanceOf[SparkStorage]).start()
       case _ =>
         throw new java.lang.UnsupportedOperationException("ModelarDB: unknown value for modelardb.engine in the config file")
     }
