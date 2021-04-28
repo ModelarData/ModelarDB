@@ -17,15 +17,13 @@ libraryDependencies ++= Seq(
 )
 
 /* Makes SBT include the dependencies marked as provided when run */
-(run in Compile) :=
-  Defaults.runTask(
-    fullClasspath in Compile,
-    mainClass in (Compile, run),
-    runner in (Compile, run)
-  ).evaluated
+Compile / run := Defaults.runTask(
+  Compile / fullClasspath,
+  Compile / run / mainClass,
+  Compile / run / runner).evaluated
 
 /* Disables log buffering when running tests for nicer output */
-logBuffered in Test := false
+Test / logBuffered := false
 
 /* Creates a code coverage report in HTML using Jacoco */
 jacocoReportSettings := JacocoReportSettings(formats = Seq(JacocoReportFormats.ScalaHTML))
