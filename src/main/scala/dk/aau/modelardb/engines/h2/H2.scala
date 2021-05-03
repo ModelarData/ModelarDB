@@ -18,13 +18,15 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.function.BooleanSupplier
 import scala.collection.mutable
 
-//TODO: determine if adding the values to a pre-allocated array in the views is faster than having the branches.
-//TODO: determine if the data point views should get segments from the segment views for filtering like spark
+//TODO: Can a WAL on data points be implemented per ingestor if it of static size (time) and have a bitmap of groups?
+//TODO: Determine if adding the values to a pre-allocated array in the views is faster than having the branches.
+//TODO: Determine if the data point views should get segments from the segment views for filtering like spark
 //TODO: Implement a proper cache for segments retrieved from storage. Maybe store them as Gid, ST, ET intervals.
 //TODO: Merge the loggers from each thread before printing them to make them easier to read the results.
 //TODO: Make the two gridding methods used by the SparkEngine generic enough that all engines can use them.
 //TODO: Remove resolution from Segment View so RDBMSs as it is avaliable from the metadata cache in storage.
 //TODO: Determine how to ingest and execute queries in parallel without ever introducing duplicate data points.
+//      Maybe having a shared read/write lock on storage (instead of engine) that engines can use when reading or writing.
 //TODO: Support requiredColumns and test that predicate push-down works with all storage backends.
 //TODO: determine if the segments should be filtered by the segment view and than data point view like done for Spark
 //TODO: Share as much code as possible between H2 and Spark and structure their use of the two views the same.
