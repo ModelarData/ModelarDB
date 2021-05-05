@@ -14,8 +14,6 @@
  */
 package dk.aau.modelardb.core.timeseries;
 
-import java.io.IOException;
-
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.ql.exec.vector.DoubleColumnVector;
@@ -26,9 +24,9 @@ import org.apache.orc.Reader;
 import org.apache.orc.RecordReader;
 
 import dk.aau.modelardb.core.DataPoint;
+import java.io.IOException;
 
 public class TimeSeriesORC extends TimeSeries {
-    //TODO: Uses dependencies brought in by Spark, decide if it acceptable that Core has dependencies
     /** Public Methods **/
     public TimeSeriesORC(String stringPath, int sid, int resolution, int timestampColumnIndex, int valueColumnIndex) {
         super(stringPath.substring(stringPath.lastIndexOf('/') + 1), sid, resolution);
@@ -42,7 +40,14 @@ public class TimeSeriesORC extends TimeSeries {
             Path path = new Path(this.stringPath);
             OrcFile.ReaderOptions ro = OrcFile.readerOptions(new Configuration());
             this.reader = OrcFile.createReader(path, ro);
-            this.recordReader = this.reader.rows();
+
+            //Include only the required columns so unnecessary columns are not read
+            int columns = this.reader.getSchema().getMaximumId() + 1;
+            boolean[] include = new boolean[columns];
+            java.util.Arrays.fill(include, false);
+            include[this.timestampColumnIndex + 1] = true;
+            include[this.valueColumnIndex + 1] = true;
+            this.recordReader = this.reader.rows(this.reader.options().include(include));
             this.rowBatch = this.reader.getSchema().createRowBatch();
         } catch (IOException ioe) {
             close();

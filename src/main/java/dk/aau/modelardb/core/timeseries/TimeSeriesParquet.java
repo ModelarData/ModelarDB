@@ -14,7 +14,6 @@
  */
 package dk.aau.modelardb.core.timeseries;
 
-import dk.aau.modelardb.core.DataPoint;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.ParquetReadOptions;
@@ -29,10 +28,10 @@ import org.apache.parquet.io.MessageColumnIO;
 import org.apache.parquet.io.RecordReader;
 import org.apache.parquet.schema.MessageType;
 
+import dk.aau.modelardb.core.DataPoint;
 import java.io.IOException;
 
 public class TimeSeriesParquet extends TimeSeries {
-    //TODO: Uses dependencies brought in by Spark, decide if it acceptable that Core has dependencies
     /** Public Methods **/
     public TimeSeriesParquet(String stringPath, int sid, int resolution, int timestampColumnIndex, int valueColumnIndex) {
         super(stringPath.substring(stringPath.lastIndexOf('/') + 1), sid, resolution);
@@ -47,6 +46,11 @@ public class TimeSeriesParquet extends TimeSeries {
             InputFile iff = HadoopInputFile.fromPath(path, new Configuration());
             ParquetReadOptions pro = ParquetReadOptions.builder().build();
             this.fileReader = new ParquetFileReader(iff, pro);
+
+            //Constructs a schema that only contains the required columns so unnecessary columns are not read
+            MessageType schema = this.fileReader.getFooter().getFileMetaData().getSchema();
+            this.schema = new MessageType("schema",
+                    schema.getFields().get(this.timestampColumnIndex), schema.getFields().get(this.valueColumnIndex));
         } catch (IOException ioe) {
             close();
             throw new RuntimeException(ioe);
@@ -55,8 +59,8 @@ public class TimeSeriesParquet extends TimeSeries {
 
     public DataPoint next() {
         SimpleGroup rowGroup = (SimpleGroup) this.recordReader.read();
-        long timestamp = rowGroup.getLong(this.timestampColumnIndex, 0) / 1000;
-        float value = rowGroup.getFloat(this.valueColumnIndex, this.rowIndex);
+        long timestamp = rowGroup.getLong(0, 0) / 1000;
+        float value = rowGroup.getFloat(1, 0);
         this.rowIndex++;
         return new DataPoint(this.sid, timestamp, this.scalingFactor * value);
     }
@@ -69,9 +73,8 @@ public class TimeSeriesParquet extends TimeSeries {
 
             PageReadStore readStore = this.fileReader.readNextRowGroup();
             if (readStore != null) {
-                MessageType schema = this.fileReader.getFooter().getFileMetaData().getSchema();
-                GroupRecordConverter grc = new GroupRecordConverter(schema);
-                MessageColumnIO columnIO = new ColumnIOFactory().getColumnIO(schema);
+                GroupRecordConverter grc = new GroupRecordConverter(this.schema);
+                MessageColumnIO columnIO = new ColumnIOFactory().getColumnIO(this.schema);
                 this.recordReader = columnIO.getRecordReader(readStore, grc);
                 this.rowIndex = 0;
                 this.rowCount = readStore.getRowCount();
@@ -105,5 +108,6 @@ public class TimeSeriesParquet extends TimeSeries {
     private int rowIndex;
     private long rowCount;
     private ParquetFileReader fileReader;
+    private MessageType schema;
     private RecordReader recordReader;
 }
