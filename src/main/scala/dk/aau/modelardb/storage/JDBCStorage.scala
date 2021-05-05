@@ -134,18 +134,6 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     //Connection cannot be closed while a transaction is running
     this.connection.commit()
     this.connection.close()
-
-    //TODO: remove if Derby is not used and generalize if it is
-    //Apache Derby must be shutdown to properly flush the logs
-    if (this.connectionString.toLowerCase().contains("derby")) {
-      try {
-        DriverManager.getConnection(this.connectionString + ";shutdown=true")
-      } catch {
-        case se: java.sql.SQLNonTransientConnectionException => if ( ! se.getMessage().contains("shutdown")) {
-          throw se //The error should only be displayed if it is unexpected and not just caused by the shutdown
-        }
-      }
-    }
   }
 
   //H2Storage
