@@ -56,8 +56,8 @@ to appear in *The Proceedings of ICDE, 2021*
 Download: [arXiv](https://arxiv.org/abs/1903.10269)
 
 NOTE: The papers use a Tid (Time series identifier) to uniquely identify time
-series while the open-source implementation of ModelarDB uses a Sid (Source
-identifier) due to a naming conflict in the initial implementation.
+series while the initial versions of the open-source implementation of ModelarDB 
+uses a Sid (Source identifier) due to a naming conflict in the implementation.
 
 ## Configuration
 ModelarDB requires that a configuration file is available at

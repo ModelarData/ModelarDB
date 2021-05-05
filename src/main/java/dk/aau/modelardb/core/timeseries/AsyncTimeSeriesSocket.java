@@ -31,9 +31,9 @@ import dk.aau.modelardb.core.SegmentGenerator;
 public class AsyncTimeSeriesSocket extends TimeSeries implements AsyncTimeSeries {
 
     /** Constructors **/
-    public AsyncTimeSeriesSocket(String source, int sid, int resolution, String splitString, int timestampColumnIndex,
+    public AsyncTimeSeriesSocket(String source, int tid, int resolution, String splitString, int timestampColumnIndex,
                                  String dateFormat, String timeZone, int valueColumnIndex, String localeString) {
-        super(source, sid, resolution);
+        super(source, tid, resolution);
         String[] hostAndPort = source.split(":");
         this.host = hostAndPort[0];
         this.port = Integer.parseInt(hostAndPort[1]);
@@ -109,7 +109,7 @@ public class AsyncTimeSeriesSocket extends TimeSeries implements AsyncTimeSeries
     }
 
     public String toString() {
-        return "Time Series: [" + this.sid + " | " + this.source + " | " + this.resolution + "]";
+        return "Time Series: [" + this.tid + " | " + this.source + " | " + this.resolution + "]";
     }
 
     public void close() {
@@ -177,7 +177,7 @@ public class AsyncTimeSeriesSocket extends TimeSeries implements AsyncTimeSeries
                     break;
             }
             float value = valueParser.parse(split[valueColumn]).floatValue();
-            return new DataPoint(this.sid, timestamp, this.scalingFactor * value);
+            return new DataPoint(this.tid, timestamp, this.scalingFactor * value);
         } catch (ParseException pe) {
             //If the input cannot be parsed the stream is considered empty
             this.channel.close();

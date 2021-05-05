@@ -44,26 +44,26 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
       val stmt = this.connection.createStatement()
       stmt.executeUpdate(s"CREATE TABLE model(mid INTEGER, name ${this.textType})")
       stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mid INTEGER, parameters ${this.blobType}, gaps ${this.blobType})")
-      stmt.executeUpdate(s"CREATE TABLE source(sid INTEGER, scaling REAL, resolution INTEGER, gid INTEGER${dimensions.getSchema(this.textType)})")
+      stmt.executeUpdate(s"CREATE TABLE time_series(tid INTEGER, scaling REAL, resolution INTEGER, gid INTEGER${dimensions.getSchema(this.textType)})")
     }
 
     //Prepares the necessary statements
     this.insertStmt = this.connection.prepareStatement("INSERT INTO segment VALUES(?, ?, ?, ?, ?, ?)")
-    this.getMaxSidStmt = this.connection.prepareStatement("SELECT MAX(sid) FROM source")
-    this.getMaxGidStmt = this.connection.prepareStatement("SELECT MAX(gid) FROM source")
+    this.getMaxTidStmt = this.connection.prepareStatement("SELECT MAX(tid) FROM time_series")
+    this.getMaxGidStmt = this.connection.prepareStatement("SELECT MAX(gid) FROM time_series")
   }
 
   override def initialize(timeSeriesGroups: Array[TimeSeriesGroup],
                           derivedTimeSeries: util.HashMap[Integer, Array[Pair[String, ValueFunction]]],
                           dimensions: Dimensions, modelNames: Array[String]): Unit = {
-    //Inserts the metadata for the sources defined in the configuration file (Sid, Resolution, Gid, Dimensions)
-    val sourceDimensions = dimensions.getColumns.length
-    val columns = "?, " * (sourceDimensions + 3) + "?"
-    val insertSourceStmt = connection.prepareStatement("INSERT INTO source VALUES(" + columns + ")")
+    //Inserts the metadata for the sources defined in the configuration file (Tid, Resolution, Gid, Dimensions)
+    val columnsInNormalizedDimensions = dimensions.getColumns.length
+    val columns = "?, " * (columnsInNormalizedDimensions + 3) + "?"
+    val insertSourceStmt = connection.prepareStatement("INSERT INTO time_series VALUES(" + columns + ")")
     for (tsg <- timeSeriesGroups) {
       for (ts <- tsg.getTimeSeries) {
         insertSourceStmt.clearParameters()
-        insertSourceStmt.setInt(1, ts.sid)
+        insertSourceStmt.setInt(1, ts.tid)
         insertSourceStmt.setFloat(2, ts.scalingFactor)
         insertSourceStmt.setInt(3, ts.resolution)
         insertSourceStmt.setInt(4, tsg.gid)
@@ -78,13 +78,13 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
       }
     }
 
-    //Extracts the scaling factor, resolution, gid, and dimensions for the sources in storage
+    //Extracts the scaling factor, resolution, gid, and dimensions for the time series in storage
     var stmt = this.connection.createStatement()
-    var results = stmt.executeQuery("SELECT * FROM source")
-    val sourcesInStorage = new util.HashMap[Integer, Array[Object]]()
+    var results = stmt.executeQuery("SELECT * FROM time_series")
+    val timeSeriesInStorage = new util.HashMap[Integer, Array[Object]]()
     while (results.next) {
-      //The metadata is stored as (Sid => Scaling, Resolution, Gid, Dimensions)
-      val sid = results.getInt(1)
+      //The metadata is stored as (Tid => Scaling, Resolution, Gid, Dimensions)
+      val tid = results.getInt(1) //Tid
       val metadata = new util.ArrayList[Object]()
       metadata.add(results.getFloat(2).asInstanceOf[Object]) //Scaling
       metadata.add(results.getInt(3).asInstanceOf[Object]) //Resolution
@@ -92,12 +92,12 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
 
       //Dimensions
       var column = 5
-      while(column <= sourceDimensions + 4) {
+      while(column <= columnsInNormalizedDimensions + 4) {
         //TODO: Support none string members
         metadata.add(results.getString(column))
         column += 1
       }
-      sourcesInStorage.put(sid, metadata.toArray)
+      timeSeriesInStorage.put(tid, metadata.toArray)
     }
 
 
@@ -110,7 +110,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     }
 
     //Initializes the caches managed by Storage
-    val modelsToInsert = super.initializeCaches(modelNames, dimensions, modelsInStorage, sourcesInStorage, derivedTimeSeries)
+    val modelsToInsert = super.initializeCaches(modelNames, dimensions, modelsInStorage, timeSeriesInStorage, derivedTimeSeries)
 
     //Inserts the name of each model in the configuration file but not in the model table
     val insertModelStmt = connection.prepareStatement("INSERT INTO model VALUES(?, ?)")
@@ -122,11 +122,11 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     }
   }
 
-  override def getMaxSID(): Int = {
-    getFirstInteger(this.getMaxSidStmt)
+  override def getMaxTid(): Int = {
+    getFirstInteger(this.getMaxTidStmt)
   }
 
-  override def getMaxGID(): Int = {
+  override def getMaxGid(): Int = {
     getFirstInteger(this.getMaxGidStmt)
   }
 
@@ -159,7 +159,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
 
   override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
     getSegmentGroups(H2.expressionToSQLPredicates(filter.getSelect.getCondition(),
-      this.sourceGroupCache, this.inverseDimensionsCache, true).strip())
+      this.timeSeriesGroupCache, this.inverseDimensionsCache, true).strip())
   }
 
   //SparkStorage
@@ -249,7 +249,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
   /** Instance Variables **/
   private var connection: Connection = _
   private var insertStmt: PreparedStatement = _
-  private var getMaxSidStmt: PreparedStatement = _
+  private var getMaxTidStmt: PreparedStatement = _
   private var getMaxGidStmt: PreparedStatement = _
   private val (connectionString, textType, blobType) = splitConnectionStringAndTypes(connectionStringAndTypes)
 }

@@ -30,15 +30,15 @@ public abstract class Storage {
     abstract public void initialize(TimeSeriesGroup[] timeSeriesGroups,
                                     HashMap<Integer, Pair<String, ValueFunction>[]> derivedTimeSeries,
                                     Dimensions dimensions, String[] modelNames);
-    abstract public int getMaxSID();
-    abstract public int getMaxGID();
+    abstract public int getMaxTid();
+    abstract public int getMaxGid();
     abstract public void close();
 
     /** Protected Methods **/
     protected HashMap<String, Integer> initializeCaches(String[] modelNames,
                                                         Dimensions dimensions,
                                                         HashMap<String, Integer> modelsInStorage,
-                                                        HashMap<Integer, Object[]> sourcesInStorage,
+                                                        HashMap<Integer, Object[]> timeSeriesInStorage,
                                                         HashMap<Integer, Pair<String, ValueFunction>[]> derivedTimeSeries) {
 
         //The Dimensions object is stored so the schema can be retrieved later
@@ -68,32 +68,32 @@ public abstract class Storage {
             this.midCache.put(model.getClass().getName(), mid);
         }
 
-        //Creates the sourceGroupCache, derivedSourceCache, the dimensionsCache, and the inverseDimensionsCache
-        int nextSID = getMaxSID() + 1;
-        int totalNumberOfSources = nextSID + derivedTimeSeries.entrySet().stream().mapToInt(e -> e.getValue().length).sum();
-        this.sourceGroupCache = new int[totalNumberOfSources];
-        this.sourceScalingFactorCache = new float[totalNumberOfSources];
+        //Creates the timeSeriesGroupCache, derivedSourceCache, the dimensionsCache, and the inverseDimensionsCache
+        int nextTid = getMaxTid() + 1;
+        int totalNumberOfSources = nextTid + derivedTimeSeries.entrySet().stream().mapToInt(e -> e.getValue().length).sum();
+        this.timeSeriesGroupCache = new int[totalNumberOfSources];
+        this.timeSeriesScalingFactorCache = new float[totalNumberOfSources];
         this.dimensionsCache = new Object[totalNumberOfSources][];
         HashMap<Integer, ArrayList<Integer>> gsc = new HashMap<>();
         ValueFunction scalingTransformation = new ValueFunction();
-        this.sourceTransformationCache = new ValueFunction[totalNumberOfSources];
+        this.timeSeriesTransformationCache = new ValueFunction[totalNumberOfSources];
         HashMap<Integer, ArrayList<Integer>> groupDerivedCacheBuilder = new HashMap<>();
-        for (Entry<Integer, Object[]> entry : sourcesInStorage.entrySet()) {
-            //Metadata is a mapping from Sid to Scaling, Resolution, Gid, and Dimensions
-            Integer sid = entry.getKey();
+        for (Entry<Integer, Object[]> entry : timeSeriesInStorage.entrySet()) {
+            //Metadata is a mapping from Tid to Scaling, Resolution, Gid, and Dimensions
+            Integer tid = entry.getKey();
             Object[] metadata = entry.getValue();
 
-            //Creates mappings from sid -> gid (sgc), from sid -> scaling factor (sc), and from sid -> dimensions (dmc)
+            //Creates mappings from tid -> gid (tsgc), from tid -> scaling factor (sc), and from tid -> dimensions (dmc)
             int gid = (int) metadata[2];
-            this.sourceGroupCache[sid] = gid;
-            this.sourceScalingFactorCache[sid] = (float) metadata[0];
+            this.timeSeriesGroupCache[tid] = gid;
+            this.timeSeriesScalingFactorCache[tid] = (float) metadata[0];
             if ( ! gsc.containsKey(gid)) {
                 //A group consist of time series with equivalent SI so we just store it once
                 ArrayList<Integer> metadataArray = new ArrayList<>();
                 metadataArray.add((int) metadata[1]);
                 gsc.put(gid, metadataArray);
             }
-            gsc.get(gid).add(sid);
+            gsc.get(gid).add(tid);
 
             int dim = 0;
             Object[] columns = new Object[metadata.length - 3];
@@ -101,22 +101,22 @@ public abstract class Storage {
                 columns[dim] = metadata[i];
                 dim++;
             }
-            this.dimensionsCache[sid] = columns;
-            this.sourceTransformationCache[sid] = scalingTransformation;
+            this.dimensionsCache[tid] = columns;
+            this.timeSeriesTransformationCache[tid] = scalingTransformation;
 
-            //Creates mappings from gid -> pair of sids for original and derived (gdc), and from sid -> to transformation (tc)
-            if (derivedTimeSeries.containsKey(sid)) {
-                //All sources that are derived should transformed by their user-defined function
-                Pair<String, ValueFunction>[] sourcesAndTransformations = derivedTimeSeries.get(sid);
+            //Creates mappings from gid -> pair of tids for original and derived (gdc), and from tid -> to transformation (tc)
+            if (derivedTimeSeries.containsKey(tid)) {
+                //All derived time series perform all of their transformations in their user-defined function
+                Pair<String, ValueFunction>[] sourcesAndTransformations = derivedTimeSeries.get(tid);
                 ArrayList<Integer> gdcb = groupDerivedCacheBuilder.computeIfAbsent(gid, g -> new ArrayList<>());
                 for (Pair<String, ValueFunction> sat : sourcesAndTransformations) {
-                    int dsid = nextSID++;
-                    this.sourceGroupCache[dsid] = gid;
-                    this.sourceScalingFactorCache[dsid] = 1.0F; //HACK: scaling is assumed to be part of the transformation
-                    this.dimensionsCache[dsid] = dimensions.get(sat._1);
-                    this.sourceTransformationCache[dsid] = sat._2;
-                    gdcb.add(sid);
-                    gdcb.add(dsid);
+                    int dtid = nextTid++;
+                    this.timeSeriesGroupCache[dtid] = gid;
+                    this.timeSeriesScalingFactorCache[dtid] = 1.0F; //HACK: scaling is assumed to be part of the transformation
+                    this.dimensionsCache[dtid] = dimensions.get(sat._1);
+                    this.timeSeriesTransformationCache[dtid] = sat._2;
+                    gdcb.add(tid);
+                    gdcb.add(dtid);
                 }
             }
         }
@@ -127,18 +127,18 @@ public abstract class Storage {
         String[] columns = this.dimensions.getColumns();
         HashMap<String, HashMap<Object, HashSet<Integer>>> outer = new HashMap<>();
         for (int i = 1; i < this.dimensionsCache.length; i++) {
-            //If data with existing sids are ingested missing sids can occur and must be handled
+            //If data with existing tids are ingested missing tids can occur and must be handled
             if (this.dimensionsCache[i] == null) {
-                Static.warn(String.format("CORE: a time series with sid %d does not exist", i));
+                Static.warn(String.format("CORE: a time series with tid %d does not exist", i));
                 continue;
             }
 
             for (int j = 0; j < columns.length; j++) {
                 Object value = this.dimensionsCache[i][j];
                 HashMap<Object, HashSet<Integer>> inner = outer.getOrDefault(columns[j], new HashMap<>());
-                HashSet<Integer> sids = inner.getOrDefault(value, new HashSet<>());
-                sids.add(this.sourceGroupCache[i]);
-                inner.put(value, sids);
+                HashSet<Integer> tids = inner.getOrDefault(value, new HashSet<>());
+                tids.add(this.timeSeriesGroupCache[i]);
+                inner.put(value, tids);
                 outer.put(columns[j], inner);
             }
         }
@@ -155,7 +155,7 @@ public abstract class Storage {
             this.inverseDimensionsCache.put(oes.getKey().toUpperCase(), innerAsArray);
         }
 
-        //Finally the sorted groupMetadataCache is created and consists of resolution and sids
+        //Finally the sorted groupMetadataCache is created and consists of resolution and tids
         this.groupMetadataCache = new int[gsc.size() + 1][];
         gsc.forEach((k,v) -> {
             this.groupMetadataCache[k] = v.stream().mapToInt(i -> i).toArray();
@@ -167,30 +167,30 @@ public abstract class Storage {
     /** Instance Variables **/
     public Dimensions dimensions;
 
-    //Write Cache: Maps the name of a model to the corresponding mid used in the data store
+    //Write Cache: Maps the name of a model to the corresponding mid used by the storage layer
     public HashMap<String, Integer> midCache;
 
-    //Read Cache: Maps the mid of a model to an instance of the model so a segment can be constructed
+    //Read Cache: Maps the mid of a model to an instance of the model so segments can be constructed from it
     public Model[] modelCache;
 
-    //Read Cache: Maps the sid of a source to the gid of the group that the source is a member of
-    public int[] sourceGroupCache;
+    //Read Cache: Maps the tid of a time series to the gid of the group that the time series is a member of
+    public int[] timeSeriesGroupCache;
 
-    //Read Cache: Maps the gid of a group to pairs of sids for time series with derived time series
+    //Read Cache: Maps the gid of a group to pairs of tids for time series with derived time series
     public HashMap<Integer, int[]> groupDerivedCache;
 
-    //Read Cache: Maps the sid of a source to the scaling factor specified for that source
-    public float[] sourceScalingFactorCache;
+    //Read Cache: Maps the tid of a time series to the scaling factor specified for for the time series source
+    public float[] timeSeriesScalingFactorCache;
 
-    //Read Cache: Maps the sid of a source to the scaling factor specified for that source
-    public ValueFunction[] sourceTransformationCache;
+    //Read Cache: Maps the tid of a time series to the transformation specified for the time series source
+    public ValueFunction[] timeSeriesTransformationCache;
 
-    //Read Cache: Maps the sid of a source to the members provided for that data source
+    //Read Cache: Maps the tid of a time series to the members specified for the time series source
     public Object[][] dimensionsCache;
 
     //Read Cache: Maps the value of a column for a dimension to the gids with that member
     public HashMap<String, HashMap<Object, Integer[]>> inverseDimensionsCache;
 
-    //Read Cache: Maps the gid of a group to the groups resolution and the sids that are part of that group
+    //Read Cache: Maps the gid of a group to the groups resolution and the tids that are part of that group
     public int[][] groupMetadataCache;
 }

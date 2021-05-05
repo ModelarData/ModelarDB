@@ -33,8 +33,8 @@ import java.io.IOException;
 
 public class TimeSeriesParquet extends TimeSeries {
     /** Public Methods **/
-    public TimeSeriesParquet(String stringPath, int sid, int resolution, int timestampColumnIndex, int valueColumnIndex) {
-        super(stringPath.substring(stringPath.lastIndexOf('/') + 1), sid, resolution);
+    public TimeSeriesParquet(String stringPath, int tid, int resolution, int timestampColumnIndex, int valueColumnIndex) {
+        super(stringPath.substring(stringPath.lastIndexOf('/') + 1), tid, resolution);
         this.stringPath = stringPath;
         this.timestampColumnIndex = timestampColumnIndex;
         this.valueColumnIndex = valueColumnIndex;
@@ -62,7 +62,7 @@ public class TimeSeriesParquet extends TimeSeries {
         long timestamp = rowGroup.getLong(0, 0) / 1000;
         float value = rowGroup.getFloat(1, 0);
         this.rowIndex++;
-        return new DataPoint(this.sid, timestamp, this.scalingFactor * value);
+        return new DataPoint(this.tid, timestamp, this.scalingFactor * value);
     }
 
     public boolean hasNext() {
@@ -89,7 +89,7 @@ public class TimeSeriesParquet extends TimeSeries {
     }
 
     public String toString() {
-        return "Time Series: [" + this.sid + " | " + this.source + " | " + this.resolution + "]";
+        return "Time Series: [" + this.tid + " | " + this.source + " | " + this.resolution + "]";
     }
 
     public void close() {

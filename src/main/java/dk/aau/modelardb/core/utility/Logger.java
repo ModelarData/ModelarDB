@@ -75,7 +75,7 @@ public class Logger implements Serializable {
     }
 
     public void updateFinalizedSegmentCounters(Model finalizedModel, int segmentGapsSize) {
-        //   DPs sid: int, ts: long, v: float
+        //   DPs tid: int, ts: long, v: float
         // model gid: int, start_time: long, end_time: long, mid: int, parameters: bytes[], gaps: byte[]
         //4 + 8 + 4 = 16 * data points is reduced to 4 + 8 + 8 + 4 + sizeof parameters + sizeof gaps
         this.finalizedMetadataSize += 24.0F;
@@ -108,7 +108,7 @@ public class Logger implements Serializable {
         for (Map.Entry<String, Long> e : this.finalizedDataPointCounter.entrySet()) {
             System.out.println("-- " + e.getKey() + " | DataPoint: " + e.getValue());
         }
-        //   DPs sid: int, ts: long, v: float
+        //   DPs tid: int, ts: long, v: float
         // model gid: int, start_time: long, end_time: long, mid: int, parameters: bytes[], gaps: bytes[]
         //4 + 8 + 4 = 16 * data points is reduced to 4 + 8 + 8 + 4 + sizeof parameters + sizeof gaps
         double finalizedTotalSize = this.finalizedMetadataSize + this.finalizedParameterSize + this.finalizedGapSize;

@@ -46,7 +46,7 @@ class MinS extends AggregateFunction {
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
     this.mc = H2.h2storage.modelCache
-    this.sfc = H2.h2storage.sourceScalingFactorCache
+    this.sfc = H2.h2storage.timeSeriesScalingFactorCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -55,7 +55,7 @@ class MinS extends AggregateFunction {
 
   override def add(row: Any): Unit = {
     val segment = rowToSegment(row)
-    this.min = Math.min(this.min, segment.min() / this.sfc(segment.sid))
+    this.min = Math.min(this.min, segment.min() / this.sfc(segment.tid))
   }
 
   override def getResult: AnyRef = {
@@ -86,7 +86,7 @@ class MaxS extends AggregateFunction {
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
     this.mc = H2.h2storage.modelCache
-    this.sfc = H2.h2storage.sourceScalingFactorCache
+    this.sfc = H2.h2storage.timeSeriesScalingFactorCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -95,7 +95,7 @@ class MaxS extends AggregateFunction {
 
   override def add(row: Any): Unit = {
     val segment = rowToSegment(row)
-    this.max = Math.max(this.max, segment.max() / this.sfc(segment.sid))
+    this.max = Math.max(this.max, segment.max() / this.sfc(segment.tid))
   }
 
   override def getResult: AnyRef = {
@@ -126,7 +126,7 @@ class SumS extends AggregateFunction {
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
     this.mc = H2.h2storage.modelCache
-    this.sfc = H2.h2storage.sourceScalingFactorCache
+    this.sfc = H2.h2storage.timeSeriesScalingFactorCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -135,7 +135,7 @@ class SumS extends AggregateFunction {
 
   override def add(row: Any): Unit = {
     val segment = rowToSegment(row)
-    this.sum += rowToSegment(row).sum() / this.sfc(segment.sid)
+    this.sum += rowToSegment(row).sum() / this.sfc(segment.tid)
     this.added = true
   }
 
@@ -168,7 +168,7 @@ class AvgS extends AggregateFunction {
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
     this.mc = H2.h2storage.modelCache
-    this.sfc = H2.h2storage.sourceScalingFactorCache
+    this.sfc = H2.h2storage.timeSeriesScalingFactorCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -177,7 +177,7 @@ class AvgS extends AggregateFunction {
 
   override def add(row: Any): Unit = {
     val segment = rowToSegment(row)
-    this.sum += segment.sum() / this.sfc(segment.sid)
+    this.sum += segment.sum() / this.sfc(segment.tid)
     this.count += segment.length()
   }
 
@@ -211,7 +211,7 @@ abstract class TimeAggregate(level: Int, bufferSize: Int, initialValue: Double) 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
     this.mc = H2.h2storage.modelCache
-    this.sfc = H2.h2storage.sourceScalingFactorCache
+    this.sfc = H2.h2storage.timeSeriesScalingFactorCache
   }
 
   override def getType(inputTypes: Array[Int]): Int = {
@@ -278,7 +278,7 @@ class CountMonth extends CountTime(2, 13)
 //MinTime
 class MinTime(level: Int, bufferSize: Int) extends TimeAggregate(level, bufferSize, Double.MaxValue) {
   override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
-    total(field) = Math.min(total(field), segment.min() / this.sfc(segment.sid))
+    total(field) = Math.min(total(field), segment.min() / this.sfc(segment.tid))
   }
 }
 class MinMonth extends MinTime(2, 13)
@@ -286,7 +286,7 @@ class MinMonth extends MinTime(2, 13)
 //MaxTime
 class MaxTime(level: Int, bufferSize: Int) extends TimeAggregate(level, bufferSize, Double.MinValue) {
   override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
-    total(field) = Math.max(total(field), segment.max() / this.sfc(segment.sid))
+    total(field) = Math.max(total(field), segment.max() / this.sfc(segment.tid))
   }
 }
 class MaxMonth extends MaxTime(2, 13)
@@ -294,7 +294,7 @@ class MaxMonth extends MaxTime(2, 13)
 //SumTime
 class SumTime(level: Int, bufferSize: Int) extends TimeAggregate(level, bufferSize, 0.0) {
   override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
-    total(field) = total(field) + (segment.sum() / this.sfc(segment.sid))
+    total(field) = total(field) + (segment.sum() / this.sfc(segment.tid))
   }
 }
 class SumMonth extends SumTime(2, 13)
@@ -324,7 +324,7 @@ class AvgTime(level: Int, bufferSize: Int) extends TimeAggregate(level, 2 * buff
   override protected val aggregate: CubeFunction = (segment: Segment, _: Int, field: Int, total: Array[Double]) => {
     //HACK: as field is continuous all of the counts are stored after the sum
     val count = bufferSize + field - 1
-    total(field) = total(field) + (segment.sum / this.sfc(segment.sid))
+    total(field) = total(field) + (segment.sum / this.sfc(segment.tid))
     total(count) = total(count) + segment.length
   }
 }

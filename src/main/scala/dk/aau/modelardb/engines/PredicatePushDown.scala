@@ -6,38 +6,38 @@ import java.util
 object PredicatePushDown {
 
   /** Public Methods **/
-  //Sid => Gid
-  def sidPointToGidPoint(sid: Int, sgc: Array[Int]): Int = {
-    if (sid < sgc.length) {
-      sgc(sid)
+  //Tid => Gid
+  def tidPointToGidPoint(tid: Int, tsgc: Array[Int]): Int = {
+    if (tid < tsgc.length) {
+      tsgc(tid)
     } else {
       -1
     }
   }
 
-  def sidRangeToGidIn(startSid: Int, endSid: Int, sgc: Array[Int]): Array[Any] = {
-    val maxSid = sgc.length
-    if (endSid <= 0 || startSid >= maxSid) {
-      //All sids are outside the range of assigned sids, so a sentinel is used to ensure no gids match
+  def tidRangeToGidIn(startTid: Int, endTid: Int, tsgc: Array[Int]): Array[Any] = {
+    val maxTid = tsgc.length
+    if (endTid <= 0 || startTid >= maxTid) {
+      //All tids are outside the range of assigned tids, so a sentinel is used to ensure no gids match
       return Array(-1)
     }
 
-    //All sids within the range of assigned sids are translated with the set removing duplicates
+    //All tids within the range of assigned tids are translated with the set removing duplicates
     val gids = scala.collection.mutable.Set[Int]()
-    for (sid <- Math.max(startSid, 1) to Math.min(endSid, maxSid)) {
-      gids.add(sgc(sid))
+    for (tid <- Math.max(startTid, 1) to Math.min(endTid, maxTid)) {
+      gids.add(tsgc(tid))
     }
     gids.toArray
   }
 
-  def sidInToGidIn(sids: Array[Any], sgc: Array[Int]): Array[Any] = {
-    val maxSid = sgc.length
+  def tidInToGidIn(tids: Array[Any], tsgc: Array[Int]): Array[Any] = {
+    val maxTid = tsgc.length
 
-    //All sids in the IN clause are translated with the set removing duplicates
+    //All tids in the IN clause are translated with the set removing duplicates
     val gids = scala.collection.mutable.Set[Int]()
-    sids.foreach(obj => {
-      val sid = obj.asInstanceOf[Int]
-      gids.add(if (sid <= 0 || maxSid < sid) -1 else sgc(sid))
+    tids.foreach(obj => {
+      val tid = obj.asInstanceOf[Int]
+      gids.add(if (tid <= 0 || maxTid < tid) -1 else tsgc(tid))
     })
     gids.toArray
   }

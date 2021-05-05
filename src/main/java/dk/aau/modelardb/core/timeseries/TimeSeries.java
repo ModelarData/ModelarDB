@@ -21,9 +21,9 @@ import java.util.Iterator;
 
 public abstract class TimeSeries implements  Serializable, Iterator<DataPoint> {
     /** Public Methods **/
-    public TimeSeries(String source, int sid, int resolution) {
+    public TimeSeries(String source, int tid, int resolution) {
         this.source = source;
-        this.sid = sid;
+        this.tid = tid;
         this.resolution = resolution;
         this.scalingFactor = 1.0F;
     }
@@ -32,7 +32,7 @@ public abstract class TimeSeries implements  Serializable, Iterator<DataPoint> {
 
     /** Instance Variables **/
     public final String source;
-    public final int sid;
+    public final int tid;
     public final int resolution;
     public float scalingFactor;
 }

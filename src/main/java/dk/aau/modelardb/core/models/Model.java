@@ -34,7 +34,7 @@ public abstract class Model implements Serializable {
     abstract public boolean append(DataPoint[] currentDataPoints);
     abstract public void initialize(List<DataPoint[]> currentSegment);
     abstract public byte[] parameters(long startTime, long endTime, int resolution, List<DataPoint[]> dps);
-    abstract public Segment get(int sid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets);
+    abstract public Segment get(int tid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets);
     abstract public int length();
     abstract public float size(long startTime, long endTime, int resolution, List<DataPoint[]> dps);
 
@@ -47,8 +47,8 @@ public abstract class Model implements Serializable {
     }
 
     final public float compressionRatio(long startTime, long endTime, int resolution, List<DataPoint[]> dps, int gaps) {
-        //   DPs sid: int, ts: long, v: float
-        // model sid: int, start_time: long, end_time: long, mid: int, parameters: bytes[], gaps: bytes[]
+        //   DPs tid: int, ts: long, v: float
+        // model tid: int, start_time: long, end_time: long, mid: int, parameters: bytes[], gaps: bytes[]
         //4 + 8 + 4 = 16 * data points is reduced to 4 + 8 + 8 + 4 + sizeof parameters + sizeof gaps
         return (16.0F * this.length()) / (24.0F + this.size(startTime, endTime, resolution, dps) + (4.0F * gaps));
     }

@@ -42,7 +42,7 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
     withH2 { statement =>
       val gid = 1
       val mid = 1
-      val sid = 1
+      val tid = 1
       val resolution = 10
       val startTime = Instant.ofEpochMilli(100L)
       val endTime = Instant.ofEpochMilli(110L)
@@ -69,8 +69,8 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
       var count = 0
       while (rs.next()) {
         count += 1
-        rs.getInt(1) should equal (sid)
-        rs.getInt("sid") should equal (sid)
+        rs.getInt(1) should equal (tid)
+        rs.getInt("tid") should equal (tid)
         rs.getTimestamp(2).toInstant should equal(startTime)
         rs.getTimestamp("start_time").toInstant should equal(startTime)
         rs.getTimestamp(3).toInstant should equal(endTime)

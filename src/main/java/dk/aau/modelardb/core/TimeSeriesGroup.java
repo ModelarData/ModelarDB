@@ -86,7 +86,7 @@ public class TimeSeriesGroup implements Serializable {
 
             for (int i = 0; i < tsg.timeSeries.length; i++) {
                 TimeSeries ts = tsg.timeSeries[i];
-                int index = Arrays.binarySearch(joinIndex, ts.sid);
+                int index = Arrays.binarySearch(joinIndex, ts.tid);
                 this.nextDataPoints[index] = tsg.nextDataPoints[i];
                 this.currentDataPoints[index] = tsg.currentDataPoints[i];
                 this.timeSeries[index] = tsg.timeSeries[i];
@@ -159,7 +159,7 @@ public class TimeSeriesGroup implements Serializable {
                 }
             } else {
                 //A gap have occurred so this data point cannot be not emitted in this iteration
-                currentDataPoints[i] = new DataPoint(ts.sid, this.next, Float.NaN);
+                currentDataPoints[i] = new DataPoint(ts.tid, this.next, Float.NaN);
                 this.timeSeriesActive--;
             }
         }

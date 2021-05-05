@@ -31,11 +31,11 @@ import dk.aau.modelardb.core.DataPoint;
 public class TimeSeriesCSV extends TimeSeries {
 
     /** Public Methods **/
-    public TimeSeriesCSV(String stringPath, int sid, int resolution,
+    public TimeSeriesCSV(String stringPath, int tid, int resolution,
                          String splitString, boolean hasHeader,
                          int timestampColumnIndex, String dateFormat, String timeZone,
                          int valueColumnIndex, String localeString) {
-        super(stringPath.substring(stringPath.lastIndexOf('/') + 1), sid, resolution);
+        super(stringPath.substring(stringPath.lastIndexOf('/') + 1), tid, resolution);
         this.stringPath = stringPath;
 
         //A small buffer is used so more time series can be ingested in parallel
@@ -121,7 +121,7 @@ public class TimeSeriesCSV extends TimeSeries {
     }
 
     public String toString() {
-        return "Time Series: [" + this.sid + " | " + this.source + " | " + this.resolution + "]";
+        return "Time Series: [" + this.tid + " | " + this.source + " | " + this.resolution + "]";
     }
 
     public void close() {
@@ -189,7 +189,7 @@ public class TimeSeriesCSV extends TimeSeries {
                     break;
             }
             float value = valueParser.parse(split[valueColumnIndex]).floatValue();
-            return new DataPoint(this.sid, timestamp, this.scalingFactor * value);
+            return new DataPoint(this.tid, timestamp, this.scalingFactor * value);
         } catch (ParseException pe) {
             //If the input cannot be parsed the stream is considered empty
             this.channel.close();

@@ -62,20 +62,20 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
     //Initializes storage and Spark with any new time series that the system must ingest
     val ssc = if ( ! configuration.contains("modelardb.ingestors")) {
       configuration.containsOrThrow( "modelardb.batch", "modelardb.spark.streaming")
-      Partitioner.initializeTimeSeries(configuration, sparkStorage.getMaxSID)
+      Partitioner.initializeTimeSeries(configuration, sparkStorage.getMaxTid)
       val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
         .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
       sparkStorage.initialize(Array(), derivedTimeSeries, dimensions, configuration.getModels)
-      Spark.initialize(spark, configuration, sparkStorage.asInstanceOf[SparkStorage], Range(0,0))
+      Spark.initialize(spark, configuration, sparkStorage, Range(0,0))
       null
     } else {
-      val newGID = sparkStorage.getMaxGID + 1
-      val timeSeries = Partitioner.initializeTimeSeries(configuration, sparkStorage.getMaxSID)
-      val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, sparkStorage.getMaxGID)
+      val newGid = sparkStorage.getMaxGid + 1
+      val timeSeries = Partitioner.initializeTimeSeries(configuration, sparkStorage.getMaxTid)
+      val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, sparkStorage.getMaxGid)
       val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
         .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
       sparkStorage.initialize(timeSeriesGroups, derivedTimeSeries, dimensions, configuration.getModels)
-      Spark.initialize(spark, configuration, sparkStorage.asInstanceOf[SparkStorage], Range(newGID, newGID + timeSeriesGroups.size))
+      Spark.initialize(spark, configuration, sparkStorage, Range(newGid, newGid + timeSeriesGroups.size))
       setupStream(spark, timeSeriesGroups)
     }
 
@@ -130,7 +130,7 @@ object Spark {
     this.parallelism = spark.sparkContext.defaultParallelism
     this.relations = spark.read.format("dk.aau.modelardb.engines.spark.ViewProvider")
     this.sparkStorage = null
-    this.broadcastedSTC = spark.sparkContext.broadcast(sparkStorage.sourceTransformationCache)
+    this.broadcastedSTC = spark.sparkContext.broadcast(sparkStorage.timeSeriesTransformationCache)
     this.sparkStorage = sparkStorage
     this.cache = new SparkCache(spark, configuration.getInteger("modelardb.batch"), newGids)
   }

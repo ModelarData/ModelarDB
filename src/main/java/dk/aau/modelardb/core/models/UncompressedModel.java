@@ -53,8 +53,8 @@ class UncompressedModel extends Model {
     }
 
     @Override
-    public Segment get(int sid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets) {
-        return new UncompressedSegment(sid, startTime, endTime, resolution, parameters, offsets);
+    public Segment get(int tid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets) {
+        return new UncompressedSegment(tid, startTime, endTime, resolution, parameters, offsets);
     }
 
     @Override
@@ -80,8 +80,8 @@ class UncompressedModel extends Model {
 class UncompressedSegment extends Segment {
 
     /** Constructors **/
-    UncompressedSegment(int sid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets) {
-        super(sid, startTime, endTime, resolution, offsets);
+    UncompressedSegment(int tid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets) {
+        super(tid, startTime, endTime, resolution, offsets);
 
         FloatBuffer floatBuffer = ByteBuffer.wrap(parameters).asFloatBuffer();
         float[] values = new float[parameters.length / 4];

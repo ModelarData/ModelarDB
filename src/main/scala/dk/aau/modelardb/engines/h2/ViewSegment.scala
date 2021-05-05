@@ -186,7 +186,7 @@ class ViewSegmentCursor(filter: TableFilter) extends Cursor {
   override def next(): Boolean = {
     if (this.segments.hasNext) {
       val segment = this.segments.next()
-      this.currentRow(0) = ValueInt.get(segment.gid) //HACK: exploded so it is a sid
+      this.currentRow(0) = ValueInt.get(segment.gid) //HACK: exploded so it is a tid
       this.currentRow(1) = ValueTimestamp.fromMillis(segment.startTime, 0)
       this.currentRow(2) = ValueTimestamp.fromMillis(segment.endTime, 0)
       this.currentRow(3) = ValueInt.get(this.groupMetadataCache(segment.gid)(0))
@@ -196,7 +196,7 @@ class ViewSegmentCursor(filter: TableFilter) extends Cursor {
 
       //TODO: determine if foreach or indexes are faster and generate a method that add the members without assuming they are strings
       var index = 7
-      for (member <- this.dimensionsCache(segment.gid)) { //HACK: exploded so it is a sid
+      for (member <- this.dimensionsCache(segment.gid)) { //HACK: exploded so it is a tid
         this.currentRow(index) = ValueString.get(member.asInstanceOf[String])
         index += 1
       }

@@ -28,7 +28,7 @@ class ViewSegment(dimensions: Array[StructField]) (@transient val sqlContext: SQ
 
   /** Public Methods **/
   override def schema: StructType = StructType(Seq(
-    StructField("sid", IntegerType, nullable = false),
+    StructField("tid", IntegerType, nullable = false),
     StructField("start_time", TimestampType, nullable = false),
     StructField("end_time", TimestampType, nullable = false),
     StructField("resolution", IntegerType, nullable = false),
@@ -53,17 +53,17 @@ class ViewSegment(dimensions: Array[StructField]) (@transient val sqlContext: SQ
 
   /** Private Methods **/
   private def getSegmentGroupRDD(filters: Array[Filter]): RDD[Row] = {
-    //Sids and members are mapped to Gids so only segments from the necessary groups are retrieved
-    val sgc = Spark.getSparkStorage.sourceGroupCache
+    //Tids and members are mapped to Gids so only segments from the necessary groups are retrieved
+    val tsgc = Spark.getSparkStorage.timeSeriesGroupCache
     val idc = Spark.getSparkStorage.inverseDimensionsCache
     val gidFilters: Array[Filter] = filters.map {
-      case sources.EqualTo("sid", sid: Int) => sources.EqualTo("gid", PredicatePushDown.sidPointToGidPoint(sid, sgc))
-      case sources.EqualNullSafe("sid", sid: Int) => sources.EqualTo("gid", PredicatePushDown.sidPointToGidPoint(sid, sgc))
-      case sources.GreaterThan("sid", sid: Int) => sources.In("gid", PredicatePushDown.sidRangeToGidIn(sid + 1, sgc.length, sgc))
-      case sources.GreaterThanOrEqual("sid", sid: Int) => sources.In("gid", PredicatePushDown.sidRangeToGidIn(sid, sgc.length, sgc))
-      case sources.LessThan("sid", sid: Int) => sources.In("gid", PredicatePushDown.sidRangeToGidIn(0, sid - 1, sgc))
-      case sources.LessThanOrEqual("sid", sid: Int) => sources.In("gid", PredicatePushDown.sidRangeToGidIn(0, sid, sgc))
-      case sources.In("sid", values: Array[Any]) => sources.In("gid", PredicatePushDown.sidInToGidIn(values, sgc))
+      case sources.EqualTo("tid", tid: Int) => sources.EqualTo("gid", PredicatePushDown.tidPointToGidPoint(tid, tsgc))
+      case sources.EqualNullSafe("tid", tid: Int) => sources.EqualTo("gid", PredicatePushDown.tidPointToGidPoint(tid, tsgc))
+      case sources.GreaterThan("tid", tid: Int) => sources.In("gid", PredicatePushDown.tidRangeToGidIn(tid + 1, tsgc.length, tsgc))
+      case sources.GreaterThanOrEqual("tid", tid: Int) => sources.In("gid", PredicatePushDown.tidRangeToGidIn(tid, tsgc.length, tsgc))
+      case sources.LessThan("tid", tid: Int) => sources.In("gid", PredicatePushDown.tidRangeToGidIn(0, tid - 1, tsgc))
+      case sources.LessThanOrEqual("tid", tid: Int) => sources.In("gid", PredicatePushDown.tidRangeToGidIn(0, tid, tsgc))
+      case sources.In("tid", values: Array[Any]) => sources.In("gid", PredicatePushDown.tidInToGidIn(values, tsgc))
       case sources.EqualTo(column: String, value: Any) if idc.containsKey(column.toUpperCase) => //idc's keys are uppercase for consistency
         sources.In("gid", PredicatePushDown.dimensionEqualToGidIn(column, value, idc))
       case f => f

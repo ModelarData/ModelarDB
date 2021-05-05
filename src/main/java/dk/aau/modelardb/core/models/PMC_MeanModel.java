@@ -84,8 +84,8 @@ class PMC_MeanModel extends Model {
     }
 
     @Override
-    public Segment get(int sid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets) {
-        return new PMC_MeanSegment(sid, startTime, endTime, resolution, parameters, offsets);
+    public Segment get(int tid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets) {
+        return new PMC_MeanSegment(tid, startTime, endTime, resolution, parameters, offsets);
     }
 
     @Override
@@ -115,8 +115,8 @@ class PMC_MeanModel extends Model {
 class PMC_MeanSegment extends Segment {
 
     /** Constructors **/
-    PMC_MeanSegment(int sid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets) {
-        super(sid, startTime, endTime, resolution, offsets);
+    PMC_MeanSegment(int tid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets) {
+        super(tid, startTime, endTime, resolution, offsets);
         this.value = ByteBuffer.wrap(parameters).getFloat();
     }
 

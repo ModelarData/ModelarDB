@@ -33,7 +33,7 @@ object SparkProjector {
   def getSegmentProjection(requiredColumns: Array[String], segmentViewNameToIndex: Map[String, Int]): String = {
     val columns = requiredColumns.map(column => {
       val index = segmentViewNameToIndex(column)
-      if (index <= 7) "segmentRow.get(" + (index - 1) + ")" else "dmc(sid)(" + (index - 8) + ")"
+      if (index <= 7) "segmentRow.get(" + (index - 1) + ")" else "dmc(tid)(" + (index - 8) + ")"
     })
 
     val code = s"""
@@ -43,7 +43,7 @@ object SparkProjector {
 
         new SparkSegmentProjector {
             override def project(segmentRow: Row, dmc: Array[Array[Object]]): Row = {
-              val sid = segmentRow.getInt(0)
+              val tid = segmentRow.getInt(0)
               ${columns.mkString("Row(", ",", ")")}
             }
         }
@@ -58,7 +58,7 @@ object SparkProjector {
   def getDataPointProjection(requiredColumns: Array[String], dataPointViewNameToIndex: Map[String, Int]): String = {
     val columns = requiredColumns.map(column => {
       val index = dataPointViewNameToIndex(column)
-      if (index <= 3) dataPointProjectionFragments(index - 1) else "dmc(dp.sid)(" + (index - 4) + ")"
+      if (index <= 3) dataPointProjectionFragments(index - 1) else "dmc(dp.tid)(" + (index - 4) + ")"
     })
 
     val code = s"""
@@ -108,6 +108,6 @@ object SparkProjector {
   }
 
   /** Instance Variables **/
-  private val dataPointProjectionFragments = Array("dp.sid", "new Timestamp(dp.timestamp)",
-    "btc.value(dp.sid).transform(dp.value, sc(dp.sid))")
+  private val dataPointProjectionFragments = Array("dp.tid", "new Timestamp(dp.timestamp)",
+    "btc.value(dp.tid).transform(dp.value, sc(dp.tid))")
 }

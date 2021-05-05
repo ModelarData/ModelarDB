@@ -52,7 +52,7 @@ class SwingFilterModel extends Model {
             }
 
             // Line 1 - 2
-            this.initialDataPoint = new DataPoint(currentDataPoints[0].sid, currentDataPoints[0].timestamp, avg);
+            this.initialDataPoint = new DataPoint(currentDataPoints[0].tid, currentDataPoints[0].timestamp, avg);
         } else {
             //Expect for the first set of data point, all data points can be appended one at a time
             for (DataPoint currentDataPoint : currentDataPoints) {
@@ -129,8 +129,8 @@ class SwingFilterModel extends Model {
 
 
     @Override
-    public Segment get(int sid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets) {
-        return new SwingFilterSegment(sid, startTime, endTime, resolution, parameters, offsets);
+    public Segment get(int tid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets) {
+        return new SwingFilterSegment(tid, startTime, endTime, resolution, parameters, offsets);
     }
 
     @Override
@@ -182,8 +182,8 @@ class SwingFilterModel extends Model {
 class SwingFilterSegment extends Segment {
 
     /** Constructors **/
-    SwingFilterSegment(int sid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets) {
-        super(sid, startTime, endTime, resolution, offsets);
+    SwingFilterSegment(int tid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets) {
+        super(tid, startTime, endTime, resolution, offsets);
         ByteBuffer arguments = ByteBuffer.wrap(parameters);
 
         //Depending on the data being encoded, the linear function might have required double precision floating-point

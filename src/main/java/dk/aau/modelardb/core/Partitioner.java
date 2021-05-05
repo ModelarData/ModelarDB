@@ -25,8 +25,8 @@ import java.util.stream.IntStream;
 public class Partitioner {
 
     /** Public Methods **/
-    public static TimeSeries[] initializeTimeSeries(Configuration configuration, int currentMaximumSID) {
-        int cms = currentMaximumSID;
+    public static TimeSeries[] initializeTimeSeries(Configuration configuration, int currentMaximumTid) {
+        int cms = currentMaximumTid;
         String[] sources = configuration.getDataSources();
         ArrayList<TimeSeries> tss = new ArrayList<>();
 
@@ -41,7 +41,7 @@ public class Partitioner {
         //HACK: Resolution is one argument as all time series used for evaluation has exhibits the same sampling interval
         int resolution = configuration.getResolution();
 
-        //Derived data sources are normalized so all use sids to simply processing in Storage
+        //Derived data sources are normalized so all use tids to simply processing in Storage
         HashMap<String, Pair<String, ValueFunction>[]> derivedDataSources =
                 (HashMap<String, Pair<String, ValueFunction>[]>) configuration.remove("modelardb.source.derived")[0];
         HashMap<Integer, Pair<String, ValueFunction>[]> derivedTimeSeries = new HashMap<>();
@@ -63,22 +63,22 @@ public class Partitioner {
             }
             tss.add(ts);
 
-            //If any derived time series are defined for the source they must be mapped to its sid
+            //If any derived time series are defined for the source they must be mapped to its tid
             if (derivedDataSources.containsKey(ts.source)) {
                 derivedTimeSeries.put(cms, derivedDataSources.get(ts.source));
                 derivedDataSources.remove(ts.source);
             }
         }
 
-        //All derived data sources that do not map to a new data source must map to a sid
+        //All derived data sources that do not map to a new data source must map to a tid
         try {
             final int finalCMS = cms;
             derivedDataSources.forEach((key, value) -> {
-                int sid = Integer.parseInt(key);
-                if (sid < 1 || sid > finalCMS) {
-                    throw new IllegalArgumentException("CORE: sid " + sid + " in modelardb.source.derived is out of range");
+                int tid = Integer.parseInt(key);
+                if (tid < 1 || tid > finalCMS) {
+                    throw new IllegalArgumentException("CORE: tid " + tid + " in modelardb.source.derived is out of range");
                 }
-                derivedTimeSeries.put(sid, value);
+                derivedTimeSeries.put(tid, value);
             });
         } catch (NumberFormatException nfe) {
             String valueBeingParsed = nfe.getMessage().substring(18);
@@ -112,9 +112,9 @@ public class Partitioner {
                 tss = Partitioner.groupTimeSeriesByCorrelation(timeSeries, dimensions, correlations);
             }
 
-            //The time series in a group must be sorted by sid, otherwise, optimizations in SegmentGenerator fail
+            //The time series in a group must be sorted by tid, otherwise, optimizations in SegmentGenerator fail
             groups = Arrays.stream(tss).map(ts -> {
-                Arrays.sort(ts, Comparator.comparingInt(ts2 -> ts2.sid));
+                Arrays.sort(ts, Comparator.comparingInt(ts2 -> ts2.tid));
                 return new TimeSeriesGroup(gids.next(), ts);
             }).toArray(TimeSeriesGroup[]::new);
         }

@@ -19,5 +19,5 @@ import dk.aau.modelardb.core.models.Segment;
 import java.io.Serializable;
 
 public interface CubeFunction extends Serializable {
-    void aggregate(Segment segment, int sid, int field, double[] result);
+    void aggregate(Segment segment, int tid, int field, double[] result);
 }

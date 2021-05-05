@@ -62,8 +62,8 @@ public class Static {
 
     public static TimeSeries[] merge(TimeSeries[] tsA, TimeSeries[] tsB) {
         TimeSeries[] tss = new TimeSeries[tsA.length + tsB.length];
-        //The split and join algorithms depend on each group being numerically ordered by sid
-        if (tsA[0].sid < tsB[0].sid) {
+        //The split and join algorithms depend on each group being numerically ordered by tid
+        if (tsA[0].tid < tsB[0].tid) {
             System.arraycopy(tsA, 0, tss, 0, tsA.length);
             System.arraycopy(tsB, 0, tss, tsA.length, tsB.length);
         } else {
@@ -125,8 +125,8 @@ public class Static {
         int[] values = bytesToInts(gaps);
         for (int g : values) {
             //The metadata cache contains the resolution as the first element
-            int sid = Arrays.binarySearch(sources, 1, sources.length, g);
-            bs.set(sid - 1); //Sids start at one, but there is no reason to waste a bit
+            int tid = Arrays.binarySearch(sources, 1, sources.length, g);
+            bs.set(tid - 1); //Tids start at one, but there is no reason to waste a bit
         }
         return bs.toLongArray()[0];
     }
@@ -136,7 +136,7 @@ public class Static {
         ArrayList<Integer> gaps = new ArrayList<>();
         while (value != 0L) {
             if (value % 2L != 0) {
-                //Sids start at one, but gaps are stored as sid - 1 to not waste a bit
+                //Tids start at one, but gaps are stored as tid - 1 to not waste a bit
                 gaps.add(sources[index + 1]);
             }
             ++index;

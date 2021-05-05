@@ -165,27 +165,27 @@ public class WorkingSet implements Serializable {
         tsg.initialize();
         Supplier<Model[]> modelsInitializer = () -> ModelFactory.getModels(this.models, this.mids, this.error, this.limit);
         Model fallbackModel = ModelFactory.getFallbackModel(this.error, this.limit);
-        List<Integer> sids = null;
+        List<Integer> tids = null;
         if (this.dynamicSplitFraction != 0.0F) {
-            sids = Arrays.stream(tsg.getTimeSeries()).map(ts -> ts.sid).collect(Collectors.toList());
+            tids = Arrays.stream(tsg.getTimeSeries()).map(ts -> ts.tid).collect(Collectors.toList());
         }
 
         //The source the data is ingested from is printed before ingestion is done to simplify debugging deadlocks
         if (this.currentTimeSeriesGroup > 1) {
             System.out.println("---------------------------------------------------------");
         }
-        System.out.println("GID: " + tsg.gid);
-        System.out.println("SIDs: " + getSids(tsg));
+        System.out.println("Gid: " + tsg.gid);
+        System.out.println("Tids: " + getTids(tsg));
         System.out.println("Source: " + tsg.getSource());
         System.out.println("Ingested: " + Static.getIPs());
-        return new SegmentGenerator(tsg, modelsInitializer, fallbackModel, sids, this.latency,
+        return new SegmentGenerator(tsg, modelsInitializer, fallbackModel, tids, this.latency,
                 this.dynamicSplitFraction, this.consumeTemporary, this.consumeFinalized);
     }
 
-    private String getSids(TimeSeriesGroup timeSeriesGroup) {
+    private String getTids(TimeSeriesGroup timeSeriesGroup) {
         StringJoiner sj = new StringJoiner(",", "{", "}");
         for (TimeSeries ts : timeSeriesGroup.getTimeSeries()) {
-            sj.add(Integer.toString(ts.sid));
+            sj.add(Integer.toString(ts.tid));
         }
         return sj.toString();
     }

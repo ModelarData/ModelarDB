@@ -188,13 +188,13 @@ class ViewDataPointCursor(filter: TableFilter) extends Cursor {
   override def next(): Boolean = {
     if (this.dataPoints.hasNext) {
       val dataPoint = this.dataPoints.next()
-      this.currentRow(0) = ValueInt.get(dataPoint.sid)
+      this.currentRow(0) = ValueInt.get(dataPoint.tid)
       this.currentRow(1) = ValueTimestamp.fromMillis(dataPoint.timestamp, 0)
       this.currentRow(2) = ValueFloat.get(dataPoint.value)
 
       //TODO: determine if foreach or indexes are faster and generate a method that add the members without assuming they are strings
       var index = 3
-      for (member <- this.dimensionsCache(dataPoint.sid)) {
+      for (member <- this.dimensionsCache(dataPoint.tid)) {
         this.currentRow(index) = ValueString.get(member.asInstanceOf[String])
         index += 1
       }

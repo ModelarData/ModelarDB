@@ -87,8 +87,8 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
     //Initialize Storage
     val dimensions = configuration.getDimensions
     h2storage.open(dimensions)
-    val timeSeries = Partitioner.initializeTimeSeries(configuration, h2storage.getMaxSID)
-    val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, h2storage.getMaxGID)
+    val timeSeries = Partitioner.initializeTimeSeries(configuration, h2storage.getMaxTid)
+    val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, h2storage.getMaxGid)
     val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
       .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
     h2storage.initialize(timeSeriesGroups, derivedTimeSeries, dimensions, configuration.getModels)
@@ -277,7 +277,7 @@ object H2 {
   //Data Point View
   //Documentation: https://www.h2database.com/html/features.html#pluggable_tables
   def getCreateDataPointViewSQL(dimensions: Dimensions): String = {
-    s"""CREATE TABLE DataPoint(sid INT, timestamp TIMESTAMP, value REAL${H2.getDimensionColumns(dimensions)})
+    s"""CREATE TABLE DataPoint(tid INT, timestamp TIMESTAMP, value REAL${H2.getDimensionColumns(dimensions)})
        |ENGINE "dk.aau.modelardb.engines.h2.ViewDataPoint";
        |""".stripMargin
   }
@@ -286,7 +286,7 @@ object H2 {
   //Documentation: https://www.h2database.com/html/features.html#pluggable_tables
   def getCreateSegmentViewSQL(dimensions: Dimensions): String = {
     s"""CREATE TABLE Segment
-       |(sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BINARY, gaps BINARY${H2.getDimensionColumns(dimensions)})
+       |(tid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BINARY, gaps BINARY${H2.getDimensionColumns(dimensions)})
        |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
        |""".stripMargin
   }
@@ -298,7 +298,7 @@ object H2 {
     s"""CREATE AGGREGATE $sqlName FOR "dk.aau.modelardb.engines.h2.$className";"""
   }
 
-  def expressionToSQLPredicates(expression: Expression, sgc: Array[Int], idc: HashMap[String, HashMap[Object, Array[Integer]]],
+  def expressionToSQLPredicates(expression: Expression, tsgc: Array[Int], idc: HashMap[String, HashMap[Object, Array[Integer]]],
                                 supportsOr: Boolean): String = { //HACK: supportsOR ensures Cassandra does not receive an OR operator
     expression match {
       //NO PREDICATES
@@ -310,9 +310,9 @@ object H2 {
         val ec = c.getSubexpression(0).asInstanceOf[ExpressionColumn]
         val ve = c.getSubexpression(1).asInstanceOf[ValueExpression]
         (ec.getColumnName, operator) match {
-          //SID
-          case ("SID", "=") => val sid = ve.getValue(null).asInstanceOf[ValueInt].getInt
-            " GID = " + PredicatePushDown.sidPointToGidPoint(sid, sgc)
+          //TID
+          case ("TID", "=") => val tid = ve.getValue(null).asInstanceOf[ValueInt].getInt
+            " GID = " + PredicatePushDown.tidPointToGidPoint(tid, tsgc)
           //TIMESTAMP
           case ("TIMESTAMP", ">") => " END_TIME > " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
           case ("TIMESTAMP", ">=") => " END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
@@ -329,23 +329,23 @@ object H2 {
       //IN
       case cin: ConditionInConstantSet =>
         cin.getSubexpression(0).getColumnName match {
-          case "SID" =>
-            val sids = Array.fill[Any](cin.getSubexpressionCount - 1)(0) //The first value is the column name
+          case "TID" =>
+            val tids = Array.fill[Any](cin.getSubexpressionCount - 1)(0) //The first value is the column name
             for (i <- Range(1, cin.getSubexpressionCount)) {
-              sids(i - 1) = cin.getSubexpression(i).getValue(null).asInstanceOf[ValueInt].getInt
+              tids(i - 1) = cin.getSubexpression(i).getValue(null).asInstanceOf[ValueInt].getInt
             }
-            PredicatePushDown.sidInToGidIn(sids, sgc).mkString("GID IN (", ",", ")")
+            PredicatePushDown.tidInToGidIn(tids, tsgc).mkString("GID IN (", ",", ")")
           case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
         }
       //AND
       case cao: ConditionAndOr if this.andOrTypeField.getInt(cao) == ConditionAndOr.AND =>
-        val left = expressionToSQLPredicates(cao.getSubexpression(0), sgc, idc, supportsOr)
-        val right = expressionToSQLPredicates(cao.getSubexpression(1), sgc, idc, supportsOr)
+        val left = expressionToSQLPredicates(cao.getSubexpression(0), tsgc, idc, supportsOr)
+        val right = expressionToSQLPredicates(cao.getSubexpression(1), tsgc, idc, supportsOr)
         if (left == "" || right == "") "" else "(" + left + " AND " + right + ")"
       //OR
       case cao: ConditionAndOr if this.andOrTypeField.getInt(cao) == ConditionAndOr.OR && supportsOr =>
-        val left = expressionToSQLPredicates(cao.getSubexpression(0), sgc, idc, supportsOr)
-        val right = expressionToSQLPredicates(cao.getSubexpression(1), sgc, idc, supportsOr)
+        val left = expressionToSQLPredicates(cao.getSubexpression(0), tsgc, idc, supportsOr)
+        val right = expressionToSQLPredicates(cao.getSubexpression(1), tsgc, idc, supportsOr)
         if (left == "" || right == "") "" else "(" + left + " OR " + right + ")"
       case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
     }

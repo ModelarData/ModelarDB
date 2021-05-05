@@ -26,16 +26,16 @@ import java.util.stream.Stream;
 public abstract class Segment {
 
     /** Constructors **/
-    public Segment(int sid, long startTime, long endTime, int resolution, int[] offsets) {
-        this.sid = sid;
+    public Segment(int tid, long startTime, long endTime, int resolution, int[] offsets) {
+        this.tid = tid;
         this.startTime = startTime;
         this.endTime = endTime;
         this.resolution = resolution;
         this.offsets = offsets;
     }
 
-    public Segment(int sid, long startTime, long endTime, int resolution, byte[] offsets) {
-        this.sid = sid;
+    public Segment(int tid, long startTime, long endTime, int resolution, byte[] offsets) {
+        this.tid = tid;
         this.startTime = startTime;
         this.endTime = endTime;
         this.resolution = resolution;
@@ -52,7 +52,7 @@ public abstract class Segment {
     }
 
     public String toString() {
-        return "Segment: [" + this.sid + " | " + new java.sql.Timestamp(this.startTime) + " | " + new java.sql.Timestamp(this.endTime) + " | " + this.resolution + " | " + this.getClass() + "]";
+        return "Segment: [" + this.tid + " | " + new java.sql.Timestamp(this.startTime) + " | " + new java.sql.Timestamp(this.endTime) + " | " + this.resolution + " | " + this.getClass() + "]";
     }
 
     public int length() {
@@ -103,7 +103,7 @@ public abstract class Segment {
 
         return IntStream.range(0, this.length()).mapToObj(index -> {
             long ts = this.startTime + (this.resolution * (long) index);
-            return new DataPoint(sid, ts, get(ts, (index + temporalOffset) * groupSize + groupOffset));
+            return new DataPoint(tid, ts, get(ts, (index + temporalOffset) * groupSize + groupOffset));
         });
     }
 
@@ -135,7 +135,7 @@ public abstract class Segment {
         //For each time interval until the original end time the specified aggregate is computed and stored in result
         calendar = DateUtils.ceiling(calendar, type);
         while (this.endTime < originalEndTime) {
-            aggregator.aggregate(this, this.sid, field, result);
+            aggregator.aggregate(this, this.tid, field, result);
 
             //Moves the start time and end time to delimit the next interval to compute the aggregate for
             field = calendar.get(type);
@@ -148,7 +148,7 @@ public abstract class Segment {
 
         //The last time interval ends with the original end time
         this.endTime = originalEndTime;
-        aggregator.aggregate(this, this.sid, field, result);
+        aggregator.aggregate(this, this.tid, field, result);
         this.startTime = originalStartTime;
         this.offsets[2] = originalOffset;
         return result;
@@ -170,7 +170,7 @@ public abstract class Segment {
     }
 
     /** Instance Variables **/
-    public final int sid;
+    public final int tid;
     public final int resolution;
     private long startTime;
     private long endTime;
