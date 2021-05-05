@@ -43,7 +43,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     if ( ! tables.next()) {
       val stmt = this.connection.createStatement()
       stmt.executeUpdate(s"CREATE TABLE model(mid INTEGER, name ${this.textType})")
-      stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mid INTEGER, params ${this.blobType}, gaps ${this.blobType})")
+      stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mid INTEGER, parameters ${this.blobType}, gaps ${this.blobType})")
       stmt.executeUpdate(s"CREATE TABLE source(sid INTEGER, scaling REAL, resolution INTEGER, gid INTEGER${dimensions.getSchema(this.textType)})")
     }
 
@@ -241,9 +241,9 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     val startTime = resultSet.getLong(2)
     val endTime = resultSet.getLong(3)
     val mid = resultSet.getInt(4)
-    val params = resultSet.getBytes(5)
+    val parameters = resultSet.getBytes(5)
     val gaps = resultSet.getBytes(6)
-    new SegmentGroup(gid, startTime, endTime, mid, params, gaps)
+    new SegmentGroup(gid, startTime, endTime, mid, parameters, gaps)
   }
 
   def getFirstInteger(query: PreparedStatement): Int = {

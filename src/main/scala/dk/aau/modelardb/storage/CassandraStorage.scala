@@ -198,14 +198,14 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
         val size: Long = row.getBigInteger("size").longValue()
         val endTime = row.getInstant("end_time").toEpochMilli
         val mid = row.getBigInteger("mid").intValue()
-        val params = row.getByteBuffer("parameters")
+        val parameters = row.getByteBuffer("parameters")
 
         //Reconstructs the gaps array from the bit flag
         val gapsArray = Static.bitsToGaps(gaps, gmdc(gid))
 
         //Reconstructs the start time from the end time and length
         val startTime = endTime - (size * gmdc(gid)(0))
-        new SegmentGroup(gid, startTime, endTime, mid, params.array, gapsArray)
+        new SegmentGroup(gid, startTime, endTime, mid, parameters.array, gapsArray)
       }
     }
   }
@@ -268,9 +268,9 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     //Parses the parameters defined by as key-value pairs after a ? char
     val parsed = new util.HashMap[String, String]()
     if (elems.length == 2) {
-      val params = elems(1).split('&')
-      for (param <- params) {
-        val na = param.split('=')
+      val parameters = elems(1).split('&')
+      for (parameter <- parameters) {
+        val na = parameter.split('=')
         parsed.put(na(0), na(1))
       }
     }
@@ -394,14 +394,14 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
       val size: Long = row.getInt("size")
       val endTime = row.getLong("end_time")
       val mid = row.getInt("mid")
-      val params = row.getBytes("parameters")
+      val parameters = row.getBytes("parameters")
 
       //Reconstructs the gaps array from the bit flag
       val gapsArray = Static.bitsToGaps(gaps.longValue(), gmdc(gid))
 
       //Retrieves the resolution from the metadata cache so start_time can be reconstructed
       val startTime = endTime - (size * gmdc(gid)(0))
-      Row(gid, new Timestamp(startTime), new Timestamp(endTime), mid, params.array(), gapsArray)
+      Row(gid, new Timestamp(startTime), new Timestamp(endTime), mid, parameters.array(), gapsArray)
     }
   }
 
