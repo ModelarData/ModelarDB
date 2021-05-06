@@ -130,7 +130,9 @@ object Interface {
     val st = System.currentTimeMillis()
     var result: Array[String] = null
     try {
-      val query_rewritten = query.replace("#", "tid, start_time, end_time, sampling_interval, mtid, model, gaps")
+      val query_rewritten =
+        query.replace("COUNT_S(#)", "COUNT_S(start_time, end_time, sampling_interval)")
+          .replace("#", "tid, start_time, end_time, sampling_interval, mtid, model, gaps")
       result = this.sql(query_rewritten)
     } catch {
       case e: Exception =>
