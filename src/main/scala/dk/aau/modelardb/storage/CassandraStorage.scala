@@ -57,18 +57,18 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
       throw new IllegalArgumentException("ModelarDB: CassandraStorage groups must be less than 64 time series")
     }
 
-    //Inserts the metadata for the sources defined in the configuration file (Tid, Scaling, Resolution, Gid, Dimensions)
+    //Inserts the metadata for the sources defined in the configuration file (Tid, Scaling Factor, Sampling Interval, Gid, Dimensions)
     val columnsInNormalizedDimensions = dimensions.getColumns.length
     val columns = if (columnsInNormalizedDimensions  == 0) "" else dimensions.getColumns.mkString(", ", ", ", "")
     val placeholders = "?, " * (columnsInNormalizedDimensions  + 3) + "?"
-    val insertString = s"INSERT INTO ${this.keyspace}.time_series(tid, scaling, resolution, gid $columns) VALUES($placeholders)"
+    val insertString = s"INSERT INTO ${this.keyspace}.time_series(tid, scaling_factor, sampling_interval, gid $columns) VALUES($placeholders)"
     for (tsg <- timeSeriesGroups) {
       for (ts <- tsg.getTimeSeries) {
         var stmt = SimpleStatement.builder(insertString)
           .addPositionalValues(
             BigInteger.valueOf(ts.tid.toLong), //Tid
-            ts.scalingFactor.asInstanceOf[Object], //Scaling
-            BigInteger.valueOf(ts.resolution), //Resolution
+            ts.scalingFactor.asInstanceOf[Object], //Scaling Factor
+            BigInteger.valueOf(ts.samplingInterval), //Sampling Interval
             BigInteger.valueOf(tsg.gid)) //Gid
 
         val members = dimensions.get(ts.source)
@@ -79,18 +79,18 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
       }
     }
 
-    //Extracts the scaling factor, resolution, gid, and dimensions for the time series in storage
+    //Extracts the scaling factor, sampling interval, gid, and dimensions for the time series in storage
     var stmt = SimpleStatement.newInstance(s"SELECT * FROM ${this.keyspace}.time_series")
     var results = session.execute(stmt)
     val timeSeriesInStorage = new util.HashMap[Integer, Array[Object]]()
     var rows = results.iterator()
     while (rows.hasNext) {
-      //The metadata is stored as (Tid => Scaling, Resolution, Gid, Dimensions)
+      //The metadata is stored as (Tid => Scaling, Sampling Interval, Gid, Dimensions)
       val row = rows.next
       val tid = row.getBigInteger(0).intValueExact()
       val metadata = new util.ArrayList[Object]()
-      metadata.add(row.getFloat("scaling").asInstanceOf[Object])
-      metadata.add(row.getBigInteger("resolution").intValueExact().asInstanceOf[Object])
+      metadata.add(row.getFloat("scaling_factor").asInstanceOf[Object])
+      metadata.add(row.getBigInteger("sampling_interval").intValueExact().asInstanceOf[Object])
       metadata.add(row.getBigInteger("gid").intValueExact().asInstanceOf[Object])
 
       //Dimensions
@@ -101,7 +101,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     }
 
     //Extracts the name of all models in storage
-    stmt = SimpleStatement.newInstance(s"SELECT * FROM ${this.keyspace}.model")
+    stmt = SimpleStatement.newInstance(s"SELECT * FROM ${this.keyspace}.model_type")
     results = session.execute(stmt)
     val modelsInStorage = new util.HashMap[String, Integer]()
 
@@ -116,7 +116,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     val modelsToInsert = super.initializeCaches(modelNames, dimensions, modelsInStorage, timeSeriesInStorage, derivedTimeSeries)
 
     //Inserts the name of each model in the configuration file but not in the model table
-    val insertStmt = session.prepare(s"INSERT INTO ${this.keyspace}.model(mid, name) VALUES(?, ?)")
+    val insertStmt = session.prepare(s"INSERT INTO ${this.keyspace}.model_type(mtid, name) VALUES(?, ?)")
     for ((k, v) <- modelsToInsert.asScala) {
       session.execute(
         insertStmt
@@ -151,18 +151,18 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     batch.setIdempotent(true)
     for (segment <- segments.take(size)) {
       val gmdc = this.groupMetadataCache(segment.gid)
-      val resolution = gmdc(0)
+      val samplingInterval = gmdc(0)
       val gaps = Static.gapsToBits(segment.offsets, gmdc)
-      val size = BigInteger.valueOf((segment.endTime - segment.startTime) / resolution)
-      val mid = BigInteger.valueOf(segment.mid.toLong)
+      val size = BigInteger.valueOf((segment.endTime - segment.startTime) / samplingInterval)
+      val mtid = BigInteger.valueOf(segment.mtid.toLong)
 
       val boundStatement = insertStmt.bind()
         .setBigInteger(0, BigInteger.valueOf(segment.gid))
         .setBigInteger(1, BigInteger.valueOf(gaps))
         .setBigInteger(2, size)
         .setInstant(3, Instant.ofEpochMilli(segment.endTime))
-        .setBigInteger(4, mid)
-        .setByteBuffer(5, ByteBuffer.wrap(segment.parameters))
+        .setBigInteger(4, mtid)
+        .setByteBuffer(5, ByteBuffer.wrap(segment.model))
       batch = batch.add(boundStatement)
 
       //The maximum batch size supported by Cassandra
@@ -197,15 +197,15 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
         val gaps = row.getBigInteger("gaps").longValue()
         val size: Long = row.getBigInteger("size").longValue()
         val endTime = row.getInstant("end_time").toEpochMilli
-        val mid = row.getBigInteger("mid").intValue()
-        val parameters = row.getByteBuffer("parameters")
+        val mtid = row.getBigInteger("mtid").intValue()
+        val model = row.getByteBuffer("model")
 
         //Reconstructs the gaps array from the bit flag
         val gapsArray = Static.bitsToGaps(gaps, gmdc(gid))
 
         //Reconstructs the start time from the end time and length
         val startTime = endTime - (size * gmdc(gid)(0))
-        new SegmentGroup(gid, startTime, endTime, mid, parameters.array, gapsArray)
+        new SegmentGroup(gid, startTime, endTime, mtid, model.array, gapsArray)
       }
     }
   }
@@ -234,7 +234,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
       val size = (te - ts) / res
 
       (gid, gaps, size, te, row.getInt(3), row.getAs[Array[Byte]](4))
-    }).saveToCassandra(this.keyspace, "segment", SomeColumns("gid", "gaps", "size", "end_time", "mid", "parameters"))
+    }).saveToCassandra(this.keyspace, "segment", SomeColumns("gid", "gaps", "size", "end_time", "mtid", "model"))
   }
 
   override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): RDD[Row] = {
@@ -284,17 +284,17 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     createTable = SimpleStatement.newInstance(s"CREATE KEYSPACE IF NOT EXISTS ${this.keyspace} WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };")
     session.execute(createTable)
 
-    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.segment(gid VARINT, gaps VARINT, size VARINT, end_time TIMESTAMP, mid VARINT, parameters BLOB, PRIMARY KEY (gid, end_time, gaps));")
+    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.segment(gid VARINT, gaps VARINT, size VARINT, end_time TIMESTAMP, mtid VARINT, model BLOB, PRIMARY KEY (gid, end_time, gaps));")
     session.execute(createTable)
 
-    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.model(mid VARINT, name TEXT, PRIMARY KEY (mid));")
+    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.model_type(mtid VARINT, name TEXT, PRIMARY KEY (mtid));")
     session.execute(createTable)
 
-    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.time_series(tid VARINT, scaling FLOAT, resolution VARINT, gid VARINT ${dimensions.getSchema("TEXT")}, PRIMARY KEY (tid));")
+    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.time_series(tid VARINT, scaling_factor FLOAT, sampling_interval VARINT, gid VARINT ${dimensions.getSchema("TEXT")}, PRIMARY KEY (tid));")
     session.execute(createTable)
 
     //The insert statement will be used for every batch of segments
-    this.insertStmt = session.prepare(s"INSERT INTO ${this.keyspace}.segment(gid, gaps, size, end_time, mid, parameters) VALUES(?, ?, ?, ?, ?, ?)")
+    this.insertStmt = session.prepare(s"INSERT INTO ${this.keyspace}.segment(gid, gaps, size, end_time, mtid, model) VALUES(?, ?, ?, ?, ?, ?)")
     session.close()
   }
 
@@ -393,15 +393,15 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
       val gaps = row.getVarInt("gaps")
       val size: Long = row.getInt("size")
       val endTime = row.getLong("end_time")
-      val mid = row.getInt("mid")
-      val parameters = row.getBytes("parameters")
+      val mtid = row.getInt("mtid")
+      val model = row.getBytes("model")
 
       //Reconstructs the gaps array from the bit flag
       val gapsArray = Static.bitsToGaps(gaps.longValue(), gmdc(gid))
 
-      //Retrieves the resolution from the metadata cache so start_time can be reconstructed
+      //Retrieves the sampling interval from the metadata cache so start_time can be reconstructed
       val startTime = endTime - (size * gmdc(gid)(0))
-      Row(gid, new Timestamp(startTime), new Timestamp(endTime), mid, parameters.array(), gapsArray)
+      Row(gid, new Timestamp(startTime), new Timestamp(endTime), mtid, model.array(), gapsArray)
     }
   }
 

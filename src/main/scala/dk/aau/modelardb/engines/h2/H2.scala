@@ -2,7 +2,7 @@ package dk.aau.modelardb.engines.h2
 
 import java.sql.{Connection, DriverManager}
 import dk.aau.modelardb.Interface
-import dk.aau.modelardb.core.utility.{Pair, SegmentFunction, Static, ValueFunction}
+import dk.aau.modelardb.core.utility.{SegmentFunction, Static}
 import dk.aau.modelardb.core.{Configuration, Dimensions, Partitioner, SegmentGroup, WorkingSet}
 import dk.aau.modelardb.engines.PredicatePushDown
 import dk.aau.modelardb.core.Dimensions.Types
@@ -10,7 +10,6 @@ import org.h2.expression.condition.{Comparison, ConditionAndOr, ConditionInConst
 import org.h2.expression.{Expression, ExpressionColumn, ValueExpression}
 import org.h2.value.{ValueInt, ValueTimestamp}
 
-import java.util
 import java.util.TimeZone
 import java.util.HashMap
 import java.util.concurrent.CountDownLatch
@@ -24,7 +23,6 @@ import scala.collection.mutable
 //TODO: Implement a proper cache for segments retrieved from storage. Maybe store them as Gid, ST, ET intervals.
 //TODO: Merge the loggers from each thread before printing them to make them easier to read the results.
 //TODO: Make the two gridding methods used by the SparkEngine generic enough that all engines can use them.
-//TODO: Remove resolution from Segment View so RDBMSs as it is avaliable from the metadata cache in storage.
 //TODO: Determine how to ingest and execute queries in parallel without ever introducing duplicate data points.
 //      Maybe having a shared read/write lock on storage (instead of engine) that engines can use when reading or writing.
 //TODO: Support requiredColumns and test that predicate push-down works with all storage backends.
@@ -33,7 +31,7 @@ import scala.collection.mutable
 class H2(configuration: Configuration, h2storage: H2Storage) {
   /** Instance Variables **/
   private var finalizedSegmentsIndex = 0
-  private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](configuration.getInteger("modelardb.batch"))
+  private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](configuration.getBatchSize())
   private var numberOfRunningIngestors: CountDownLatch = _
   private val cacheLock = new ReentrantReadWriteLock()
   private val temporarySegments = mutable.HashMap[Int, Array[SegmentGroup]]()
@@ -89,19 +87,17 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
     h2storage.open(dimensions)
     val timeSeries = Partitioner.initializeTimeSeries(configuration, h2storage.getMaxTid)
     val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, h2storage.getMaxGid)
-    val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
-      .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
-    h2storage.initialize(timeSeriesGroups, derivedTimeSeries, dimensions, configuration.getModels)
-    if (timeSeriesGroups.isEmpty || ! configuration.contains("modelardb.ingestors")) {
+    h2storage.initialize(timeSeriesGroups, configuration.getDerivedTimeSeries(), dimensions, configuration.getModelTypeNames)
+    if (timeSeriesGroups.isEmpty || configuration.getIngestors() == 0) {
       //There are no time series to ingest or no ingestors to ingest them with
       this.numberOfRunningIngestors = new CountDownLatch(0)
       return
     }
 
-    val midCache = h2storage.midCache
-    val threads = configuration.getInteger("modelardb.ingestors")
+    val mtidCache = h2storage.mtidCache
+    val threads = configuration.getIngestors()
     this.numberOfRunningIngestors = new CountDownLatch(threads)
-    val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, midCache, threads)
+    val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, mtidCache, threads)
 
     //Start Ingestion
     if (workingSets.nonEmpty) {
@@ -118,9 +114,9 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
   private def ingest(workingSet: WorkingSet): Unit = {
     //Creates a method that stores temporary segments in memory and finalized segments in batches to be written to disk
     val consumeTemporary = new SegmentFunction {
-      override def emit(gid: Int, startTime: Long, endTime: Long, mid: Int, parameters: Array[Byte], gaps: Array[Byte]): Unit = {
+      override def emit(gid: Int, startTime: Long, endTime: Long, mtid: Int, model: Array[Byte], gaps: Array[Byte]): Unit = {
         cacheLock.writeLock().lock()
-        val newTemporarySegment = new SegmentGroup(gid, startTime, endTime, mid, parameters, gaps)
+        val newTemporarySegment = new SegmentGroup(gid, startTime, endTime, mtid, model, gaps)
         val currentTemporarySegments = temporarySegments.getOrElse(gid, Array())
         temporarySegments(gid) = updateTemporarySegment(currentTemporarySegments, newTemporarySegment, true)
         cacheLock.writeLock().unlock()
@@ -128,11 +124,11 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
     }
 
     val consumeFinalized = new SegmentFunction {
-      override def emit(gid: Int, startTime: Long, endTime: Long, mid: Int, parameters: Array[Byte], gaps: Array[Byte]): Unit = {
+      override def emit(gid: Int, startTime: Long, endTime: Long, mtid: Int, model: Array[Byte], gaps: Array[Byte]): Unit = {
         cacheLock.writeLock().lock()
-        finalizedSegments(finalizedSegmentsIndex) = new SegmentGroup(gid, startTime, endTime, mid, parameters, gaps)
+        finalizedSegments(finalizedSegmentsIndex) = new SegmentGroup(gid, startTime, endTime, mtid, model, gaps)
         finalizedSegmentsIndex += 1
-        if (finalizedSegmentsIndex == configuration.getInteger("modelardb.batch")) {
+        if (finalizedSegmentsIndex == configuration.getBatchSize()) {
           h2storage.storeSegmentGroups(finalizedSegments, finalizedSegmentsIndex)
           finalizedSegmentsIndex = 0
         }
@@ -157,36 +153,38 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
     this.numberOfRunningIngestors.countDown()
   }
 
-  private def updateTemporarySegment(cache: Array[SegmentGroup], inputSG: SegmentGroup, isTemporary: Boolean): Array[SegmentGroup]= {
+  private def updateTemporarySegment(cache: Array[SegmentGroup], inputSegmentGroup: SegmentGroup,
+                                     isTemporary: Boolean): Array[SegmentGroup]= {
     //The gaps are extracted from the new finalized or temporary segment
-    val inputGaps = Static.bytesToInts(inputSG.offsets)
+    val inputGaps = Static.bytesToInts(inputSegmentGroup.offsets)
 
     //Extracts the metadata for the group of time series being updated
     val groupMetadataCache = h2storage.groupMetadataCache
-    val group = groupMetadataCache(inputSG.gid).drop(1)
-    val resolution = groupMetadataCache(inputSG.gid)(0)
+    val group = groupMetadataCache(inputSegmentGroup.gid).drop(1)
+    val samplingInterval = groupMetadataCache(inputSegmentGroup.gid)(0)
     val inputIngested = group.toSet.diff(inputGaps.toSet)
     var updatedExistingSegment = false
 
     for (i <- cache.indices) {
       //The gaps are extracted for each existing temporary row
-      val cachedSG = cache(i)
-      val cachedGap = Static.bytesToInts(cachedSG.offsets)
+      val cachedSegmentGroup = cache(i)
+      val cachedGap = Static.bytesToInts(cachedSegmentGroup.offsets)
       val cachedIngested = group.toSet.diff(cachedGap.toSet)
 
       //Each existing temporary segment that contains values for the same time series as the new segment is updated
       if (cachedIngested.intersect(inputIngested).nonEmpty) {
         if (isTemporary) {
           //A new temporary segment always represent newer data points than the previous temporary segment
-          cache(i) = inputSG
+          cache(i) = inputSegmentGroup
         } else {
           //Moves the start time of the temporary segment to the data point right after the finalized segment, if
           // the new start time is after the end time of the temporary segment it can be dropped from the cache
           cache(i) = null //The current temporary segment is deleted if it overlaps completely with the finalized segment
-          val startTime = inputSG.endTime + resolution
-          if (startTime <= cachedSG.endTime) {
-            val newGaps = Static.intToBytes(cachedGap :+ -((startTime - cachedSG.startTime) / resolution).toInt)
-            cache(i) = new SegmentGroup(cachedSG.gid, startTime, cachedSG.endTime, cachedSG.mid, cachedSG.parameters, newGaps)
+          val startTime = inputSegmentGroup.endTime + samplingInterval
+          if (startTime <= cachedSegmentGroup.endTime) {
+            val newGaps = Static.intToBytes(cachedGap :+ -((startTime - cachedSegmentGroup.startTime) / samplingInterval).toInt)
+            cache(i) = new SegmentGroup(cachedSegmentGroup.gid, startTime, cachedSegmentGroup.endTime,
+              cachedSegmentGroup.mtid, cachedSegmentGroup.model, newGaps)
           }
         }
         updatedExistingSegment = true
@@ -195,7 +193,7 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
 
     if (isTemporary && ! updatedExistingSegment) {
       //A split has occurred and multiple segments now represent what one did before, so the new ones are appended
-      cache.filter(_ != null) :+ inputSG
+      cache.filter(_ != null) :+ inputSegmentGroup
     } else {
       //A join have occurred and one segment now represent what two did before, so duplicates must be removed
       cache.filter(_ != null).distinct
@@ -286,7 +284,7 @@ object H2 {
   //Documentation: https://www.h2database.com/html/features.html#pluggable_tables
   def getCreateSegmentViewSQL(dimensions: Dimensions): String = {
     s"""CREATE TABLE Segment
-       |(tid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BINARY, gaps BINARY${H2.getDimensionColumns(dimensions)})
+       |(tid INT, start_time TIMESTAMP, end_time TIMESTAMP, sampling_interval INT, mtid INT, model BINARY, gaps BINARY${H2.getDimensionColumns(dimensions)})
        |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
        |""".stripMargin
   }

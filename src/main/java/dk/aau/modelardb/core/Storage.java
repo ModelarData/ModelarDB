@@ -14,8 +14,8 @@
  */
 package dk.aau.modelardb.core;
 
-import dk.aau.modelardb.core.models.Model;
-import dk.aau.modelardb.core.models.ModelFactory;
+import dk.aau.modelardb.core.models.ModelType;
+import dk.aau.modelardb.core.models.ModelTypeFactory;
 import dk.aau.modelardb.core.utility.Pair;
 import dk.aau.modelardb.core.utility.ValueFunction;
 import dk.aau.modelardb.core.utility.Static;
@@ -45,27 +45,27 @@ public abstract class Storage {
         this.dimensions = dimensions;
 
         //Computes the set of models that must be inserted for the system to
-        // function, per definition the mid of the fallback model is one
+        // function, per definition the mtid of the fallback model is one
         HashMap<String, Integer> modelsToBeInserted = new HashMap<>();
         List<String> modelsWithFallback = new ArrayList<>(Arrays.asList(modelNames));
-        modelsWithFallback.add(0, "dk.aau.modelardb.core.models.UncompressedModel");
-        int mid = modelsInStorage.values().stream().max(Integer::compare).orElse(0);
+        modelsWithFallback.add(0, "dk.aau.modelardb.core.models.UncompressedModelType");
+        int mtid = modelsInStorage.values().stream().max(Integer::compare).orElse(0);
         for (String model : modelsWithFallback) {
             if ( ! modelsInStorage.containsKey(model)) {
-                mid += 1;
-                modelsInStorage.put(model, mid);
-                modelsToBeInserted.put(model, mid);
+                mtid += 1;
+                modelsInStorage.put(model, mtid);
+                modelsToBeInserted.put(model, mtid);
             }
         }
 
-        //Verifies that the implementation of all models are loaded and creates the midCache and modelCache
-        this.modelCache = new Model[modelsInStorage.size() + 1];
-        this.midCache = new HashMap<>();
+        //Verifies that the implementation of all models are loaded and creates the mtidCache and modelCache
+        this.modelTypeCache = new ModelType[modelsInStorage.size() + 1];
+        this.mtidCache = new HashMap<>();
         for (Entry<String, Integer> entry : modelsInStorage.entrySet()) {
-            Model model = ModelFactory.getModel(entry.getKey(), 0,0.0F, 0);
-            mid = entry.getValue();
-            this.modelCache[mid] = model;
-            this.midCache.put(model.getClass().getName(), mid);
+            ModelType modelType = ModelTypeFactory.getModel(entry.getKey(), 0,0.0F, 0);
+            mtid = entry.getValue();
+            this.modelTypeCache[mtid] = modelType;
+            this.mtidCache.put(modelType.getClass().getName(), mtid);
         }
 
         //Creates the timeSeriesGroupCache, derivedSourceCache, the dimensionsCache, and the inverseDimensionsCache
@@ -79,7 +79,7 @@ public abstract class Storage {
         this.timeSeriesTransformationCache = new ValueFunction[totalNumberOfSources];
         HashMap<Integer, ArrayList<Integer>> groupDerivedCacheBuilder = new HashMap<>();
         for (Entry<Integer, Object[]> entry : timeSeriesInStorage.entrySet()) {
-            //Metadata is a mapping from Tid to Scaling, Resolution, Gid, and Dimensions
+            //Metadata is a mapping from Tid to Scaling, Sampling Interval, Gid, and Dimensions
             Integer tid = entry.getKey();
             Object[] metadata = entry.getValue();
 
@@ -155,7 +155,7 @@ public abstract class Storage {
             this.inverseDimensionsCache.put(oes.getKey().toUpperCase(), innerAsArray);
         }
 
-        //Finally the sorted groupMetadataCache is created and consists of resolution and tids
+        //Finally the sorted groupMetadataCache is created and consists of sampling interval and tids
         this.groupMetadataCache = new int[gsc.size() + 1][];
         gsc.forEach((k,v) -> {
             this.groupMetadataCache[k] = v.stream().mapToInt(i -> i).toArray();
@@ -167,11 +167,11 @@ public abstract class Storage {
     /** Instance Variables **/
     public Dimensions dimensions;
 
-    //Write Cache: Maps the name of a model to the corresponding mid used by the storage layer
-    public HashMap<String, Integer> midCache;
+    //Write Cache: Maps the name of a model to the corresponding mtid used by the storage layer
+    public HashMap<String, Integer> mtidCache;
 
-    //Read Cache: Maps the mid of a model to an instance of the model so segments can be constructed from it
-    public Model[] modelCache;
+    //Read Cache: Maps the mtid of a model to an instance of the model so segments can be constructed from it
+    public ModelType[] modelTypeCache;
 
     //Read Cache: Maps the tid of a time series to the gid of the group that the time series is a member of
     public int[] timeSeriesGroupCache;
@@ -191,6 +191,6 @@ public abstract class Storage {
     //Read Cache: Maps the value of a column for a dimension to the gids with that member
     public HashMap<String, HashMap<Object, Integer[]>> inverseDimensionsCache;
 
-    //Read Cache: Maps the gid of a group to the groups resolution and the tids that are part of that group
+    //Read Cache: Maps the gid of a group to the groups sampling interval and the tids that are part of that group
     public int[][] groupMetadataCache;
 }

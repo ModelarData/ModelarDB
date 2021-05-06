@@ -14,8 +14,8 @@
  */
 package dk.aau.modelardb.core;
 
-import dk.aau.modelardb.core.models.Model;
-import dk.aau.modelardb.core.models.ModelFactory;
+import dk.aau.modelardb.core.models.ModelType;
+import dk.aau.modelardb.core.models.ModelTypeFactory;
 import dk.aau.modelardb.core.timeseries.TimeSeries;
 import dk.aau.modelardb.core.utility.Logger;
 import dk.aau.modelardb.core.utility.SegmentFunction;
@@ -36,26 +36,26 @@ import java.util.stream.Collectors;
 public class WorkingSet implements Serializable {
 
     /** Constructors **/
-    public WorkingSet(TimeSeriesGroup[] timeSeriesGroups, float dynamicSplitFraction,
-                      String[] models, int[] mids, float error, int latency, int limit) {
+    public WorkingSet(TimeSeriesGroup[] timeSeriesGroups, float dynamicSplitFraction, String[] models,
+                      int[] mtids, float errorBound, int lengthBound, int latency) {
         this.timeSeriesGroups = timeSeriesGroups;
         this.dynamicSplitFraction = (dynamicSplitFraction > 0.0F) ? 1.0F / dynamicSplitFraction : 0.0F;
         this.currentTimeSeriesGroup = 0;
-        this.models = models;
-        this.mids = mids;
-        this.error = error;
-        this.latency = latency;
-        this.limit = limit;
+        this.modelTypeNames = models;
+        this.mtids = mtids;
+        this.errorBound = errorBound;
+        this.maximumLatency = latency;
+        this.lengthBound = lengthBound;
     }
 
     /** Public Methods **/
-    public void process(SegmentFunction consumeTemporary, SegmentFunction consumeFinalized,
-                        BooleanSupplier haveBeenTerminated) throws IOException {
+    public void process(SegmentFunction consumeTemporarySegment, SegmentFunction consumeFinalizedSegment,
+                        BooleanSupplier haveExcutionBeenTerminated) throws IOException {
         //DEBUG: initializes the timer stored in the logger
         this.logger.getTimeSpan();
-        this.consumeTemporary = consumeTemporary;
-        this.consumeFinalized = consumeFinalized;
-        this.haveBeenTerminated = haveBeenTerminated;
+        this.consumeTemporarySegment = consumeTemporarySegment;
+        this.consumeFinalizedSegment = consumeFinalizedSegment;
+        this.haveExecutionBeenTerminated = haveExcutionBeenTerminated;
 
         processBounded();
         processUnbounded();
@@ -67,20 +67,20 @@ public class WorkingSet implements Serializable {
     }
 
     public String toString() {
-        return "====================================================================================================\n" +
-                "Working Set [Current GID: " +
+        return "=========================================================================================================================\n" +
+                "Working Set [Current Gid: " +
                 this.timeSeriesGroups[this.currentTimeSeriesGroup].gid +
                 " | Total TSGs: " +
                 this.timeSeriesGroups.length +
                 " | Current TSG: " +
                 (this.currentTimeSeriesGroup + 1) +
-                " | Error: " +
-                this.error +
-                " | Latency: " +
-                this.latency +
-                " | Limit: " +
-                this.limit +
-                "\n====================================================================================================";
+                " | Error Bound: " +
+                this.errorBound +
+                " | Length Bound: " +
+                this.lengthBound +
+                " | Maximum Latency: " +
+                this.maximumLatency +
+                "\n=========================================================================================================================";
     }
 
     /** Private Methods **/
@@ -88,7 +88,7 @@ public class WorkingSet implements Serializable {
         while (this.currentTimeSeriesGroup < this.timeSeriesGroups.length &&
                 ! this.timeSeriesGroups[this.currentTimeSeriesGroup].isAsync) {
             //Checks if the engine currently ingesting from this working set has been terminated
-            if (this.haveBeenTerminated.getAsBoolean()) {
+            if (this.haveExecutionBeenTerminated.getAsBoolean()) {
                 return;
             }
 
@@ -102,7 +102,7 @@ public class WorkingSet implements Serializable {
 
     private void processUnbounded() throws IOException {
         //There is no work to do if no unbounded time series were in the configuration file or if the engine is terminated
-        if (this.currentTimeSeriesGroup == this.timeSeriesGroups.length || this.haveBeenTerminated.getAsBoolean()) {
+        if (this.currentTimeSeriesGroup == this.timeSeriesGroups.length || this.haveExecutionBeenTerminated.getAsBoolean()) {
             return;
         }
         Selector selector = Selector.open();
@@ -118,7 +118,7 @@ public class WorkingSet implements Serializable {
 
         while (true) {
             //Checks if the engine currently ingesting from this working set have been terminated
-            if (this.haveBeenTerminated.getAsBoolean()) {
+            if (this.haveExecutionBeenTerminated.getAsBoolean()) {
                 selector.close();
                 return;
             }
@@ -163,8 +163,9 @@ public class WorkingSet implements Serializable {
         int index = this.currentTimeSeriesGroup++;
         TimeSeriesGroup tsg = this.timeSeriesGroups[index];
         tsg.initialize();
-        Supplier<Model[]> modelsInitializer = () -> ModelFactory.getModels(this.models, this.mids, this.error, this.limit);
-        Model fallbackModel = ModelFactory.getFallbackModel(this.error, this.limit);
+        Supplier<ModelType[]> modelTypeInitializer = () -> ModelTypeFactory.getModelTypes(
+                this.modelTypeNames, this.mtids,this.errorBound,this.lengthBound);
+        ModelType fallbackModelType = ModelTypeFactory.getFallbackModelType(this.errorBound, this.lengthBound);
         List<Integer> tids = null;
         if (this.dynamicSplitFraction != 0.0F) {
             tids = Arrays.stream(tsg.getTimeSeries()).map(ts -> ts.tid).collect(Collectors.toList());
@@ -176,10 +177,10 @@ public class WorkingSet implements Serializable {
         }
         System.out.println("Gid: " + tsg.gid);
         System.out.println("Tids: " + getTids(tsg));
-        System.out.println("Source: " + tsg.getSource());
+        System.out.println("Sources: " + tsg.getSource());
         System.out.println("Ingested: " + Static.getIPs());
-        return new SegmentGenerator(tsg, modelsInitializer, fallbackModel, tids, this.latency,
-                this.dynamicSplitFraction, this.consumeTemporary, this.consumeFinalized);
+        return new SegmentGenerator(tsg, modelTypeInitializer, fallbackModelType, tids, this.maximumLatency,
+                this.dynamicSplitFraction, this.consumeTemporarySegment, this.consumeFinalizedSegment);
     }
 
     private String getTids(TimeSeriesGroup timeSeriesGroup) {
@@ -192,17 +193,17 @@ public class WorkingSet implements Serializable {
 
     /** Instance Variables **/
     private int currentTimeSeriesGroup;
-    private SegmentFunction consumeTemporary;
-    private SegmentFunction consumeFinalized;
-    private BooleanSupplier haveBeenTerminated;
+    private SegmentFunction consumeTemporarySegment;
+    private SegmentFunction consumeFinalizedSegment;
+    private BooleanSupplier haveExecutionBeenTerminated;
 
     private final TimeSeriesGroup[] timeSeriesGroups;
     private final float dynamicSplitFraction;
-    private final String[] models;
-    private final int[] mids;
-    private final float error;
-    private final int latency;
-    private final int limit;
+    private final String[] modelTypeNames;
+    private final int[] mtids;
+    private final float errorBound;
+    private final int lengthBound;
+    private final int maximumLatency;
 
     //DEBUG: the logger provides various counters and methods for debugging
     public final Logger logger = new Logger();

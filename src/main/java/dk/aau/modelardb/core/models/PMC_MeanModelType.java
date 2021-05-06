@@ -20,11 +20,11 @@ import dk.aau.modelardb.core.utility.Static;
 import java.nio.ByteBuffer;
 import java.util.List;
 
-class PMC_MeanModel extends Model {
+class PMC_MeanModelType extends ModelType {
 
     /** Constructors **/
-    PMC_MeanModel(int mid, float error, int limit) {
-        super(mid, error, limit);
+    PMC_MeanModelType(int mtid, float errorBound, int lengthBound) {
+        super(mtid, errorBound, lengthBound);
         this.currentSize = 0;
         this.min = Float.MAX_VALUE;
         this.max = -Float.MAX_VALUE;
@@ -51,8 +51,8 @@ class PMC_MeanModel extends Model {
         }
 
         float average = (float) (nextSum / ((this.currentSize + 1) * currentDataPoints.length));
-        if (Static.outsidePercentageErrorBound(this.error, average, nextMin) ||
-                Static.outsidePercentageErrorBound(this.error, average, nextMax)) {
+        if (Static.outsidePercentageErrorBound(this.errorBound, average, nextMin) ||
+                Static.outsidePercentageErrorBound(this.errorBound, average, nextMax)) {
             this.withinErrorBound = false;
             return false;
         }
@@ -79,13 +79,13 @@ class PMC_MeanModel extends Model {
     }
 
     @Override
-    public byte[] parameters(long startTime, long endTime, int resolution, List<DataPoint[]> dps) {
+    public byte[] getModel(long startTime, long endTime, int samplingInterval, List<DataPoint[]> dps) {
         return ByteBuffer.allocate(4).putFloat((float) (this.sum / (this.currentSize * dps.get(0).length))).array();
     }
 
     @Override
-    public Segment get(int tid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets) {
-        return new PMC_MeanSegment(tid, startTime, endTime, resolution, parameters, offsets);
+    public Segment get(int tid, long startTime, long endTime, int samplingInterval, byte[] model, byte[] offsets) {
+        return new PMC_MeanSegment(tid, startTime, endTime, samplingInterval, model, offsets);
     }
 
     @Override
@@ -94,7 +94,7 @@ class PMC_MeanModel extends Model {
     }
 
     @Override
-    public float size(long startTime, long endTime, int resolution, List<DataPoint[]> dps) {
+    public float size(long startTime, long endTime, int samplingInterval, List<DataPoint[]> dps) {
         if (this.currentSize == 0) {
             return Float.NaN;
         } else {
@@ -115,9 +115,9 @@ class PMC_MeanModel extends Model {
 class PMC_MeanSegment extends Segment {
 
     /** Constructors **/
-    PMC_MeanSegment(int tid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets) {
-        super(tid, startTime, endTime, resolution, offsets);
-        this.value = ByteBuffer.wrap(parameters).getFloat();
+    PMC_MeanSegment(int tid, long startTime, long endTime, int samplingInterval, byte[] model, byte[] offsets) {
+        super(tid, startTime, endTime, samplingInterval, offsets);
+        this.value = ByteBuffer.wrap(model).getFloat();
     }
 
     /** Public Methods **/

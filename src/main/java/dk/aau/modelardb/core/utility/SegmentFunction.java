@@ -15,5 +15,5 @@
 package dk.aau.modelardb.core.utility;
 
 public interface SegmentFunction {
-    void emit(int gid, long startTime, long endTime, int mid, byte[] parameters, byte[] gaps);
+    void emit(int gid, long startTime, long endTime, int mtid, byte[] model, byte[] gaps);
 }

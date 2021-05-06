@@ -14,8 +14,8 @@
  */
 package dk.aau.modelardb.core.models
 
-class FacebookGorillaModelTest extends AbstractModelTest {
-  override protected def getModel(mid: Int, error: Float, limit: Int): Model = {
-    new FacebookGorillaModel(mid, error, limit)
-  }
+class PMC_MeanModelTypeTest extends AbstractModelTypeTest {
+    override protected def getModelType(mtid: Int, errorBound: Float, lengthBound: Int): ModelType = {
+        new PMC_MeanModelType(mtid, errorBound, lengthBound)
+    }
 }

@@ -88,7 +88,7 @@ object Main {
       //Parsing is performed naively and will terminate if the config is malformed
       val lineSplit = line.trim().split(" ", 2)
       lineSplit(0) match {
-        case "modelardb.model" => models.append(lineSplit(1))
+        case "modelardb.model_type" => models.append(lineSplit(1))
         case "modelardb.source" => appendSources(lineSplit(1), sources)
         case "modelardb.source.derived" =>
           //Store a mapping from the original source to the derived source and the function to map over its values
@@ -111,13 +111,12 @@ object Main {
           } else {
             correlations.append(parseCorrelation(tls, dimensions))
           }
-        case "modelardb.resolution" =>
-          //Java, in general, works with timestamps in milliseconds, but modelardb.resolution is in seconds
-          configuration.add("modelardb.resolution", (lineSplit(1).toDouble * 1000).toInt)
-        case "modelardb.engine" | "modelardb.interface" | "modelardb.latency" | "modelardb.limit" | "modelardb.batch" |
-             "modelardb.dynamicsplitfraction"  | "modelardb.storage" | "modelardb.separator" | "modelardb.header" |
-             "modelardb.timestamps" | "modelardb.dateformat" | "modelardb.timezone" | "modelardb.values" |
-             "modelardb.locale" | "modelardb.error" | "modelardb.ingestors" | "modelardb.spark.streaming" =>
+        case "modelardb.engine" | "modelardb.storage" | "modelardb.interface" | "modelardb.time_zone" |
+             "modelardb.ingestors" | "modelardb.timestamp_column" | "modelardb.value_column" |
+             "modelardb.error_bound" | "modelardb.length_bound" | "modelardb.maximum_latency" |
+             "modelardb.sampling_interval" | "modelardb.batch_size" | "modelardb.dynamic_split_fraction"  |
+             "modelardb.csv.separator" | "modelardb.csv.header" | "modelardb.csv.date_format" | "modelardb.csv.locale" |
+             "modelardb.spark.streaming" =>
           configuration.add(lineSplit(0), lineSplit(1).stripPrefix("'").stripSuffix("'"))
         case _ =>
           if (lineSplit(0).charAt(0) != '#') {
@@ -127,16 +126,16 @@ object Main {
     }
     configFullSource.close()
 
-    configuration.add("modelardb.model", models.toArray)
-    configuration.add("modelardb.source", sources.toArray)
+    configuration.add("modelardb.model_types", models.toArray)
+    configuration.add("modelardb.sources", sources.toArray)
     val finalDerivedSources = new util.HashMap[String, Array[Pair[String, ValueFunction]]]()
     val dsIter = derivedSources.entrySet().iterator()
     while (dsIter.hasNext) {
       val entry = dsIter.next()
       finalDerivedSources.put(entry.getKey, entry.getValue.toArray)
     }
-    configuration.add("modelardb.source.derived", finalDerivedSources)
-    configuration.add("modelardb.correlation", correlations.toArray)
+    configuration.add("modelardb.sources.derived", finalDerivedSources)
+    configuration.add("modelardb.correlations", correlations.toArray)
     validate(configuration)
   }
 
@@ -210,7 +209,7 @@ object Main {
     //The line is split into correlations and scaling factors
     var split = line.split('*')
     val correlations = split(0).split(',').map(_.trim)
-    val scaling = if (split.length > 1) split(1).split(',').map(_.trim) else Array[String]()
+    val scaling_factor = if (split.length > 1) split(1).split(',').map(_.trim) else Array[String]()
     val correlation = new Correlation()
 
     //Correlation is either specified as a set of sources, a set of LCA levels, a set of members, or a distance
@@ -235,7 +234,7 @@ object Main {
     }
 
     //Scaling factors are set for time series from specific sources, or for time series with specific members
-    for (elem <- scaling) {
+    for (elem <- scaling_factor) {
       split = elem.split(' ')
       if (split.length == 2) {
         //Sets the scaling factor for time series from specific sources
@@ -251,8 +250,8 @@ object Main {
   }
 
   private def validate(configuration: Configuration): Configuration = {
-    //Settings used outside core are checked to ensure their values are within the expected range
-    if (configuration.contains("modelardb.spark.streaming") && configuration.getInteger("modelardb.spark.streaming") <= 0) {
+    //Settings used outside core are validated to ensure their values are within the expected range
+    if (configuration.getInteger("modelardb.spark.streaming", 0) <= 0) {
       throw new UnsupportedOperationException ("ModelarDB: modelardb.spark.streaming must be a positive number of seconds between micro-batches")
     }
     configuration

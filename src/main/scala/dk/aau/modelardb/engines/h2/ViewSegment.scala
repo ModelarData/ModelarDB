@@ -190,8 +190,8 @@ class ViewSegmentCursor(filter: TableFilter) extends Cursor {
       this.currentRow(1) = ValueTimestamp.fromMillis(segment.startTime, 0)
       this.currentRow(2) = ValueTimestamp.fromMillis(segment.endTime, 0)
       this.currentRow(3) = ValueInt.get(this.groupMetadataCache(segment.gid)(0))
-      this.currentRow(4) = ValueInt.get(segment.mid)
-      this.currentRow(5) = ValueBytes.get(segment.parameters)
+      this.currentRow(4) = ValueInt.get(segment.mtid)
+      this.currentRow(5) = ValueBytes.get(segment.model)
       this.currentRow(6) = ValueBytes.get(segment.offsets)
 
       //TODO: determine if foreach or indexes are faster and generate a method that add the members without assuming they are strings

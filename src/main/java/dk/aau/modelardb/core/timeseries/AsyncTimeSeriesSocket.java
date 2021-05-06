@@ -31,9 +31,9 @@ import dk.aau.modelardb.core.SegmentGenerator;
 public class AsyncTimeSeriesSocket extends TimeSeries implements AsyncTimeSeries {
 
     /** Constructors **/
-    public AsyncTimeSeriesSocket(String source, int tid, int resolution, String splitString, int timestampColumnIndex,
+    public AsyncTimeSeriesSocket(String source, int tid, int samplingInterval, String splitString, int timestampColumnIndex,
                                  String dateFormat, String timeZone, int valueColumnIndex, String localeString) {
-        super(source, tid, resolution);
+        super(source, tid, samplingInterval);
         String[] hostAndPort = source.split(":");
         this.host = hostAndPort[0];
         this.port = Integer.parseInt(hostAndPort[1]);
@@ -109,7 +109,7 @@ public class AsyncTimeSeriesSocket extends TimeSeries implements AsyncTimeSeries
     }
 
     public String toString() {
-        return "Time Series: [" + this.tid + " | " + this.source + " | " + this.resolution + "]";
+        return "Time Series: [" + this.tid + " | " + this.source + " | " + this.samplingInterval + "]";
     }
 
     public void close() {
@@ -187,17 +187,17 @@ public class AsyncTimeSeriesSocket extends TimeSeries implements AsyncTimeSeries
 
     /** Instance Variables **/
     private String host;
-    private int port;
-    private float scalingFactor;
-    private int bufferSize;
+    private final int port;
+    private final float scalingFactor;
+    private final int bufferSize;
     private ByteBuffer byteBuffer;
-    private StringBuffer decodeBuffer;
+    private final StringBuffer decodeBuffer;
     private StringBuffer nextBuffer;
     private ReadableByteChannel channel;
-    private String splitString;
-    private int timestampColumn;
+    private final String splitString;
+    private final int timestampColumn;
     private SimpleDateFormat dateParser;
-    private int dateParserType;
-    private int valueColumn;
-    private NumberFormat valueParser;
+    private final int dateParserType;
+    private final int valueColumn;
+    private final NumberFormat valueParser;
 }

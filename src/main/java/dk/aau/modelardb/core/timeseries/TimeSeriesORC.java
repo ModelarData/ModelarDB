@@ -28,8 +28,8 @@ import java.io.IOException;
 
 public class TimeSeriesORC extends TimeSeries {
     /** Public Methods **/
-    public TimeSeriesORC(String stringPath, int tid, int resolution, int timestampColumnIndex, int valueColumnIndex) {
-        super(stringPath.substring(stringPath.lastIndexOf('/') + 1), tid, resolution);
+    public TimeSeriesORC(String stringPath, int tid, int samplingInterval, int timestampColumnIndex, int valueColumnIndex) {
+        super(stringPath.substring(stringPath.lastIndexOf('/') + 1), tid, samplingInterval);
         this.stringPath = stringPath;
         this.timestampColumnIndex = timestampColumnIndex;
         this.valueColumnIndex = valueColumnIndex;
@@ -83,7 +83,7 @@ public class TimeSeriesORC extends TimeSeries {
     }
 
     public String toString() {
-        return "Time Series: [" + this.tid + " | " + this.source + " | " + this.resolution + "]";
+        return "Time Series: [" + this.tid + " | " + this.source + " | " + this.samplingInterval + "]";
     }
 
     public void close() {

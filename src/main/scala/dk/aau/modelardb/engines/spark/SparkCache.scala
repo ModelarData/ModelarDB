@@ -150,7 +150,7 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
 
     //Extracts the metadata for the group of time series being updated
     val group = this.groupMetadataCache(inputRow.getInt(0)).drop(1)
-    val resolution = this.groupMetadataCache(inputRow.getInt(0))(0)
+    val samplingInterval = this.groupMetadataCache(inputRow.getInt(0))(0)
     val inputIngested = group.toSet.diff(inputGaps.toSet)
     var updatedExistingSegment = false
 
@@ -169,9 +169,9 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
           //Moves the start time of the temporary segment to the data point right after the finalized segment, if
           // the new start time is after the end time of the temporary segment it can be dropped from the cache
           buffer(i) = null //The current temporary segment is deleted if it overlaps completely with the finalized segment
-          val startTime = inputRow.getTimestamp(2).getTime + resolution
+          val startTime = inputRow.getTimestamp(2).getTime + samplingInterval
           if (startTime <= row.getTimestamp(2).getTime) {
-            val newGaps = Static.intToBytes(gap :+ -((startTime - row.getTimestamp(1).getTime) / resolution).toInt)
+            val newGaps = Static.intToBytes(gap :+ -((startTime - row.getTimestamp(1).getTime) / samplingInterval).toInt)
             buffer(i) = Row(row.getInt(0), new Timestamp(startTime), row.getTimestamp(2),
               row.getInt(3), row.getAs[Array[Byte]](4), newGaps, row.getBoolean(6))
           }

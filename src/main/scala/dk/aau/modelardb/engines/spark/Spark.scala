@@ -16,14 +16,12 @@ package dk.aau.modelardb.engines.spark
 
 import dk.aau.modelardb.Interface
 import dk.aau.modelardb.core._
-import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
+import dk.aau.modelardb.core.utility.{Static, ValueFunction}
 import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrameReader, SparkSession}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
-
-import java.util
 
 class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
 
@@ -60,21 +58,17 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
     val spark = sparkStorage.open(ssb, dimensions)
 
     //Initializes storage and Spark with any new time series that the system must ingest
-    val ssc = if ( ! configuration.contains("modelardb.ingestors")) {
-      configuration.containsOrThrow( "modelardb.batch", "modelardb.spark.streaming")
+    val ssc = if (configuration.getIngestors() == 0) {
+      configuration.containsOrThrow( "modelardb.batch_size", "modelardb.spark.streaming")
       Partitioner.initializeTimeSeries(configuration, sparkStorage.getMaxTid)
-      val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
-        .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
-      sparkStorage.initialize(Array(), derivedTimeSeries, dimensions, configuration.getModels)
+      sparkStorage.initialize(Array(), configuration.getDerivedTimeSeries(), dimensions, configuration.getModelTypeNames)
       Spark.initialize(spark, configuration, sparkStorage, Range(0,0))
       null
     } else {
       val newGid = sparkStorage.getMaxGid + 1
       val timeSeries = Partitioner.initializeTimeSeries(configuration, sparkStorage.getMaxTid)
       val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, sparkStorage.getMaxGid)
-      val derivedTimeSeries = configuration.get("modelardb.source.derived")(0)
-        .asInstanceOf[util.HashMap[Integer, Array[Pair[String, ValueFunction]]]]
-      sparkStorage.initialize(timeSeriesGroups, derivedTimeSeries, dimensions, configuration.getModels)
+      sparkStorage.initialize(timeSeriesGroups, configuration.getDerivedTimeSeries(), dimensions, configuration.getModelTypeNames)
       Spark.initialize(spark, configuration, sparkStorage, Range(newGid, newGid + timeSeriesGroups.size))
       setupStream(spark, timeSeriesGroups)
     }
@@ -97,11 +91,11 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
   private def setupStream(spark: SparkSession, timeSeriesGroups: Array[TimeSeriesGroup]): StreamingContext = {
     //Creates a receiver per ingestor with each receiving a working set created by Partitioner.partitionTimeSeries
     val ssc = new StreamingContext(spark.sparkContext, Seconds(configuration.getInteger("modelardb.spark.streaming")))
-    val midCache = Spark.getSparkStorage.midCache
-    val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, midCache,
+    val mtidCache = Spark.getSparkStorage.mtidCache
+    val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, mtidCache,
       configuration.getInteger("modelardb.ingestors"))
     if (workingSets.length != configuration.getInteger("modelardb.ingestors")) {
-      throw new java.lang.RuntimeException("ModelarDB: spark engine did not receive a workings sets for each receiver")
+      throw new java.lang.RuntimeException("ModelarDB: the Spark engine did not receive a workings sets for each receiver")
     }
 
     val modelReceivers = workingSets.map(ws => new WorkingSetReceiver(ws))
@@ -124,7 +118,6 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
 }
 
 object Spark {
-
   /** Constructors **/
   def initialize(spark: SparkSession, configuration: Configuration, sparkStorage: SparkStorage, newGids: Range): Unit = {
     this.parallelism = spark.sparkContext.defaultParallelism
@@ -132,7 +125,7 @@ object Spark {
     this.sparkStorage = null
     this.broadcastedSTC = spark.sparkContext.broadcast(sparkStorage.timeSeriesTransformationCache)
     this.sparkStorage = sparkStorage
-    this.cache = new SparkCache(spark, configuration.getInteger("modelardb.batch"), newGids)
+    this.cache = new SparkCache(spark, configuration.getInteger("modelardb.batch_size"), newGids)
   }
 
   /** Public Methods **/

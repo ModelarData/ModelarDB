@@ -28,8 +28,8 @@ import org.apache.spark.sql.functions
 import scala.collection.mutable
 
 //Implementation of simple user-defined aggregate functions on top of the Segment View
-case class CountInput(start_time: Timestamp, end_time: Timestamp, resolution: Long) //Count only needs the timestamps and the resolution
-case class Input(tid: Int, start_time: Timestamp, end_time: Timestamp, resolution: Integer, mid: Integer, parameters: Array[Byte], gaps: Array[Byte])
+case class CountInput(start_time: Timestamp, end_time: Timestamp, samplingInterval: Long) //CountS only require the timestamps and the sampling interval
+case class Input(tid: Int, start_time: Timestamp, end_time: Timestamp, samplingInterval: Integer, mtid: Integer, model: Array[Byte], gaps: Array[Byte])
 
 //Count
 class CountS extends Aggregator[CountInput, Long, Long] {
@@ -38,7 +38,7 @@ class CountS extends Aggregator[CountInput, Long, Long] {
   override def zero: Long = 0L
 
   override def reduce(total: Long, input: CountInput): Long = {
-    total + ((input.end_time.getTime - input.start_time.getTime) / input.resolution) + 1
+    total + ((input.end_time.getTime - input.start_time.getTime) / input.samplingInterval) + 1
   }
 
   override def merge(total1: Long, total2: Long): Long = {
@@ -396,33 +396,33 @@ object SparkUDAF {
     spark.sqlContext.udf.register("INTERVAL", interval _)
   }
 
-  def start(tid: Int, st: Timestamp, et: Timestamp, res: Int, mid: Int, param: Array[Byte], gaps: Array[Byte], nst: Timestamp):
+  def start(tid: Int, st: Timestamp, et: Timestamp, res: Int, mtid: Int, param: Array[Byte], gaps: Array[Byte], nst: Timestamp):
   (Int, Timestamp, Timestamp, Int, Int, Array[Byte], Array[Byte]) = {
     val offsets = Static.bytesToInts(gaps)
     val fromTime = Segment.start(nst.getTime, st.getTime, et.getTime, res, offsets)
     val updatedGaps = Static.intToBytes(offsets)
-    (tid, new Timestamp(fromTime), et, res, mid, param, updatedGaps)
+    (tid, new Timestamp(fromTime), et, res, mtid, param, updatedGaps)
   }
 
-  def end(tid: Int, st: Timestamp, et: Timestamp, res: Int, mid: Int, param: Array[Byte], gaps: Array[Byte], net: Timestamp):
+  def end(tid: Int, st: Timestamp, et: Timestamp, res: Int, mtid: Int, param: Array[Byte], gaps: Array[Byte], net: Timestamp):
   (Int, Timestamp, Timestamp, Int, Int, Array[Byte], Array[Byte]) = {
-    (tid, st, new Timestamp(Segment.end(net.getTime, st.getTime, et.getTime, res)), res, mid, param, gaps)
+    (tid, st, new Timestamp(Segment.end(net.getTime, st.getTime, et.getTime, res)), res, mtid, param, gaps)
   }
 
-  def interval(tid: Int, st: Timestamp, et: Timestamp, res: Int, mid: Int, param: Array[Byte], gaps: Array[Byte], nst: Timestamp, net: Timestamp):
+  def interval(tid: Int, st: Timestamp, et: Timestamp, res: Int, mtid: Int, param: Array[Byte], gaps: Array[Byte], nst: Timestamp, net: Timestamp):
   (Int, Timestamp, Timestamp, Int, Int, Array[Byte], Array[Byte]) = {
     val offsets = Static.bytesToInts(gaps)
     val fromTime = Segment.start(nst.getTime, st.getTime, et.getTime, res, offsets)
     val endTime = Segment.end(net.getTime, st.getTime, et.getTime, res)
     val updatedGaps = Static.intToBytes(offsets)
-    (tid, new Timestamp(fromTime), new Timestamp(endTime), res, mid, param, updatedGaps)
+    (tid, new Timestamp(fromTime), new Timestamp(endTime), res, mtid, param, updatedGaps)
   }
 
   def getInputToSegment: Input => Segment = {
-    val mc = Spark.getSparkStorage.modelCache
+    val mtc = Spark.getSparkStorage.modelTypeCache
     input => {
-      val model = mc(input.mid)
-      model.get(input.tid, input.start_time.getTime, input.end_time.getTime, input.resolution, input.parameters, input.gaps)
+      val model = mtc(input.mtid)
+      model.get(input.tid, input.start_time.getTime, input.end_time.getTime, input.samplingInterval, input.model, input.gaps)
     }
   }
 }

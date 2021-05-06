@@ -38,14 +38,14 @@ class WorkingSetReceiver(workingSet: WorkingSet)
   private def receive(): Unit = {
     //Creates methods that emit both segment types to Spark Streaming
     val consumeTemporary = new SegmentFunction {
-      override def emit(gid: Int, startTime: Long, endTime: Long, mid: Int, parameters: Array[Byte], gaps: Array[Byte]): Unit = {
-        store(Row(gid, new Timestamp(startTime), new Timestamp(endTime), mid, parameters, gaps, false))
+      override def emit(gid: Int, startTime: Long, endTime: Long, mtid: Int, model: Array[Byte], gaps: Array[Byte]): Unit = {
+        store(Row(gid, new Timestamp(startTime), new Timestamp(endTime), mtid, model, gaps, false))
       }
     }
 
     val consumeFinalized = new SegmentFunction {
-      override def emit(gid: Int, startTime: Long, endTime: Long, mid: Int, parameters: Array[Byte], gaps: Array[Byte]): Unit = {
-        store(Row(gid, new Timestamp(startTime), new Timestamp(endTime), mid, parameters, gaps, true))
+      override def emit(gid: Int, startTime: Long, endTime: Long, mtid: Int, model: Array[Byte], gaps: Array[Byte]): Unit = {
+        store(Row(gid, new Timestamp(startTime), new Timestamp(endTime), mtid, model, gaps, true))
       }
     }
 

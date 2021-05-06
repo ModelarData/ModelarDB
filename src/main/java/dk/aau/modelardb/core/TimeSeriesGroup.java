@@ -34,14 +34,14 @@ public class TimeSeriesGroup implements Serializable {
 
         //Each time series is assumed to have the same sampling interval, alignment, and boundness
         this.isAsync = timeSeries[0] instanceof AsyncTimeSeries;
-        this.resolution = timeSeries[0].resolution;
+        this.samplingInterval = timeSeries[0].samplingInterval;
         for (TimeSeries ts : timeSeries) {
             if (this.isAsync != ts instanceof AsyncTimeSeries) {
                 throw new UnsupportedOperationException("CORE: All time series in a group must be bounded or unbounded");
             }
 
-            if (this.resolution != ts.resolution) {
-                throw new UnsupportedOperationException("CORE: All time series in a group must share the same resolution");
+            if (this.samplingInterval != ts.samplingInterval) {
+                throw new UnsupportedOperationException("CORE: All time series in a group must share the same sampling interval");
             }
         }
 
@@ -69,7 +69,7 @@ public class TimeSeriesGroup implements Serializable {
             j++;
         }
         this.isAsync = this.timeSeries[0] instanceof AsyncTimeSeries;
-        this.resolution = this.timeSeries[0].resolution;
+        this.samplingInterval = this.timeSeries[0].samplingInterval;
         tsg.timeSeriesHasNext = 0;
     }
 
@@ -94,7 +94,7 @@ public class TimeSeriesGroup implements Serializable {
             tsg.timeSeriesHasNext = 0;
         }
         this.isAsync = this.timeSeries[0] instanceof AsyncTimeSeries;
-        this.resolution = this.timeSeries[0].resolution;
+        this.samplingInterval = this.timeSeries[0].samplingInterval;
     }
 
     /** Public Methods **/
@@ -163,7 +163,7 @@ public class TimeSeriesGroup implements Serializable {
                 this.timeSeriesActive--;
             }
         }
-        this.next += this.resolution;
+        this.next += this.samplingInterval;
         return this.currentDataPoints;
     }
 
@@ -180,7 +180,7 @@ public class TimeSeriesGroup implements Serializable {
     /** Instance Variables **/
     public final int gid;
     public final boolean isAsync;
-    public final int resolution;
+    public final int samplingInterval;
 
     private int timeSeriesActive;
     private int timeSeriesHasNext;

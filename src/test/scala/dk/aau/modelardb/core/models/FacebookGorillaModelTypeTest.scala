@@ -14,8 +14,8 @@
  */
 package dk.aau.modelardb.core.models
 
-class UncompressedModelTest extends AbstractModelTest {
-  override protected def getModel(mid: Int, error: Float, limit: Int): Model = {
-    new UncompressedModel(mid, error, limit)
+class FacebookGorillaModelTypeTest extends AbstractModelTypeTest {
+  override protected def getModelType(mtid: Int, errorBound: Float, lengthBound: Int): ModelType = {
+    new FacebookGorillaModelType(mtid, errorBound, lengthBound)
   }
 }

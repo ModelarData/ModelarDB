@@ -42,9 +42,9 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
 
     if ( ! tables.next()) {
       val stmt = this.connection.createStatement()
-      stmt.executeUpdate(s"CREATE TABLE model(mid INTEGER, name ${this.textType})")
-      stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mid INTEGER, parameters ${this.blobType}, gaps ${this.blobType})")
-      stmt.executeUpdate(s"CREATE TABLE time_series(tid INTEGER, scaling REAL, resolution INTEGER, gid INTEGER${dimensions.getSchema(this.textType)})")
+      stmt.executeUpdate(s"CREATE TABLE model_type(mtid INTEGER, name ${this.textType})")
+      stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mtid INTEGER, model ${this.blobType}, gaps ${this.blobType})")
+      stmt.executeUpdate(s"CREATE TABLE time_series(tid INTEGER, scaling_factor REAL, sampling_interval INTEGER, gid INTEGER${dimensions.getSchema(this.textType)})")
     }
 
     //Prepares the necessary statements
@@ -56,7 +56,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
   override def initialize(timeSeriesGroups: Array[TimeSeriesGroup],
                           derivedTimeSeries: util.HashMap[Integer, Array[Pair[String, ValueFunction]]],
                           dimensions: Dimensions, modelNames: Array[String]): Unit = {
-    //Inserts the metadata for the sources defined in the configuration file (Tid, Resolution, Gid, Dimensions)
+    //Inserts the metadata for the sources defined in the configuration file (Tid, Sampling Interval, Gid, Dimensions)
     val columnsInNormalizedDimensions = dimensions.getColumns.length
     val columns = "?, " * (columnsInNormalizedDimensions + 3) + "?"
     val insertSourceStmt = connection.prepareStatement("INSERT INTO time_series VALUES(" + columns + ")")
@@ -65,7 +65,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
         insertSourceStmt.clearParameters()
         insertSourceStmt.setInt(1, ts.tid)
         insertSourceStmt.setFloat(2, ts.scalingFactor)
-        insertSourceStmt.setInt(3, ts.resolution)
+        insertSourceStmt.setInt(3, ts.samplingInterval)
         insertSourceStmt.setInt(4, tsg.gid)
 
         var column = 5
@@ -78,16 +78,16 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
       }
     }
 
-    //Extracts the scaling factor, resolution, gid, and dimensions for the time series in storage
+    //Extracts the scaling factor, sampling interval, gid, and dimensions for the time series in storage
     var stmt = this.connection.createStatement()
     var results = stmt.executeQuery("SELECT * FROM time_series")
     val timeSeriesInStorage = new util.HashMap[Integer, Array[Object]]()
     while (results.next) {
-      //The metadata is stored as (Tid => Scaling, Resolution, Gid, Dimensions)
+      //The metadata is stored as (Tid => Scaling Factor, Sampling Interval, Gid, Dimensions)
       val tid = results.getInt(1) //Tid
       val metadata = new util.ArrayList[Object]()
-      metadata.add(results.getFloat(2).asInstanceOf[Object]) //Scaling
-      metadata.add(results.getInt(3).asInstanceOf[Object]) //Resolution
+      metadata.add(results.getFloat(2).asInstanceOf[Object]) //Scaling Factor
+      metadata.add(results.getInt(3).asInstanceOf[Object]) //Sampling Interval
       metadata.add(results.getInt(4).asInstanceOf[Object]) //Gid
 
       //Dimensions
@@ -103,7 +103,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
 
     //Extracts the name of all models in storage
     stmt = this.connection.createStatement()
-    results = stmt.executeQuery("SELECT * FROM model")
+    results = stmt.executeQuery("SELECT * FROM model_type")
     val modelsInStorage = new util.HashMap[String, Integer]()
     while (results.next) {
       modelsInStorage.put(results.getString(2), results.getInt(1))
@@ -113,7 +113,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     val modelsToInsert = super.initializeCaches(modelNames, dimensions, modelsInStorage, timeSeriesInStorage, derivedTimeSeries)
 
     //Inserts the name of each model in the configuration file but not in the model table
-    val insertModelStmt = connection.prepareStatement("INSERT INTO model VALUES(?, ?)")
+    val insertModelStmt = connection.prepareStatement("INSERT INTO model_type VALUES(?, ?)")
     for ((k, v) <- modelsToInsert.asScala) {
       insertModelStmt.clearParameters()
       insertModelStmt.setInt(1, v)
@@ -143,8 +143,8 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
         this.insertStmt.setInt(1, segmentGroup.gid)
         this.insertStmt.setLong(2, segmentGroup.startTime)
         this.insertStmt.setLong(3, segmentGroup.endTime)
-        this.insertStmt.setInt(4, segmentGroup.mid)
-        this.insertStmt.setBytes(5, segmentGroup.parameters)
+        this.insertStmt.setInt(4, segmentGroup.mtid)
+        this.insertStmt.setBytes(5, segmentGroup.model)
         this.insertStmt.setBytes(6, segmentGroup.offsets)
         this.insertStmt.addBatch()
       }
@@ -177,7 +177,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
   override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): RDD[Row] = {
     Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
     val rows = getSegmentGroups("").map(sg => {
-      Row(sg.gid, new Timestamp(sg.startTime), new Timestamp(sg.endTime), sg.mid, sg.parameters, sg.offsets)
+      Row(sg.gid, new Timestamp(sg.startTime), new Timestamp(sg.endTime), sg.mtid, sg.model, sg.offsets)
     })
     sparkSession.sparkContext.parallelize(rows.toSeq)
   }
@@ -228,10 +228,10 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     val gid = resultSet.getInt(1)
     val startTime = resultSet.getLong(2)
     val endTime = resultSet.getLong(3)
-    val mid = resultSet.getInt(4)
-    val parameters = resultSet.getBytes(5)
+    val mtid = resultSet.getInt(4)
+    val model = resultSet.getBytes(5)
     val gaps = resultSet.getBytes(6)
-    new SegmentGroup(gid, startTime, endTime, mid, parameters, gaps)
+    new SegmentGroup(gid, startTime, endTime, mtid, model, gaps)
   }
 
   def getFirstInteger(query: PreparedStatement): Int = {

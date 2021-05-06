@@ -31,11 +31,11 @@ import dk.aau.modelardb.core.DataPoint;
 public class TimeSeriesCSV extends TimeSeries {
 
     /** Public Methods **/
-    public TimeSeriesCSV(String stringPath, int tid, int resolution,
+    public TimeSeriesCSV(String stringPath, int tid, int samplingInterval,
                          String splitString, boolean hasHeader,
                          int timestampColumnIndex, String dateFormat, String timeZone,
                          int valueColumnIndex, String localeString) {
-        super(stringPath.substring(stringPath.lastIndexOf('/') + 1), tid, resolution);
+        super(stringPath.substring(stringPath.lastIndexOf('/') + 1), tid, samplingInterval);
         this.stringPath = stringPath;
 
         //A small buffer is used so more time series can be ingested in parallel
@@ -121,7 +121,7 @@ public class TimeSeriesCSV extends TimeSeries {
     }
 
     public String toString() {
-        return "Time Series: [" + this.tid + " | " + this.source + " | " + this.resolution + "]";
+        return "Time Series: [" + this.tid + " | " + this.source + " | " + this.samplingInterval + "]";
     }
 
     public void close() {
@@ -199,17 +199,17 @@ public class TimeSeriesCSV extends TimeSeries {
 
     /** Instance Variables **/
     private String stringPath;
-    private boolean hasHeader;
-    private float scalingFactor;
-    private int bufferSize;
+    private final boolean hasHeader;
+    private final float scalingFactor;
+    private final int bufferSize;
     private ByteBuffer byteBuffer;
-    private StringBuffer decodeBuffer;
+    private final StringBuffer decodeBuffer;
     private StringBuffer nextBuffer;
     private ReadableByteChannel channel;
-    private String splitString;
-    private int timestampColumnIndex;
+    private final String splitString;
+    private final int timestampColumnIndex;
     private SimpleDateFormat dateParser;
-    private int dateParserType;
-    private int valueColumnIndex;
-    private NumberFormat valueParser;
+    private final int dateParserType;
+    private final int valueColumnIndex;
+    private final NumberFormat valueParser;
 }

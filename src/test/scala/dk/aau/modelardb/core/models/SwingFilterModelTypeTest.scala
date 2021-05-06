@@ -14,8 +14,8 @@
  */
 package dk.aau.modelardb.core.models
 
-class SwingFilterModelTest extends AbstractModelTest {
-  override protected def getModel(mid: Int, error: Float, limit: Int): Model = {
-    new SwingFilterModel(mid, error, limit)
+class SwingFilterModelTypeTest extends AbstractModelTypeTest {
+  override protected def getModelType(mtid: Int, errorBound: Float, lengthBound: Int): ModelType = {
+    new SwingFilterModelType(mtid, errorBound, lengthBound)
   }
 }

@@ -26,19 +26,19 @@ import java.util.stream.Stream;
 public abstract class Segment {
 
     /** Constructors **/
-    public Segment(int tid, long startTime, long endTime, int resolution, int[] offsets) {
+    public Segment(int tid, long startTime, long endTime, int samplingInterval, int[] offsets) {
         this.tid = tid;
         this.startTime = startTime;
         this.endTime = endTime;
-        this.resolution = resolution;
+        this.samplingInterval = samplingInterval;
         this.offsets = offsets;
     }
 
-    public Segment(int tid, long startTime, long endTime, int resolution, byte[] offsets) {
+    public Segment(int tid, long startTime, long endTime, int samplingInterval, byte[] offsets) {
         this.tid = tid;
         this.startTime = startTime;
         this.endTime = endTime;
-        this.resolution = resolution;
+        this.samplingInterval = samplingInterval;
         this.offsets = Static.bytesToInts(offsets);
     }
 
@@ -52,12 +52,12 @@ public abstract class Segment {
     }
 
     public String toString() {
-        return "Segment: [" + this.tid + " | " + new java.sql.Timestamp(this.startTime) + " | " + new java.sql.Timestamp(this.endTime) + " | " + this.resolution + " | " + this.getClass() + "]";
+        return "Segment: [" + this.tid + " | " + new java.sql.Timestamp(this.startTime) + " | " + new java.sql.Timestamp(this.endTime) + " | " + this.samplingInterval + " | " + this.getClass() + "]";
     }
 
     public int length() {
         //Computes the number of data points represented by this segment
-        return (int) ((this.endTime - this.startTime) / this.resolution) + 1;
+        return (int) ((this.endTime - this.startTime) / this.samplingInterval) + 1;
     }
 
     public int capacity() {
@@ -70,28 +70,28 @@ public abstract class Segment {
         return currentLength;
     }
 
-    public static long start(long newStartTime, long startTime, long endTime, int resolution, int[] offsets) {
+    public static long start(long newStartTime, long startTime, long endTime, int samplingInterval, int[] offsets) {
         //The new start time is before the current start time, so no changes are performed
         if (newStartTime <= startTime || endTime < newStartTime) {
             return startTime;
         }
 
         //The new start time is rounded up to match the sampling interval
-        long diff = (newStartTime - startTime) % resolution;
-        newStartTime = newStartTime + (resolution - diff) - resolution;
-        offsets[2] = offsets[2] + (int) ((newStartTime - startTime) / resolution);
+        long diff = (newStartTime - startTime) % samplingInterval;
+        newStartTime = newStartTime + (samplingInterval - diff) - samplingInterval;
+        offsets[2] = offsets[2] + (int) ((newStartTime - startTime) / samplingInterval);
         return newStartTime;
     }
 
-    public static long end(long newEndTime, long startTime, long endTime, int resolution) {
+    public static long end(long newEndTime, long startTime, long endTime, int samplingInterval) {
         //The new end time is later than the current end time, so no changes are performed
         if (newEndTime < startTime || endTime <= newEndTime) {
             return endTime;
         }
 
         //The new end time is rounded down to match the sampling interval
-        long diff = (endTime - newEndTime) % resolution;
-        return newEndTime - (resolution - diff) + resolution;
+        long diff = (endTime - newEndTime) % samplingInterval;
+        return newEndTime - (samplingInterval - diff) + samplingInterval;
     }
 
     public Stream<DataPoint> grid() {
@@ -102,7 +102,7 @@ public abstract class Segment {
         int temporalOffset = this.offsets[2];
 
         return IntStream.range(0, this.length()).mapToObj(index -> {
-            long ts = this.startTime + (this.resolution * (long) index);
+            long ts = this.startTime + (this.samplingInterval * (long) index);
             return new DataPoint(tid, ts, get(ts, (index + temporalOffset) * groupSize + groupOffset));
         });
     }
@@ -128,7 +128,7 @@ public abstract class Segment {
         //Computes a new end time that is the end of the first interval of size type in the time dimension
         calendar.setTimeInMillis(this.startTime);
         calendar = DateUtils.ceiling(calendar, type);
-        this.endTime = calendar.getTimeInMillis() - this.resolution;
+        this.endTime = calendar.getTimeInMillis() - this.samplingInterval;
         calendar.setTimeInMillis(this.startTime);
         int field = calendar.get(type);
 
@@ -140,10 +140,10 @@ public abstract class Segment {
             //Moves the start time and end time to delimit the next interval to compute the aggregate for
             field = calendar.get(type);
             long previousStartTime = this.startTime;
-            this.startTime = this.endTime + this.resolution;
-            this.offsets[2] = this.offsets[2] + (int) ((this.startTime - previousStartTime) / this.resolution);
+            this.startTime = this.endTime + this.samplingInterval;
+            this.offsets[2] = this.offsets[2] + (int) ((this.startTime - previousStartTime) / this.samplingInterval);
             calendar = DateUtils.ceiling(calendar, type);
-            this.endTime = calendar.getTimeInMillis() - this.resolution;
+            this.endTime = calendar.getTimeInMillis() - this.samplingInterval;
         }
 
         //The last time interval ends with the original end time
@@ -171,7 +171,7 @@ public abstract class Segment {
 
     /** Instance Variables **/
     public final int tid;
-    public final int resolution;
+    public final int samplingInterval;
     private long startTime;
     private long endTime;
     private final int[] offsets;

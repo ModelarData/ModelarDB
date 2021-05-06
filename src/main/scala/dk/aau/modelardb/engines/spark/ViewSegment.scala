@@ -31,9 +31,9 @@ class ViewSegment(dimensions: Array[StructField]) (@transient val sqlContext: SQ
     StructField("tid", IntegerType, nullable = false),
     StructField("start_time", TimestampType, nullable = false),
     StructField("end_time", TimestampType, nullable = false),
-    StructField("resolution", IntegerType, nullable = false),
-    StructField("mid", IntegerType, nullable = false),
-    StructField("parameters", BinaryType, nullable = false),
+    StructField("sampling_interval", IntegerType, nullable = false),
+    StructField("mtid", IntegerType, nullable = false),
+    StructField("model", BinaryType, nullable = false),
     StructField("gaps", BinaryType, nullable = false))
     ++ dimensions)
 
@@ -82,9 +82,9 @@ class ViewSegment(dimensions: Array[StructField]) (@transient val sqlContext: SQ
       val sg = new SegmentGroup(row.getInt(0), row.getTimestamp(1).getTime, row.getTimestamp(2).getTime,
         row.getInt(3), row.getAs[Array[Byte]](4), row.getAs[Array[Byte]](5))
       val exploded = sg.explode(gmdc, gdc)
-      val resolution = gmdc(sg.gid)(0)
+      val samplingInterval = gmdc(sg.gid)(0)
       exploded.map(e =>
-        Row(e.gid, new Timestamp(e.startTime), new Timestamp(e.endTime), resolution, e.mid, e.parameters, e.offsets))
+        Row(e.gid, new Timestamp(e.startTime), new Timestamp(e.endTime), samplingInterval, e.mtid, e.model, e.offsets))
   }
 
   /** Instance Variables **/

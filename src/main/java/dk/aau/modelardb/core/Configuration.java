@@ -14,8 +14,10 @@
  */
 package dk.aau.modelardb.core;
 
+import dk.aau.modelardb.core.utility.Pair;
+import dk.aau.modelardb.core.utility.ValueFunction;
+
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class Configuration {
 
@@ -45,12 +47,17 @@ public class Configuration {
         return this.values.remove(value);
     }
 
-    public boolean contains(String value) {
-        return this.values.containsKey(value);
+    public boolean contains(String... values) {
+        for (String value : values) {
+            if ( ! this.values.containsKey(value)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public void containsOrThrow(String... values) {
-        //All of the missing values should be one error
+        //All of the missing values should shown as one error
         ArrayList<String> missingValues = new ArrayList<>();
         for (String value : values) {
             if ( ! this.values.containsKey(value)) {
@@ -58,10 +65,10 @@ public class Configuration {
             }
         }
 
-        //If values are missing execution cannot continue
+        //If any of the values are missing execution cannot continue
         if ( ! missingValues.isEmpty()) {
             throw new IllegalArgumentException("ModelarDB: the following required options are not in the configuration file " +
-                    missingValues.stream().collect(Collectors.joining(" ")));
+                    String.join(" ", missingValues));
         }
     }
 
@@ -82,6 +89,13 @@ public class Configuration {
         return (int) getObject(name);
     }
 
+    public int getInteger(String name, int defaultValue) {
+        if ( ! this.values.containsKey(name)) {
+            return defaultValue;
+        }
+        return getInteger(name);
+    }
+
     public float getFloat(String name) {
         try {
             return (float) getObject(name);
@@ -90,37 +104,60 @@ public class Configuration {
         }
     }
 
+    public float getFloat(String name, int defaultValue) {
+        if ( ! this.values.containsKey(name)) {
+            return defaultValue;
+        }
+        return getFloat(name);
+    }
+
     public String[] getArray(String name) {
         return Arrays.stream(this.values.get(name)).toArray(String[]::new);
     }
 
     //Specific Getters
-    public float getError() {
-        return getFloat("modelardb.error");
+    public int getBatchSize() {
+        return getInteger("modelardb.batch_size");
     }
 
-    public int getLatency() {
-        return getInteger("modelardb.latency");
+    public HashMap<Integer, Pair<String, ValueFunction>[]> getDerivedTimeSeries() {
+        return (HashMap<Integer, Pair<String, ValueFunction>[]>) this.values.get("modelardb.sources.derived")[0];
     }
 
-    public int getLimit() {
-        return getInteger("modelardb.limit");
-    }
-
-    public int getResolution() {
-        return getInteger("modelardb.resolution");
-    }
-
-    public String[] getModels() {
-        return getArray("modelardb.model");
-    }
-
-    public String[] getDataSources() {
-        return getArray("modelardb.source");
+    public Correlation[] getCorrelations() {
+        return (Correlation[]) this.values.get("modelardb.correlations");
     }
 
     public Dimensions getDimensions() {
         return (Dimensions) getObject("modelardb.dimensions");
+    }
+
+    public float getErrorBound() {
+        return getFloat("modelardb.error_bound", 0);
+    }
+
+    public int getIngestors() {
+        return getInteger("modelardb.ingestors", 0);
+    }
+
+    public int getLengthBound() {
+        return getInteger("modelardb.length_bound", 50);
+    }
+
+    public String[] getModelTypeNames() {
+        return getArray("modelardb.model_types");
+    }
+
+    public int getMaximumLatency() {
+        return getInteger("modelardb.latency", 0);
+    }
+
+    public int getSamplingInterval() {
+        return getInteger("modelardb.sampling_interval");
+    }
+
+    public String[] getSources() {
+        return getArray("modelardb.sources");
     }
 
     public String getStorage() {
@@ -128,8 +165,8 @@ public class Configuration {
     }
 
     public TimeZone getTimeZone() {
-        if (values.containsKey("modelardb.timezone")) {
-            return TimeZone.getTimeZone((String) values.get("modelardb.timezone")[0]);
+        if (values.containsKey("modelardb.time_zone")) {
+            return TimeZone.getTimeZone((String) values.get("modelardb.time_zone")[0]);
         } else {
             return TimeZone.getDefault();
         }
@@ -160,40 +197,40 @@ public class Configuration {
     private void validate(String key, Object value) {
         //Settings used by the core are checked to ensure their values are within the expected range
         switch (key) {
-            case "modelardb.batch":
+            case "modelardb.batch_size":
                 if ( ! (value instanceof Integer) || (int) value <= 0) {
-                    throw new IllegalArgumentException("CORE: modelardb.batch must be a positive number");
+                    throw new IllegalArgumentException("CORE: modelardb.batch_size must be a positive number");
                 }
                 break;
-            case "modelardb.error":
+            case "modelardb.error_bound":
                 if (( ! (value instanceof Float) || (float) value < 0.0 || 100.0 < (float) value) &&
                         ( ! (value instanceof Integer) || (int) value < 0.0 || 100.0 < (int) value)) {
-                    throw new IllegalArgumentException("CORE: modelardb.error must be a percentage from 0.0 to 100.0");
+                    throw new IllegalArgumentException("CORE: modelardb.error_bound must be a percentage from 0.0 to 100.0");
                 }
                 break;
-            case "modelardb.latency":
-                if ( ! (value instanceof Integer) || (int) value <= 0) {
-                    throw new IllegalArgumentException("CORE: modelardb.latency must be a positive number of seconds");
+            case "modelardb.maximum_latency":
+                if ( ! (value instanceof Integer) || (int) value < 0) {
+                    throw new IllegalArgumentException("CORE: modelardb.maximum_latency must be zero or more data point groups");
                 }
                 break;
-            case "modelardb.limit":
+            case "modelardb.length_bound":
                 if ( ! (value instanceof Integer) || (int) value <= 0) {
-                    throw new IllegalArgumentException("CORE: modelardb.limit must be a positive number of data point groups");
+                    throw new IllegalArgumentException("CORE: modelardb.length_bound must be a positive number of data point groups");
                 }
                 break;
-            case "modelardb.resolution":
-                if ( ! (value instanceof Integer) || (int) value <= 0) {
-                    throw new IllegalArgumentException("CORE: modelardb.resolution must be a positive number of seconds");
+            case "modelardb.sampling_interval":
+                if ( ! (value instanceof Integer) || (int) value < 0) {
+                    throw new IllegalArgumentException("CORE: modelardb.sampling_interval must be zero or a positive number of seconds");
                 }
                 break;
             case "modelardb.ingestors":
-                if ( ! (value instanceof Integer) || (int) value <= 0) {
-                    throw new UnsupportedOperationException("ModelarDB: modelardb.ingestors must be a positive number of ingestors");
+                if ( ! (value instanceof Integer) || (int) value < 0) {
+                    throw new UnsupportedOperationException("ModelarDB: modelardb.ingestors must be zero or a positive number of ingestors");
                 }
                 break;
-            case "modelardb.timezone":
+            case "modelardb.time_zone":
                 if ( ! (value instanceof String) || ! TimeZone.getTimeZone((String) value).getID().equals(value)) {
-                    throw new UnsupportedOperationException("ModelarDB: modelardb.timezone must be a valid time zone id");
+                    throw new UnsupportedOperationException("ModelarDB: modelardb.time_zone must be a valid time zone id");
                 }
         }
     }

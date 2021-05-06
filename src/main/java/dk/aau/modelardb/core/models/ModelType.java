@@ -21,22 +21,22 @@ import java.io.Serializable;
 import java.util.Iterator;
 import java.util.List;
 
-public abstract class Model implements Serializable {
+public abstract class ModelType implements Serializable {
 
     /** Constructors **/
-    public Model(int mid, float error, int limit) {
-        this.mid = mid;
-        this.error = error;
-        this.limit = limit;
+    public ModelType(int mtid, float errorBound, int lengthBound) {
+        this.mtid = mtid;
+        this.errorBound = errorBound;
+        this.lengthBound = lengthBound;
     }
 
     /** Public Methods **/
     abstract public boolean append(DataPoint[] currentDataPoints);
     abstract public void initialize(List<DataPoint[]> currentSegment);
-    abstract public byte[] parameters(long startTime, long endTime, int resolution, List<DataPoint[]> dps);
-    abstract public Segment get(int tid, long startTime, long endTime, int resolution, byte[] parameters, byte[] offsets);
+    abstract public byte[] getModel(long startTime, long endTime, int samplingInterval, List<DataPoint[]> dps);
+    abstract public Segment get(int tid, long startTime, long endTime, int samplingInterval, byte[] model, byte[] offsets);
     abstract public int length();
-    abstract public float size(long startTime, long endTime, int resolution, List<DataPoint[]> dps);
+    abstract public float size(long startTime, long endTime, int samplingInterval, List<DataPoint[]> dps);
 
     public boolean withinErrorBound(float errorBound, Iterator<DataPoint> tsA, Iterator<DataPoint> tsB) {
         boolean allWithinErrorBound = true;
@@ -46,20 +46,20 @@ public abstract class Model implements Serializable {
         return allWithinErrorBound;
     }
 
-    final public float compressionRatio(long startTime, long endTime, int resolution, List<DataPoint[]> dps, int gaps) {
-        //   DPs tid: int, ts: long, v: float
-        // model tid: int, start_time: long, end_time: long, mid: int, parameters: bytes[], gaps: bytes[]
-        //4 + 8 + 4 = 16 * data points is reduced to 4 + 8 + 8 + 4 + sizeof parameters + sizeof gaps
-        return (16.0F * this.length()) / (24.0F + this.size(startTime, endTime, resolution, dps) + (4.0F * gaps));
+    final public float compressionRatio(long startTime, long endTime, int samplingInterval, List<DataPoint[]> dps, int gaps) {
+        //     DPs tid: int, ts: long, v: float
+        // Segment tid: int, start_time: long, end_time: long, mtid: int, model: bytes[], gaps: bytes[]
+        //4 + 8 + 4 = 16 * data points is reduced to 4 + 8 + 8 + 4 + sizeof model + sizeof gaps
+        return (16.0F * this.length()) / (24.0F + this.size(startTime, endTime, samplingInterval, dps) + (4.0F * gaps));
     }
 
     final public float unsafeSize() {
-        //Computes the size without providing the model with the information necessary for it to verify its precision
+        //Computes the size without providing the model type with the information for it to verify the precision of its model
         return this.size(0L, 0L, 0, new java.util.ArrayList<>());
     }
 
     /** Instance Variables **/
-    public final int mid;
-    public final float error;
-    public final int limit;
+    public final int mtid;
+    public final float errorBound;
+    public final int lengthBound;
 }

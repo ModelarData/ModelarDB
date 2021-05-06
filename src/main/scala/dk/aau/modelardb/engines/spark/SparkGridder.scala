@@ -103,7 +103,7 @@ object SparkGridder {
   }
 
   def getRowToSegment: Row => Segment = {
-    val mc = Spark.getSparkStorage.modelCache
+    val mc = Spark.getSparkStorage.modelTypeCache
     row => {
       val model = mc(row.getInt(4))
       model.get(row.getInt(0), row.getTimestamp(1).getTime, row.getTimestamp(2).getTime,

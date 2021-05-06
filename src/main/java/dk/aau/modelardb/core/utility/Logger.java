@@ -15,7 +15,7 @@
 package dk.aau.modelardb.core.utility;
 
 import dk.aau.modelardb.core.DataPoint;
-import dk.aau.modelardb.core.models.Model;
+import dk.aau.modelardb.core.models.ModelType;
 
 import java.io.IOException;
 import java.io.Serializable;
@@ -34,12 +34,12 @@ public class Logger implements Serializable {
 
     /** Public Methods **/
     public void add(Logger logger) {
-        this.temporaryDataPointCounter += logger.temporaryDataPointCounter;
         this.temporarySegmentCounter += logger.temporarySegmentCounter;
+        this.temporaryDataPointCounter += logger.temporaryDataPointCounter;
 
         this.finalizedMetadataSize += logger.finalizedMetadataSize;
-        this.finalizedParameterSize += logger.finalizedParameterSize;
-        this.finalizedGapSize += logger.finalizedGapSize;
+        this.finalizedModelsSize += logger.finalizedModelsSize;
+        this.finalizedGapsSize += logger.finalizedGapsSize;
 
         logger.finalizedSegmentCounter.forEach((k, v) -> this.finalizedSegmentCounter.merge(k, v, Long::sum));
         logger.finalizedDataPointCounter.forEach((k, v) -> this.finalizedDataPointCounter.merge(k, v, Long::sum));
@@ -69,27 +69,27 @@ public class Logger implements Serializable {
         }
     }
 
-    public void updateTemporarySegmentCounters(Model temporaryModel, int segmentGapsSize) {
-        this.temporaryDataPointCounter += (this.groupSize - segmentGapsSize) * temporaryModel.length();
+    public void updateTemporarySegmentCounters(ModelType temporaryModelType, int segmentGapsSize) {
         this.temporarySegmentCounter += 1;
+        this.temporaryDataPointCounter += (this.groupSize - segmentGapsSize) * temporaryModelType.length();
     }
 
-    public void updateFinalizedSegmentCounters(Model finalizedModel, int segmentGapsSize) {
-        //   DPs tid: int, ts: long, v: float
-        // model gid: int, start_time: long, end_time: long, mid: int, parameters: bytes[], gaps: byte[]
-        //4 + 8 + 4 = 16 * data points is reduced to 4 + 8 + 8 + 4 + sizeof parameters + sizeof gaps
+    public void updateFinalizedSegmentCounters(ModelType finalizedModelType, int segmentGapsSize) {
+        //     DPs tid: int, ts: long, v: float
+        // Segment gid: int, start_time: long, end_time: long, mtid: int, model: bytes[], gaps: byte[]
+        //4 + 8 + 4 = 16 * data points is reduced to 4 + 8 + 8 + 4 + sizeof model + sizeof gaps
         this.finalizedMetadataSize += 24.0F;
-        this.finalizedParameterSize += finalizedModel.unsafeSize();
+        this.finalizedModelsSize += finalizedModelType.unsafeSize();
 
-        String modelType = finalizedModel.getClass().getName();
+        String modelType = finalizedModelType.getClass().getName();
         long count = this.finalizedSegmentCounter.getOrDefault(modelType, 0L);
         this.finalizedSegmentCounter.put(modelType, count + 1);
 
         count = this.finalizedDataPointCounter.getOrDefault(modelType, 0L);
-        long dataPoints = (this.groupSize  - segmentGapsSize) * finalizedModel.length();
+        long dataPoints = (this.groupSize  - segmentGapsSize) * finalizedModelType.length();
         this.finalizedDataPointCounter.put(modelType, count + dataPoints);
 
-        this.finalizedGapSize += segmentGapsSize * 4;
+        this.finalizedGapsSize += segmentGapsSize * 4;
     }
 
     public void printGeneratorResult() {
@@ -108,28 +108,27 @@ public class Logger implements Serializable {
         for (Map.Entry<String, Long> e : this.finalizedDataPointCounter.entrySet()) {
             System.out.println("-- " + e.getKey() + " | DataPoint: " + e.getValue());
         }
-        //   DPs tid: int, ts: long, v: float
-        // model gid: int, start_time: long, end_time: long, mid: int, parameters: bytes[], gaps: bytes[]
-        //4 + 8 + 4 = 16 * data points is reduced to 4 + 8 + 8 + 4 + sizeof parameters + sizeof gaps
-        double finalizedTotalSize = this.finalizedMetadataSize + this.finalizedParameterSize + this.finalizedGapSize;
-
+        //     DPs tid: int, ts: long, v: float
+        // Segment gid: int, start_time: long, end_time: long, mtid: int, model: bytes[], gaps: bytes[]
+        //4 + 8 + 4 = 16 * data points is reduced to 4 + 8 + 8 + 4 + sizeof model + sizeof gaps
+        double finalizedTotalSize = this.finalizedMetadataSize + this.finalizedModelsSize + this.finalizedGapsSize;
         System.out.println("\nCompression Ratio: " + (16.0 * finalizedCounter) / finalizedTotalSize);
     }
 
     public void printWorkingSetResult() {
-        long dataPointCounter = this.finalizedDataPointCounter.values().stream().mapToLong(Long::longValue).sum();
-        long segmentCounter = this.finalizedSegmentCounter.values().stream().mapToLong(Long::longValue).sum();
-        int cs = Float.toString(dataPointCounter).length();
+        long finalizedSegmentCounter = this.finalizedSegmentCounter.values().stream().mapToLong(Long::longValue).sum();
+        long finalizedPointCounter = this.finalizedDataPointCounter.values().stream().mapToLong(Long::longValue).sum();
+        int cs = Float.toString(finalizedPointCounter).length();
 
         System.out.println("=========================================================");
         System.out.println("Time: " + getTimeSpan());
-        System.out.println("Segments: " + segmentCounter);
-        System.out.println("Data Points: " + dataPointCounter);
+        System.out.println("Segments: " + finalizedSegmentCounter);
+        System.out.println("Data Points: " + finalizedPointCounter);
         System.out.println("---------------------------------------------------------");
-        printAlignedDebugVariables("Data Points Size", dataPointCounter * 16.0F, cs);
+        printAlignedDebugVariables("Data Points Size", finalizedPointCounter * 16.0F, cs);
         printAlignedDebugVariables("Metadata Size", this.finalizedMetadataSize, cs);
-        printAlignedDebugVariables("Parameters Size", this.finalizedParameterSize, cs);
-        printAlignedDebugVariables("Gaps Size", this.finalizedGapSize, cs);
+        printAlignedDebugVariables("Models Size", this.finalizedModelsSize, cs);
+        printAlignedDebugVariables("Gaps Size", this.finalizedGapsSize, cs);
         System.out.println("---------------------------------------------------------");
         printAlignedDebugVariables("Total Size", getTotalSize(), cs);
         System.out.println("=========================================================");
@@ -152,17 +151,17 @@ public class Logger implements Serializable {
     }
 
     private double getTotalSize() {
-        return this.finalizedMetadataSize + this.finalizedParameterSize + this.finalizedGapSize;
+        return this.finalizedMetadataSize + this.finalizedModelsSize + this.finalizedGapsSize;
     }
 
     /** Instance Variables **/
     private long processingTime = 0L;
     private int groupSize = 0;
-    private long temporaryDataPointCounter = 0L;
     private long temporarySegmentCounter = 0L;
+    private long temporaryDataPointCounter = 0L;
     private float finalizedMetadataSize = 0.0F;
-    private float finalizedParameterSize = 0.0F;
-    private float finalizedGapSize = 0.0F;
+    private float finalizedModelsSize = 0.0F;
+    private float finalizedGapsSize = 0.0F;
 
     private final java.util.HashMap<String, Long> finalizedSegmentCounter = new java.util.HashMap<>();
     private final java.util.HashMap<String, Long> finalizedDataPointCounter = new java.util.HashMap<>();

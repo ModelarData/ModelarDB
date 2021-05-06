@@ -130,13 +130,17 @@ public class Dimensions {
     }
 
     public float getLowestNoneZeroDistance() {
+        if (this.names.length == 0) {
+            throw new IllegalArgumentException("CORE: grouping by dimensions requires a dimensions file");
+        }
+
         float highestLevelCount = this.dims.values().stream().mapToInt(dim -> (dim._2 - dim._1 + 1)).max().getAsInt();
         return (float) (1.0 / highestLevelCount / this.names.length);
     }
 
     public boolean correlatedByLCALevels(TimeSeries[] tsgA, TimeSeries[] tsgB, HashMap<Integer, Integer> correlation) {
         //Ensures that dimensions are available before grouping
-        if (this.names == null) {
+        if (this.names.length == 0) {
             throw new IllegalArgumentException("CORE: grouping by dimensions requires a dimensions file");
         }
 
@@ -154,7 +158,7 @@ public class Dimensions {
 
     public boolean correlatedByDistance(TimeSeries[] tsgA, TimeSeries[] tsgB, float distanceBound) {
         //Ensures that dimensions are available before grouping
-        if (this.names == null) {
+        if (this.names.length == 0) {
             throw new IllegalArgumentException("CORE: grouping by dimensions require a dimensions file");
         }
 

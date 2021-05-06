@@ -1,6 +1,6 @@
 package dk.aau.modelardb.engines.h2
 
-import dk.aau.modelardb.core.models.{Model, Segment}
+import dk.aau.modelardb.core.models.{ModelType, Segment}
 import dk.aau.modelardb.core.utility.CubeFunction
 
 import java.sql.{Connection, Timestamp}
@@ -45,7 +45,7 @@ class MinS extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
-    this.mc = H2.h2storage.modelCache
+    this.mtc = H2.h2storage.modelTypeCache
     this.sfc = H2.h2storage.timeSeriesScalingFactorCache
   }
 
@@ -68,7 +68,7 @@ class MinS extends AggregateFunction {
 
   def rowToSegment(row: Any): Segment = {
     val values = row.asInstanceOf[Array[Object]]
-    val model = this.mc(values(4).asInstanceOf[Int])
+    val model = this.mtc(values(4).asInstanceOf[Int])
     model.get(
       values(0).asInstanceOf[Int], values(1).asInstanceOf[Timestamp].getTime, values(2).asInstanceOf[Timestamp].getTime,
       values(3).asInstanceOf[Int], values(5).asInstanceOf[Array[Byte]], values(6).asInstanceOf[Array[Byte]])
@@ -76,7 +76,7 @@ class MinS extends AggregateFunction {
 
   /** Instance Variables **/
   private var min: Float = Float.PositiveInfinity
-  private var mc: Array[Model] = _
+  private var mtc: Array[ModelType] = _
   private var sfc: Array[Float] = _
 }
 
@@ -85,7 +85,7 @@ class MaxS extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
-    this.mc = H2.h2storage.modelCache
+    this.mtc = H2.h2storage.modelTypeCache
     this.sfc = H2.h2storage.timeSeriesScalingFactorCache
   }
 
@@ -108,7 +108,7 @@ class MaxS extends AggregateFunction {
 
   def rowToSegment(row: Any): Segment = {
     val values = row.asInstanceOf[Array[Object]]
-    val model = this.mc(values(4).asInstanceOf[Int])
+    val model = this.mtc(values(4).asInstanceOf[Int])
     model.get(
       values(0).asInstanceOf[Int], values(1).asInstanceOf[Timestamp].getTime, values(2).asInstanceOf[Timestamp].getTime,
       values(3).asInstanceOf[Int], values(5).asInstanceOf[Array[Byte]], values(6).asInstanceOf[Array[Byte]])
@@ -116,7 +116,7 @@ class MaxS extends AggregateFunction {
 
   /** Instance Variables **/
   private var max: Float = Float.NegativeInfinity
-  private var mc: Array[Model] = _
+  private var mtc: Array[ModelType] = _
   private var sfc: Array[Float] = _
 }
 
@@ -125,7 +125,7 @@ class SumS extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
-    this.mc = H2.h2storage.modelCache
+    this.mtc = H2.h2storage.modelTypeCache
     this.sfc = H2.h2storage.timeSeriesScalingFactorCache
   }
 
@@ -149,7 +149,7 @@ class SumS extends AggregateFunction {
 
   def rowToSegment(row: Any): Segment = {
     val values = row.asInstanceOf[Array[Object]]
-    val model = this.mc(values(4).asInstanceOf[Int])
+    val model = this.mtc(values(4).asInstanceOf[Int])
     model.get(
       values(0).asInstanceOf[Int], values(1).asInstanceOf[Timestamp].getTime, values(2).asInstanceOf[Timestamp].getTime,
       values(3).asInstanceOf[Int], values(5).asInstanceOf[Array[Byte]], values(6).asInstanceOf[Array[Byte]])
@@ -158,7 +158,7 @@ class SumS extends AggregateFunction {
   /** Instance Variables **/
   private var sum: Double = 0.0
   private var added = false
-  private var mc: Array[Model] = _
+  private var mtc: Array[ModelType] = _
   private var sfc: Array[Float] = _
 }
 
@@ -167,7 +167,7 @@ class AvgS extends AggregateFunction {
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
-    this.mc = H2.h2storage.modelCache
+    this.mtc = H2.h2storage.modelTypeCache
     this.sfc = H2.h2storage.timeSeriesScalingFactorCache
   }
 
@@ -191,7 +191,7 @@ class AvgS extends AggregateFunction {
 
   def rowToSegment(row: Any): Segment = {
     val values = row.asInstanceOf[Array[Object]]
-    val model = this.mc(values(4).asInstanceOf[Int])
+    val model = this.mtc(values(4).asInstanceOf[Int])
     model.get(
       values(0).asInstanceOf[Int], values(1).asInstanceOf[Timestamp].getTime, values(2).asInstanceOf[Timestamp].getTime,
       values(3).asInstanceOf[Int], values(5).asInstanceOf[Array[Byte]], values(6).asInstanceOf[Array[Byte]])
@@ -200,7 +200,7 @@ class AvgS extends AggregateFunction {
   /** Instance Variables **/
   private var sum: Double = 0.0
   private var count: Long = 0
-  private var mc: Array[Model] = _
+  private var mtc: Array[ModelType] = _
   private var sfc: Array[Float] = _
 }
 
@@ -210,7 +210,7 @@ abstract class TimeAggregate(level: Int, bufferSize: Int, initialValue: Double) 
 
   /** Public Methods **/
   override def init(conn: Connection): Unit = {
-    this.mc = H2.h2storage.modelCache
+    this.mtc = H2.h2storage.modelTypeCache
     this.sfc = H2.h2storage.timeSeriesScalingFactorCache
   }
 
@@ -237,7 +237,7 @@ abstract class TimeAggregate(level: Int, bufferSize: Int, initialValue: Double) 
 
   def rowToSegment(row: Any): Segment = {
     val values = row.asInstanceOf[Array[Object]]
-    val model = this.mc(values(4).asInstanceOf[Int])
+    val model = this.mtc(values(4).asInstanceOf[Int])
     model.get(
       values(0).asInstanceOf[Int], values(1).asInstanceOf[Timestamp].getTime, values(2).asInstanceOf[Timestamp].getTime,
       values(3).asInstanceOf[Int], values(5).asInstanceOf[Array[Byte]], values(6).asInstanceOf[Array[Byte]])
@@ -245,7 +245,7 @@ abstract class TimeAggregate(level: Int, bufferSize: Int, initialValue: Double) 
 
   /** Instance Variables **/
   private val calendar = Calendar.getInstance()
-  private var mc: Array[Model] = _
+  private var mtc: Array[ModelType] = _
   protected var sfc: Array[Float] = _
   protected val current: Array[Double] = Array.fill(bufferSize){initialValue}
   protected val aggregate: CubeFunction
