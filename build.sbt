@@ -15,7 +15,7 @@ libraryDependencies ++= Seq(
 
   /* Storage Layer */
   //H2 is a full RDBMS with both a query engine and a storage layer
-  "com.datastax.spark" %% "spark-cassandra-connector" % "3.0.0",
+  "com.datastax.spark" %% "spark-cassandra-connector" % "3.0.1",
   "org.apache.hadoop" % "hadoop-client" % "3.2.0", //Same as Apache Spark
   "org.apache.parquet" % "parquet-hadoop" % "1.10.1", //Same as Apache Spark
   "org.apache.orc" % "orc-core" % "1.5.12", //Same as Apache Spark
