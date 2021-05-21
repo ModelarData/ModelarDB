@@ -20,7 +20,7 @@ object StorageFactory {
 
   /** Public Methods **/
   def getStorage(connectionString: String): Storage = {
-    //Selects the correct storage backend based on the connection string provided
+    // Selects the correct storage backend based on the connection string provided
     try {
       if (connectionString.startsWith("jdbc:")) {
         new JDBCStorage(connectionString)

@@ -14,24 +14,37 @@
  */
 package dk.aau.modelardb.engines.spark
 
+import akka.stream.scaladsl.SourceQueueWithComplete
 import dk.aau.modelardb.Interface
+import dk.aau.modelardb.arrow.ArrowUtil
 import dk.aau.modelardb.core._
-import dk.aau.modelardb.core.utility.{Static, ValueFunction}
+import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
+import dk.aau.modelardb.engines.QueryEngine
+import org.apache.arrow.vector.VectorSchemaRoot
 import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.execution.arrow.ArrowWriter
 import org.apache.spark.sql.{DataFrameReader, SparkSession}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 
-class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
+import java.util
+
+class Spark(configuration: Configuration, sparkStorage: SparkStorage) extends QueryEngine {
+
+  var sparkSession: SparkSession = _
+
+  def start(queue: SourceQueueWithComplete[SegmentGroup]): Unit = ???
 
   /** Public Methods **/
   def start(): Unit = {
     //Creates the Spark Session, Spark Streaming Context, and initializes the companion object
     val (ss, ssc) = initialize()
+    sparkSession = ss
 
     //Starts listening for and executes queries using the user-configured interface
-    Interface.start(configuration, q => ss.sql(q).toJSON.collect())
+//    Interface.start(configuration, sparkStorage, q => ArrowUtil.dfToArrow(ss.sql(q)))
 
     //Ensures that Spark does not terminate until ingestion is safely stopped
     if (ssc != null) {
@@ -39,7 +52,15 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
       ssc.awaitTermination()
       Spark.getCache.flush()
     }
-    ss.stop()
+//    ss.stop()
+  }
+
+  def stop(): Unit = {
+    sparkSession.stop()
+  }
+
+  override def execute(query: String): VectorSchemaRoot = {
+    ArrowUtil.dfToArrow(sparkSession.sql(query))
   }
 
   /** Private Methods **/

@@ -14,27 +14,34 @@
  */
 package dk.aau.modelardb
 
-import java.nio.file.{Files, Paths}
 import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
-import dk.aau.modelardb.core.Configuration
+import dk.aau.modelardb.config.Config
 import dk.aau.modelardb.core.utility.Static
+import dk.aau.modelardb.engines.QueryEngine
+import org.apache.arrow.vector.VectorSchemaRoot
+import org.apache.arrow.vector.ipc.ArrowStreamWriter
 
+import java.io.OutputStream
+import java.nio.charset.StandardCharsets.UTF_8
+import java.nio.file.{Files, Paths}
 import scala.io.Source
 import scala.io.StdIn.readLine
 
 object Interface {
 
-  /** Public Methods **/
-  def start(configuration: Configuration, sql: String => Array[String]): Unit = {
-    if ( ! configuration.contains("modelardb.interface")) {
-      return
-    }
+  /** Instance Variables **/
+  var queryEngine: QueryEngine = _
 
-    this.sql = sql
-    configuration.getString("modelardb.interface") match {
+  var humanFriendly = false
+
+  /** Public Methods **/
+  def start(config: Config, queryEngine: QueryEngine): Unit = {
+    humanFriendly = config.modelarDb.human
+    this.queryEngine = queryEngine
+    config.modelarDb.interface.toLowerCase match {
       case "socket" => socket()
       case "http" => http()
-      case "repl" => repl(configuration.getStorage)
+      case "repl" => repl(config.modelarDb.storage)
       case path if Files.exists(Paths.get(path)) => file(path)
       case _ => throw new java.lang.UnsupportedOperationException("unknown value for modelardb.interface in the config file")
     }
@@ -47,26 +54,30 @@ object Interface {
     val serverSocket = new java.net.ServerSocket(9999)
     val clientSocket = serverSocket.accept()
     val in = new java.io.BufferedReader(new java.io.InputStreamReader(clientSocket.getInputStream))
-    val out = new java.io.PrintWriter(clientSocket.getOutputStream, true)
+    val out = clientSocket.getOutputStream
 
     //Query
     Static.info("ModelarDB: the socket is ready to receive queries (Port: 9999)")
     while (true) {
-      val query = in.readLine().trim()
+      val query = in.readLine().trim() // TODO: Handle ctrl-c (as of now it throws NPE because readLine becomes null
       if (query == ":quit") {
         Static.info("ModelarDB: received termination command, shutdown imminent")
+        cleanUp()
         return
       } else if (query.nonEmpty) {
-        execute(query, out.write)
+        execute(query, out)
         out.flush()
       }
     }
+    cleanUp()
 
     //Cleanup
-    in.close()
-    out.close()
-    clientSocket.close()
-    serverSocket.close()
+    def cleanUp(): Unit = {
+      in.close()
+      out.close()
+      clientSocket.close()
+      serverSocket.close()
+    }
   }
 
   private def http(): Unit = {
@@ -80,13 +91,9 @@ object Interface {
         val request = httpExchange.getRequestBody
         val reader = new java.io.BufferedReader(new java.io.InputStreamReader(request))
 
-        //The query is executed with the result returned as an HTTP response
-        val results = scala.collection.mutable.ArrayBuffer[String]()
-        execute(reader.readLine.trim(), line => results.append(line))
-        val out = results.mkString("")
-        httpExchange.sendResponseHeaders(200, out.length)
+        httpExchange.sendResponseHeaders(200, 0)
         val response = httpExchange.getResponseBody
-        response.write(out.getBytes)
+        execute(reader.readLine.trim(), response)
         response.close()
       }
     }
@@ -126,39 +133,33 @@ object Interface {
     Static.info("ModelarDB: finished all queries after " + jst)
   }
 
-  private def execute(query: String, out: String => Unit): Unit = {
+  private def execute(query: String, out: OutputStream): Unit = {
     val st = System.currentTimeMillis()
-    var result: Array[String] = null
-    try {
-      val query_rewritten =
-        query.replace("COUNT_S(#)", "COUNT_S(start_time, end_time, sampling_interval)")
+    val result: VectorSchemaRoot = try {
+      val query_rewritten = query.replace("COUNT_S(#)", "COUNT_S(start_time, end_time, sampling_interval)")
           .replace("#", "tid, start_time, end_time, sampling_interval, mtid, model, gaps")
-      result = this.sql(query_rewritten)
+      queryEngine.execute(query_rewritten)
     } catch {
       case e: Exception =>
         e.printStackTrace()
-        result = Array(e.toString)
+        return
     }
+
+    // Outputs the query result using the method provided as the arguments `out`
     val et = System.currentTimeMillis() - st
     val jst = java.time.Duration.ofMillis(et)
-
-    //Outputs the query result using the method provided as the arguments out
-    out(s"""{\n  "time": "$jst",\n  "query": "$query",\n  "result":  [\n    """)
-    if (result.nonEmpty) {
-      var index = 0
-      val end = result.length - 1
-      while (index < end) {
-        out(result(index))
-        out(",\n    ")
-        index += 1
-      }
-      out(result(index))
-      out(s"""\n  ]\n}\n""")
+    if (humanFriendly) {
+      val header = s"""time: "$jst",\nquery: "$query",\nresult:\n""".getBytes(UTF_8)
+      out.write(header)
+      // TODO: use different formatting than TSV as this makes JSON response look strange
+      val bytes = result.contentToTSVString().getBytes(UTF_8)
+      out.write(bytes)
     } else {
-      out(s"""  ]\n}\n""")
+      val arrowWriter = new ArrowStreamWriter(result, /*DictionaryProvider*/ null, out)
+      arrowWriter.start()
+      arrowWriter.writeBatch()
+      arrowWriter.end()
     }
   }
 
-  /** Instance Variables **/
-  var sql: String => Array[String] = _
 }

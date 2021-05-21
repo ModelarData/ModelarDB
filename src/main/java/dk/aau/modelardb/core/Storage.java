@@ -33,6 +33,7 @@ public abstract class Storage {
     abstract public int getMaxTid();
     abstract public int getMaxGid();
     abstract public void close();
+    abstract public void storeSegmentGroups(SegmentGroup[] segments, int size);
 
     /** Protected Methods **/
     protected HashMap<String, Integer> initializeCaches(String[] modelNames,

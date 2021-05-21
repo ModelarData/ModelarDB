@@ -1,11 +1,18 @@
 package dk.aau.modelardb.engines.h2
 
+import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
+
 import java.sql.{Connection, DriverManager}
 import dk.aau.modelardb.Interface
 import dk.aau.modelardb.core.utility.{SegmentFunction, Static}
 import dk.aau.modelardb.core.{Configuration, Dimensions, Partitioner, SegmentGroup, WorkingSet}
 import dk.aau.modelardb.engines.PredicatePushDown
+import dk.aau.modelardb.arrow.ArrowUtil
+import dk.aau.modelardb.core.utility.{Pair, SegmentFunction, Static, ValueFunction}
+import dk.aau.modelardb.core.{Configuration, Dimensions, Partitioner, SegmentGroup, Storage, WorkingSet}
+import dk.aau.modelardb.engines.{PredicatePushDown, QueryEngine, RDBMSEngineUtilities}
 import dk.aau.modelardb.core.Dimensions.Types
+import org.apache.arrow.vector.VectorSchemaRoot
 import org.h2.expression.condition.{Comparison, ConditionAndOr, ConditionInConstantSet}
 import org.h2.expression.{Expression, ExpressionColumn, ValueExpression}
 import org.h2.value.{ValueInt, ValueTimestamp}
@@ -28,19 +35,21 @@ import scala.collection.mutable
 //TODO: Support requiredColumns and test that predicate push-down works with all storage backends.
 //TODO: determine if the segments should be filtered by the segment view and than data point view like done for Spark
 //TODO: Share as much code as possible between H2 and Spark and structure their use of the two views the same.
-class H2(configuration: Configuration, h2storage: H2Storage) {
+class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine {
   /** Instance Variables **/
   private var finalizedSegmentsIndex = 0
   private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](configuration.getBatchSize())
   private var numberOfRunningIngestors: CountDownLatch = _
   private val cacheLock = new ReentrantReadWriteLock()
   private val temporarySegments = mutable.HashMap[Int, Array[SegmentGroup]]()
+  val connection = DriverManager.getConnection("jdbc:h2:mem:")
 
   /** Public Methods **/
-  def start(): Unit = {
+  def start(): Unit = ???
+
+  def start(queue: SourceQueueWithComplete[SegmentGroup]): Unit = {
     //Initialize
     //Documentation: http://www.h2database.com/html/features.html#in_memory_databases
-    val connection = DriverManager.getConnection("jdbc:h2:mem:")
     val stmt = connection.createStatement()
     //Documentation: https://www.h2database.com/html/commands.html#create_table
     stmt.execute(H2.getCreateDataPointViewSQL(configuration.getDimensions))
@@ -61,15 +70,16 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
 
     //Ingestion
     H2.initialize(this, h2storage)
-    startIngestion()
+    startIngestion(queue)
+    waitUntilIngestionIsDone(queue)
 
-    //Interface
-    Interface.start(configuration, q => this.executeQuery(connection, q))
-
-    //Shutdown
-    connection.close()
-    waitUntilIngestionIsDone()
   }
+
+  //Shutdown
+  def stop(): Unit = {
+    connection.close()
+  }
+
 
   def getInMemorySegmentGroups(): Iterator[SegmentGroup] = {
     this.cacheLock.readLock().lock()
@@ -81,7 +91,8 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
 
   /** Private Methods **/
   //Ingestion
-  private def startIngestion(): Unit = {
+//  private def startIngestion(): Unit = {
+  private def startIngestion(queue: SourceQueueWithComplete[SegmentGroup]): Unit = {
     //Initialize Storage
     val dimensions = configuration.getDimensions
     h2storage.open(dimensions)
@@ -104,14 +115,14 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
       for (workingSet <- workingSets) {
         new Thread {
           override def run {
-            ingest(workingSet)
+            ingest(workingSet, queue)
           }
         }.start()
       }
     }
   }
 
-  private def ingest(workingSet: WorkingSet): Unit = {
+  private def ingest(workingSet: WorkingSet, queue: SourceQueueWithComplete[SegmentGroup]): Unit = {
     //Creates a method that stores temporary segments in memory and finalized segments in batches to be written to disk
     val consumeTemporary = new SegmentFunction {
       override def emit(gid: Int, startTime: Long, endTime: Long, mtid: Int, model: Array[Byte], gaps: Array[Byte]): Unit = {
@@ -129,7 +140,8 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
         finalizedSegments(finalizedSegmentsIndex) = new SegmentGroup(gid, startTime, endTime, mtid, model, gaps)
         finalizedSegmentsIndex += 1
         if (finalizedSegmentsIndex == configuration.getBatchSize()) {
-          h2storage.storeSegmentGroups(finalizedSegments, finalizedSegmentsIndex)
+//          h2storage.storeSegmentGroups(finalizedSegments, finalizedSegmentsIndex)
+          finalizedSegments.foreach(queue.offer)
           finalizedSegmentsIndex = 0
         }
         cacheLock.writeLock().unlock()
@@ -200,11 +212,22 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
     }
   }
 
-  private def waitUntilIngestionIsDone(): Unit = {
+//  private def waitUntilIngestionIsDone(): Unit = {
+  private def waitUntilIngestionIsDone(queue: SourceQueueWithComplete[SegmentGroup]): Unit = {
     if (this.numberOfRunningIngestors.getCount != 0) {
       Static.info("ModelarDB: waiting for all ingestors to finnish")
     }
     this.numberOfRunningIngestors.await()
+    queue.complete()
+  }
+
+  def execute(query: String): VectorSchemaRoot = {
+    val stmt = connection.createStatement()
+    stmt.execute(query)
+    val rs = stmt.getResultSet
+    val root = ArrowUtil.jdbcToArrow(rs)
+    stmt.close()
+    root
   }
 
   //Query Processing

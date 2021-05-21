@@ -16,25 +16,37 @@ package dk.aau.modelardb
 
 import java.io.File
 import java.nio.file.{FileSystems, Paths}
-import java.util.TimeZone
-import dk.aau.modelardb.core._
-import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
-import dk.aau.modelardb.engines.EngineFactory
-import dk.aau.modelardb.engines.spark.SparkProjector
-import dk.aau.modelardb.storage.StorageFactory
-
+import java.util.{TimeZone, UUID}
 import java.util
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
+import com.typesafe.scalalogging.Logger
+import dk.aau.modelardb.akka.AkkaSystem
+import dk.aau.modelardb.arrow.{ArrowFlightClient, ArrowFlightServer}
+import dk.aau.modelardb.config.Config
+import dk.aau.modelardb.core.{Configuration, Correlation, Dimensions, SegmentGroup}
+import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
+import dk.aau.modelardb.engines.EngineFactory
+import dk.aau.modelardb.engines.spark.SparkProjector
+import dk.aau.modelardb.storage.StorageFactory
+import pureconfig.ConfigSource
+import pureconfig.generic.auto._
+
+import scala.util.control.NonFatal
+
 
 object Main {
+
+  val log = Logger("Main")
 
   /** Public Methods **/
   def main(args: Array[String]): Unit = {
 
-    //ModelarDB checks args(0) for a config and uses $HOME/Programs/modelardb.conf as a fallback
-    val fallback = System.getProperty("user.home") + "/Programs/modelardb.conf"
+    /* Configuration */
+
+    // Check args(0) for a config and use $HOME/modelardb.conf as a fallback
+    val fallback = System.getProperty("user.home") + "/modelardb.conf"
     val configPath: String = if (args.length == 1) {
       args(0)
     } else if (new java.io.File(fallback).exists) {
@@ -42,22 +54,41 @@ object Main {
     } else {
       println("usage: modelardb path/to/modelardb.conf")
       System.exit(-1)
-      //HACK: necessary to have the same type in all branches of the match expression
-      ""
+      "" //HACK: necessary to have the same type in all branches of the match expression
     }
 
-    /* Configuration */
-    val configuration = readConfigurationFile(configPath)
-    TimeZone.setDefault(configuration.getTimeZone) //Ensures all components use the same time zone
+    val baseConfig = ConfigSource.default
+    val userConfig = ConfigSource.file(configPath)
+    val config = userConfig
+      .withFallback(baseConfig)
+      .loadOrThrow[Config]
+
+    val modelarConf = config.modelarDb
+    TimeZone.setDefault(config.modelarDb.timezone) //Ensures all components use the same time zone
+
 
     /* Storage */
-    val storage = StorageFactory.getStorage(configuration.getString("modelardb.storage"))
+    val storage = StorageFactory.getStorage(modelarConf.storage)
+
+    val akkaSystem = AkkaSystem(config, storage)
 
     /* Engine */
-    EngineFactory.startEngine(configuration, storage)
+    val engine = EngineFactory.getEngine(modelarConf.engine, storage)
+    val queue = akkaSystem.start
+    engine.start(queue)
+
+    /* Interfaces */
+    val arrowServer = ArrowFlightServer(engine, storage)
+    arrowServer.start()
+
+    Interface.start(config, engine)
 
     /* Cleanup */
+    arrowServer.stop()
+    engine.stop()
     storage.close()
+    akkaSystem.stop()
+    println("goodbye!")
   }
 
   /** Private Methods **/
@@ -116,7 +147,7 @@ object Main {
              "modelardb.error_bound" | "modelardb.length_bound" | "modelardb.maximum_latency" |
              "modelardb.sampling_interval" | "modelardb.batch_size" | "modelardb.dynamic_split_fraction"  |
              "modelardb.csv.separator" | "modelardb.csv.header" | "modelardb.csv.date_format" | "modelardb.csv.locale" |
-             "modelardb.spark.streaming" =>
+             "modelardb.spark.streaming" | "modelardb.human" =>
           configuration.add(lineSplit(0), lineSplit(1).stripPrefix("'").stripSuffix("'"))
         case _ =>
           if (lineSplit(0).charAt(0) != '#') {

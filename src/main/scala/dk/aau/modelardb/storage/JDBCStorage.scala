@@ -53,6 +53,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     this.getMaxGidStmt = this.connection.prepareStatement("SELECT MAX(gid) FROM time_series")
   }
 
+  /* Does not insert the actual time series data from the sensor but just creates a table describing each timeseries (data source) */
   override def initialize(timeSeriesGroups: Array[TimeSeriesGroup],
                           derivedTimeSeries: util.HashMap[Integer, Array[Pair[String, ValueFunction]]],
                           dimensions: Dimensions, modelNames: Array[String]): Unit = {
@@ -136,20 +137,25 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     this.connection.close()
   }
 
+  def getSegmentGroups: ResultSet = {
+    val stmt = connection.createStatement()
+    stmt.executeQuery("SELECT * FROM segment")
+  }
+
   //H2Storage
   override def storeSegmentGroups(segments: Array[SegmentGroup], size: Int): Unit = {
     try {
       for (segmentGroup <- segments.take(size)) {
-        this.insertStmt.setInt(1, segmentGroup.gid)
-        this.insertStmt.setLong(2, segmentGroup.startTime)
-        this.insertStmt.setLong(3, segmentGroup.endTime)
-        this.insertStmt.setInt(4, segmentGroup.mtid)
-        this.insertStmt.setBytes(5, segmentGroup.model)
-        this.insertStmt.setBytes(6, segmentGroup.offsets)
-        this.insertStmt.addBatch()
+        insertStmt.setInt(1, segmentGroup.gid)
+        insertStmt.setLong(2, segmentGroup.startTime)
+        insertStmt.setLong(3, segmentGroup.endTime)
+        insertStmt.setInt(4, segmentGroup.mtid)
+        insertStmt.setBytes(5, segmentGroup.model)
+        insertStmt.setBytes(6, segmentGroup.offsets)
+        insertStmt.addBatch()
       }
-      this.insertStmt.executeBatch()
-      this.connection.commit()
+      insertStmt.executeBatch()
+      connection.commit()
     } catch {
       case se: java.sql.SQLException =>
         close()
@@ -224,7 +230,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     }
   }
 
-  private def resultSetToSegmentGroup(resultSet: ResultSet): SegmentGroup = {
+  def resultSetToSegmentGroup(resultSet: ResultSet): SegmentGroup = {
     val gid = resultSet.getInt(1)
     val startTime = resultSet.getLong(2)
     val endTime = resultSet.getLong(3)
@@ -247,6 +253,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
   }
 
   /** Instance Variables **/
+  private var isMqttEnabled: Boolean = false
   private var connection: Connection = _
   private var insertStmt: PreparedStatement = _
   private var getMaxTidStmt: PreparedStatement = _

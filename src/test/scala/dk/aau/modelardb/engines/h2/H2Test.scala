@@ -1,6 +1,7 @@
 package dk.aau.modelardb.engines.h2
 
 import dk.aau.modelardb.core.models.ModelTypeFactory
+import dk.aau.modelardb.H2Provider
 import dk.aau.modelardb.core.{Configuration, Dimensions, SegmentGroup}
 import dk.aau.modelardb.storage.JDBCStorage
 import org.h2.expression.condition.{Comparison, ConditionAndOr}
@@ -13,17 +14,7 @@ import org.scalatest.matchers.should.Matchers
 import java.sql.{DriverManager, Statement}
 import java.time.Instant
 
-class H2Test extends AnyFlatSpec with Matchers with MockFactory {
-
-  private def withH2[A](fun: Statement => A): A = {
-    val conn = DriverManager.getConnection("jdbc:h2:mem:")
-    try {
-      val statement = conn.createStatement()
-      fun(statement)
-    } finally {
-      conn.close()
-    }
-  }
+class H2Test extends AnyFlatSpec with Matchers with MockFactory with H2Provider {
 
   behavior of "H2 Companion Object"
   it should "be able to make compareType and getCompareOperator public" in {
@@ -88,5 +79,5 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
   }
 
   /* HACK: needed because JDBCStorage class init fails when constructor arg is null */
-  private class JDBCStorageNoArgs extends JDBCStorage("jdbc:h2:mem")
+  private class JDBCStorageNoArgs extends JDBCStorage("jdbc:h2:mem", null)
 }
