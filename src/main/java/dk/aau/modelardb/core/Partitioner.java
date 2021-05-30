@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
  */
 package dk.aau.modelardb.core;
 
+import dk.aau.modelardb.core.timeseries.*;
 import dk.aau.modelardb.core.utility.Pair;
 import dk.aau.modelardb.core.utility.Static;
 import dk.aau.modelardb.core.utility.ValueFunction;
@@ -24,68 +25,69 @@ import java.util.stream.IntStream;
 public class Partitioner {
 
     /** Public Methods **/
-    public static TimeSeries[] initializeTimeSeries(Configuration configuration, int currentMaximumSID) {
-        int cms = currentMaximumSID;
-        String[] sources = configuration.getDataSources();
+    public static TimeSeries[] initializeTimeSeries(Configuration configuration, int currentMaximumTid) {
+        int cms = currentMaximumTid;
+        String[] sources = configuration.getSources();
         ArrayList<TimeSeries> tss = new ArrayList<>();
 
-        String separator = configuration.getString("modelardb.separator");
-        boolean header = configuration.getBoolean("modelardb.header");
-        int timestamps = configuration.getInteger("modelardb.timestamps");
-        String dateFormat = configuration.getString("modelardb.dateformat");
-        String timezone = configuration.getString("modelardb.timezone");
-        int values = configuration.getInteger("modelardb.values");
-        String locale = configuration.getString("modelardb.locale");
+        String separator = configuration.getString("modelardb.csv.separator");
+        boolean header = configuration.getBoolean("modelardb.csv.header");
+        int timestampColumnIndex = configuration.getInteger("modelardb.timestamp_column");
+        String dateFormat = configuration.getString("modelardb.csv.date_format");
+        String timeZone = configuration.getString("modelardb.time_zone");
+        int valueColumnIndex = configuration.getInteger("modelardb.value_column");
+        String locale = configuration.getString("modelardb.csv.locale");
 
-        //HACK: Resolution is one argument as all time series used for evaluation has exhibits the same sampling interval
-        int resolution = configuration.getResolution();
+        //HACK: Sampling interval is one argument as all time series used for evaluation used the same sampling interval
+        int samplingInterval = configuration.getSamplingInterval();
 
-        //Derived data sources are normalized so all use sids to simply processing in Storage
+        //Derived data sources are normalized so all use tids to simply the processing in Storage
+        String derivedKey = "modelardb.sources.derived";
         HashMap<String, Pair<String, ValueFunction>[]> derivedDataSources =
-                (HashMap<String, Pair<String, ValueFunction>[]>) configuration.remove("modelardb.source.derived")[0];
+                (HashMap<String, Pair<String, ValueFunction>[]>) configuration.remove(derivedKey)[0];
         HashMap<Integer, Pair<String, ValueFunction>[]> derivedTimeSeries = new HashMap<>();
 
         //Initializes all time series, both bounded (files) and unbounded (sockets)
         for (String source : sources) {
             cms += 1;
-            TimeSeries ts = null;
+            TimeSeries ts;
             if (source.contains(":")) {
-                //The source is a socket
-                String[] ipSplitPort = source.split(":");
-                int port = Integer.parseInt(ipSplitPort[1]);
-                ts = new TimeSeries(ipSplitPort[0], port, cms, resolution, separator,
-                        timestamps, dateFormat, timezone, values, locale);
+                ts = new AsyncTimeSeriesSocket(source, cms, samplingInterval, separator,
+                        timestampColumnIndex, dateFormat, timeZone, valueColumnIndex, locale);
+            }  else if (source.endsWith(".orc")) {
+                ts = new TimeSeriesORC(source, cms, samplingInterval, timestampColumnIndex, valueColumnIndex);
+            }  else if (source.endsWith(".parquet")) {
+                ts = new TimeSeriesParquet(source, cms, samplingInterval, timestampColumnIndex, valueColumnIndex);
             } else {
-                //The source is a csv file
-                ts = new TimeSeries(source, cms, resolution, separator, header,
-                        timestamps, dateFormat, timezone, values, locale);
+                ts = new TimeSeriesCSV(source, cms, samplingInterval, separator, header,
+                        timestampColumnIndex, dateFormat, timeZone, valueColumnIndex, locale);
             }
             tss.add(ts);
 
-            //If any derived time series are defined for the source they must be mapped to its sid
+            //If any derived time series are defined for the source they must be mapped to its tid
             if (derivedDataSources.containsKey(ts.source)) {
                 derivedTimeSeries.put(cms, derivedDataSources.get(ts.source));
                 derivedDataSources.remove(ts.source);
             }
         }
 
-        //All derived data sources that do not map to a new data source must map to a sid
+        //All derived data sources that do not map to a new data source must map to a tid
         try {
             final int finalCMS = cms;
-            derivedDataSources.entrySet().forEach(e -> {
-                int sid = Integer.parseInt(e.getKey());
-                if (sid < 1 || sid > finalCMS) {
-                    throw new IllegalArgumentException("CORE: sid " + sid + " in modelardb.source.derived is out of range");
+            derivedDataSources.forEach((key, value) -> {
+                int tid = Integer.parseInt(key);
+                if (tid < 1 || tid > finalCMS) {
+                    throw new IllegalArgumentException("CORE: tid " + tid + " in " + derivedKey + " is out of range");
                 }
-                derivedTimeSeries.put(sid, e.getValue());
+                derivedTimeSeries.put(tid, value);
             });
         } catch (NumberFormatException nfe) {
             String valueBeingParsed = nfe.getMessage().substring(18);
-            throw new IllegalArgumentException("CORE: error parsing " + valueBeingParsed  + " specified in modelardb.source.derived");
+            throw new IllegalArgumentException("CORE: error parsing " + valueBeingParsed  + " specified in " + derivedKey, nfe);
         }
-        configuration.add("modelardb.source.derived", derivedTimeSeries);
+        configuration.add(derivedKey, derivedTimeSeries);
 
-        int dtsc = derivedTimeSeries.entrySet().stream().mapToInt(e -> e.getValue().length).sum();
+        int dtsc = derivedTimeSeries.values().stream().mapToInt(pairs -> pairs.length).sum();
         Static.info(String.format("CORE: initialized %d time series and %d derived time series", tss.size(), dtsc));
         return tss.toArray(new TimeSeries[0]);
     }
@@ -95,15 +97,15 @@ public class Partitioner {
             return new TimeSeriesGroup[0];
         }
 
-        Correlation[] correlations = (Correlation[]) configuration.get("modelardb.correlation");
+        Correlation[] correlations = configuration.getCorrelations();
         Iterator<Integer> gids = IntStream.range(currentMaximumGid + 1, Integer.MAX_VALUE).iterator();
-        TimeSeriesGroup[] groups = null;
+        TimeSeriesGroup[] groups;
         if (correlations.length == 0) {
             groups = Arrays.stream(timeSeries).map(ts -> new TimeSeriesGroup(gids.next(), new TimeSeries[]{ts}))
                     .toArray(TimeSeriesGroup[]::new);
         } else {
             //If groups are specified as disjoint sets of time series, they can be created directly
-            TimeSeries[][] tss = null;
+            TimeSeries[][] tss;
             if (areAllDisjoint(correlations)) {
                 tss = Partitioner.groupTimeSeriesOnlyBySource(timeSeries, correlations);
             } else {
@@ -111,9 +113,9 @@ public class Partitioner {
                 tss = Partitioner.groupTimeSeriesByCorrelation(timeSeries, dimensions, correlations);
             }
 
-            //The time series in a group must be sorted by sid, otherwise, optimizations in SegmentGenerator fail
+            //The time series in a group must be sorted by tid, otherwise, optimizations in SegmentGenerator fail
             groups = Arrays.stream(tss).map(ts -> {
-                Arrays.sort(ts, Comparator.comparingInt(ts2 -> ts2.sid));
+                Arrays.sort(ts, Comparator.comparingInt(ts2 -> ts2.tid));
                 return new TimeSeriesGroup(gids.next(), ts);
             }).toArray(TimeSeriesGroup[]::new);
         }
@@ -122,12 +124,13 @@ public class Partitioner {
     }
 
     public static WorkingSet[] partitionTimeSeries(Configuration configuration, TimeSeriesGroup[] timeSeriesGroups,
-                                                   HashMap<String, Integer> midCache, int partitions) {
+                                                   HashMap<String, Integer> mtidCache, int partitions) {
         TimeSeriesGroup[][] pts = Partitioner.partitionTimeSeriesByRate(timeSeriesGroups, partitions);
-        int[] mids = Arrays.stream(configuration.getModels()).mapToInt(midCache::get).toArray();
+        int[] mtids = Arrays.stream(configuration.getModelTypeNames()).mapToInt(mtidCache::get).toArray();
         WorkingSet[] workingSets = Arrays.stream(pts).map(tss -> new WorkingSet(tss, configuration.getFloat(
-                "modelardb.dynamicsplitfraction"), configuration.getModels(), mids, configuration.getError(),
-                configuration.getLatency(), configuration.getLimit())).toArray(WorkingSet[]::new);
+                "modelardb.dynamic_split_fraction"), configuration.getModelTypeNames(), mtids,
+                configuration.getErrorBound(), configuration.getLengthBound(), configuration.getMaximumLatency()))
+                .toArray(WorkingSet[]::new);
         Static.info(String.format("CORE: created %d working set(s)", workingSets.length));
         return workingSets;
     }
@@ -140,11 +143,9 @@ public class Partitioner {
                 return false;
             }
 
-            HashSet<String> sources = clause.getCorrelatedSources();
             int orgSize = all.size();
-            for (String source : sources) {
-                all.add(source);
-            }
+            HashSet<String> sources = clause.getCorrelatedSources();
+            all.addAll(sources);
 
             int newSize = all.size();
             if (newSize - orgSize != sources.size()) {
@@ -211,7 +212,7 @@ public class Partitioner {
             }
         }
         return sourceToGroup.values().stream().distinct()
-                .map(al -> al.toArray(new TimeSeries[al.size()])).toArray(TimeSeries[][]::new);
+                .map(al -> al.toArray(new TimeSeries[0])).toArray(TimeSeries[][]::new);
     }
 
     //Partitioning Methods
@@ -235,10 +236,10 @@ public class Partitioner {
         }
 
         //The groups are sorted by the rate of data points produced so the most resource intensive groups are placed first
-        Arrays.sort(timeSeriesGroups, Comparator.comparingLong(tsg -> tsg.resolution / tsg.size()));
+        Arrays.sort(timeSeriesGroups, Comparator.comparingLong(tsg -> tsg.samplingInterval / tsg.size()));
         for (TimeSeriesGroup tsg : timeSeriesGroups) {
             Pair<Long, ArrayList<TimeSeriesGroup>> min = sets.poll();
-            min._1 = min._1 + (60000 / (tsg.resolution / tsg.size())); //Data Points per Minute
+            min._1 = min._1 + (60000 / (tsg.samplingInterval / tsg.size())); //Data Points per Minute
             min._2.add(tsg);
             sets.add(min);
         }
@@ -246,7 +247,7 @@ public class Partitioner {
         //The groups are sorted by gid to make the order they are ingested in deterministic
         return sets.stream().map(ts -> {
             ts._2.sort(Comparator.comparingInt(tsg -> tsg.gid));
-            return ts._2.toArray(new TimeSeriesGroup[ts._2.size()]);
+            return ts._2.toArray(new TimeSeriesGroup[0]);
         }).toArray(TimeSeriesGroup[][]::new);
     }
 }

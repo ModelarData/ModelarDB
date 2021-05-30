@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@ package dk.aau.modelardb.core.utility;
 
 import dk.aau.modelardb.core.DataPoint;
 
-import java.util.Iterator;
 import java.util.ArrayList;
+import java.util.Iterator;
 
 public class ReverseBufferIterator implements Iterator<DataPoint> {
 
@@ -40,7 +40,7 @@ public class ReverseBufferIterator implements Iterator<DataPoint> {
     }
 
     /** Instance Variables **/
-    private int source;
+    private final int source;
     private int index;
-    private ArrayList<DataPoint[]> list;
+    private final ArrayList<DataPoint[]> list;
 }

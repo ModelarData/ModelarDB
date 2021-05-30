@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,6 @@
  */
 package dk.aau.modelardb.core.utility;
 
-import java.io.Serializable;
-
-public interface SegmentFunction extends Serializable {
-    void emit(int gid, long startTime, long endTime, int mid, byte[] parameters, byte[] gaps);
+public interface SegmentFunction {
+    void emit(int gid, long startTime, long endTime, int mtid, byte[] model, byte[] gaps);
 }
