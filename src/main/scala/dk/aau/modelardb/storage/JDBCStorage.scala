@@ -153,9 +153,9 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
   }
 
   //H2Storage
-  override def storeSegmentGroups(segments: Array[SegmentGroup], size: Int): Unit = {
+  override def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
     try {
-      for (segmentGroup <- segments.take(size)) {
+      for (segmentGroup <- segmentGroups.take(size)) {
         this.insertStmt.setInt(1, segmentGroup.gid)
         this.insertStmt.setLong(2, segmentGroup.startTime)
         this.insertStmt.setLong(3, segmentGroup.endTime)
@@ -199,24 +199,24 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
   }
 
   /** Private Methods **/
-   private def splitConnectionStringAndTypes(connectionStringWithArguments: String): (String, String, String) = {
-     val split = connectionStringWithArguments.split(" ")
-     if (split.length == 3) {
-       (split(0), split(1), split(2))
-     } else {
-       val rdbms = connectionStringWithArguments.split(":")(1)
-       val defaults = Map(
-         "sqlite" -> Tuple3(connectionStringWithArguments, "TEXT", "BYTEA"),
-         "postgresql" -> Tuple3(connectionStringWithArguments, "TEXT", "BYTEA"),
-         "derby" -> Tuple3(connectionStringWithArguments, "LONG VARCHAR", "LONG VARCHAR FOR BIT DATA"),
-         "h2" -> Tuple3(connectionStringWithArguments, "VARCHAR", "BINARY"),
-         "hsqldb" -> Tuple3(connectionStringWithArguments, "LONGVARCHAR", "LONGVARBINARY"))
-       if ( ! defaults.contains(rdbms)) {
-         throw new IllegalArgumentException("ModelarDB: the string and binary type must also be specified for " + rdbms)
-       }
-       defaults(rdbms)
-     }
-   }
+  private def splitConnectionStringAndTypes(connectionStringWithArguments: String): (String, String, String) = {
+    val split = connectionStringWithArguments.split(" ")
+    if (split.length == 3) {
+      (split(0), split(1), split(2))
+    } else {
+      val rdbms = connectionStringWithArguments.split(":")(1)
+      val defaults = Map(
+        "sqlite" -> Tuple3(connectionStringWithArguments, "TEXT", "BYTEA"),
+        "postgresql" -> Tuple3(connectionStringWithArguments, "TEXT", "BYTEA"),
+        "derby" -> Tuple3(connectionStringWithArguments, "LONG VARCHAR", "LONG VARCHAR FOR BIT DATA"),
+        "h2" -> Tuple3(connectionStringWithArguments, "VARCHAR", "BINARY"),
+        "hsqldb" -> Tuple3(connectionStringWithArguments, "LONGVARCHAR", "LONGVARBINARY"))
+      if ( ! defaults.contains(rdbms)) {
+        throw new IllegalArgumentException("ModelarDB: the string and binary type must also be specified for " + rdbms)
+      }
+      defaults(rdbms)
+    }
+  }
 
   private def getSegmentGroups(predicates: String): Iterator[SegmentGroup] = {
     val stmt = this.connection.createStatement()

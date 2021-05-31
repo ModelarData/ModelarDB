@@ -145,25 +145,25 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
   }
 
   //H2Storage
-  override def storeSegmentGroups(segments: Array[SegmentGroup], size: Int): Unit = {
+  override def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
     val session = this.connector.openSession()
 
     var batch = BatchStatement.newInstance(BatchType.LOGGED)
     batch.setIdempotent(true)
-    for (segment <- segments.take(size)) {
-      val gmdc = this.groupMetadataCache(segment.gid)
+    for (segmentGroup <- segmentGroups.take(size)) {
+      val gmdc = this.groupMetadataCache(segmentGroup.gid)
       val samplingInterval = gmdc(0)
-      val gaps = Static.gapsToBits(segment.offsets, gmdc)
-      val size = BigInteger.valueOf((segment.endTime - segment.startTime) / samplingInterval)
-      val mtid = BigInteger.valueOf(segment.mtid.toLong)
+      val gaps = Static.gapsToBits(segmentGroup.offsets, gmdc)
+      val size = BigInteger.valueOf((segmentGroup.endTime - segmentGroup.startTime) / samplingInterval)
+      val mtid = BigInteger.valueOf(segmentGroup.mtid.toLong)
 
       val boundStatement = insertStmt.bind()
-        .setBigInteger(0, BigInteger.valueOf(segment.gid))
+        .setBigInteger(0, BigInteger.valueOf(segmentGroup.gid))
         .setBigInteger(1, BigInteger.valueOf(gaps))
         .setBigInteger(2, size)
-        .setInstant(3, Instant.ofEpochMilli(segment.endTime))
+        .setInstant(3, Instant.ofEpochMilli(segmentGroup.endTime))
         .setBigInteger(4, mtid)
-        .setByteBuffer(5, ByteBuffer.wrap(segment.model))
+        .setByteBuffer(5, ByteBuffer.wrap(segmentGroup.model))
       batch = batch.add(boundStatement)
 
       //The maximum batch size supported by Cassandra
@@ -294,7 +294,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.time_series(tid VARINT, scaling_factor FLOAT, sampling_interval VARINT, gid VARINT${getDimensionsSQL(dimensions, "TEXT")}, PRIMARY KEY (tid));")
     session.execute(createTable)
 
-    //The insert statement will be used for every batch of segments
+    //The insert statement will be used for every batch of segment groups
     this.insertStmt = session.prepare(s"INSERT INTO ${this.keyspace}.segment(gid, gaps, size, end_time, mtid, model) VALUES(?, ?, ?, ?, ?, ?)")
     session.close()
   }
@@ -306,7 +306,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     val gidPushDownLimit = 1500
 
     //All filters should be parsed as a set of conjunctions as Spark SQL represents OR as a separate case class
-    //NOTE: the segments retrieved must be sorted by end_time as Spark fetches segments until a maximum start_time
+    //NOTE: the segment groups retrieved must be sorted by end_time as Spark fetches rows until a maximum start_time
     for (filter: Filter <- filters) {
       filter match {
         //Predicate push-down for gid using SELECT * FROM segment with GID = ? and gid IN (..)
@@ -352,7 +352,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     }
     Static.info("ModelarDB: limiting segments read using takeWhile")
 
-    //Read segments until the requested start time is reached for all time series
+    //Read segment groups until the requested start time is reached for all time series
     val gmdc = this.groupMetadataCache
     val maxStartTimeRaw = maxStartTime.getTime
     rdd
