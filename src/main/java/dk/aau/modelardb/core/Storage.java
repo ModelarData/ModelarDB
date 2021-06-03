@@ -27,28 +27,25 @@ public abstract class Storage {
 
     /** Public Methods **/
     abstract public void open(Dimensions dimensions);
-    abstract public void initialize(TimeSeriesGroup[] timeSeriesGroups,
-                                    HashMap<Integer, Pair<String, ValueFunction>[]> derivedTimeSeries,
-                                    Dimensions dimensions, String[] modelNames);
     abstract public int getMaxTid();
     abstract public int getMaxGid();
     abstract public void close();
 
-    /** Protected Methods **/
-    protected HashMap<String, Integer> initializeCaches(String[] modelNames,
-                                                        Dimensions dimensions,
-                                                        HashMap<String, Integer> modelTypesInStorage,
-                                                        HashMap<Integer, Object[]> timeSeriesInStorage,
-                                                        HashMap<Integer, Pair<String, ValueFunction>[]> derivedTimeSeries) {
+    public void storeMetadataAndInitializeCaches(Configuration configuration, TimeSeriesGroup[] timeSeriesGroups) {
 
         //The Dimensions object is stored so the schema can be retrieved later
-        this.dimensions = dimensions;
+        this.dimensions = configuration.getDimensions();
+
+        //Inserts the metadata for the sources defined in the configuration file (Tid, Scaling Factor,
+        // Sampling Interval, Gid, Dimensions) into the persistent storage defined by modelar.storage.
+        this.storeTimeSeries(timeSeriesGroups);
 
         //Computes the set of model types that must be inserted for the system to
         // function, per definition the mtid of the fallback model type is one
         HashMap<String, Integer> modelTypesToBeInserted = new HashMap<>();
-        List<String> modelsWithFallback = new ArrayList<>(Arrays.asList(modelNames));
+        List<String> modelsWithFallback = new ArrayList<>(Arrays.asList(configuration.getModelTypeNames()));
         modelsWithFallback.add(0, "dk.aau.modelardb.core.models.UncompressedModelType");
+        HashMap<String, Integer> modelTypesInStorage = this.getModelTypes();
         int mtid = modelTypesInStorage.values().stream().max(Integer::compare).orElse(0);
         for (String model : modelsWithFallback) {
             if ( ! modelTypesInStorage.containsKey(model)) {
@@ -70,6 +67,7 @@ public abstract class Storage {
 
         //Creates the timeSeriesGroupCache, timeSeriesScalingFactorCache, and timeSeriesMembersCache
         int nextTid = getMaxTid() + 1;
+        HashMap<Integer, Pair<String, ValueFunction>[]> derivedTimeSeries = configuration.getDerivedTimeSeries();
         int totalNumberOfSources = nextTid + derivedTimeSeries.values().stream().mapToInt(v -> v.length).sum();
         this.timeSeriesGroupCache = new int[totalNumberOfSources];
         this.timeSeriesSamplingIntervalCache = new int[totalNumberOfSources];
@@ -79,6 +77,7 @@ public abstract class Storage {
         ValueFunction scalingTransformation = new ValueFunction();
         this.timeSeriesTransformationCache = new ValueFunction[totalNumberOfSources];
         HashMap<Integer, ArrayList<Integer>> groupDerivedCacheBuilder = new HashMap<>();
+        HashMap<Integer, Object[]> timeSeriesInStorage = this.getTimeSeries();
         for (Entry<Integer, Object[]> entry : timeSeriesInStorage.entrySet()) {
             //Metadata is a mapping from Tid to Scaling, Sampling Interval, Gid, and Dimensions
             Integer tid = entry.getKey();
@@ -164,8 +163,14 @@ public abstract class Storage {
             this.groupMetadataCache[k] = v.stream().mapToInt(i -> i).toArray();
             Arrays.sort(this.groupMetadataCache[k], 1, this.groupMetadataCache[k].length);
         });
-        return modelTypesToBeInserted;
+        this.storeModelTypes(modelTypesToBeInserted);
     }
+
+    /** Protected Methods **/
+    abstract protected void storeTimeSeries(TimeSeriesGroup[] timeSeriesGroups);
+    abstract protected HashMap<Integer, Object[]> getTimeSeries();
+    abstract protected void storeModelTypes(HashMap<String, Integer> modelsToInsert);
+    abstract protected HashMap<String, Integer> getModelTypes();
 
     protected String getDimensionsSQL(Dimensions dimensions, String textType) {
         String[] columns = dimensions.getColumns();

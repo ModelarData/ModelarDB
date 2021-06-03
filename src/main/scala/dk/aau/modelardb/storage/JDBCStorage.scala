@@ -15,7 +15,7 @@
 package dk.aau.modelardb.storage
 
 import dk.aau.modelardb.core._
-import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
+import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.engines.h2.{H2, H2Storage}
 import dk.aau.modelardb.engines.spark.SparkStorage
 import org.apache.spark.rdd.RDD
@@ -28,6 +28,12 @@ import java.util
 import scala.collection.JavaConverters._
 
 class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Storage with SparkStorage {
+  /** Instance Variables **/
+  private var connection: Connection = _
+  private var insertStmt: PreparedStatement = _
+  private var getMaxTidStmt: PreparedStatement = _
+  private var getMaxGidStmt: PreparedStatement = _
+  private val (connectionString, textType, blobType) = splitConnectionStringAndTypes(connectionStringAndTypes)
 
   /** Public Methods **/
   //Storage
@@ -58,10 +64,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     this.getMaxGidStmt = this.connection.prepareStatement("SELECT MAX(gid) FROM time_series")
   }
 
-  override def initialize(timeSeriesGroups: Array[TimeSeriesGroup],
-                          derivedTimeSeries: util.HashMap[Integer, Array[Pair[String, ValueFunction]]],
-                          dimensions: Dimensions, modelNames: Array[String]): Unit = {
-    //Inserts the metadata for the sources defined in the configuration file (Tid, Sampling Interval, Gid, Dimensions)
+  def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
     val columnsInNormalizedDimensions = dimensions.getColumns.length
     val columns = "?, " * (columnsInNormalizedDimensions + 3) + "?"
     val insertSourceStmt = connection.prepareStatement("INSERT INTO time_series VALUES(" + columns + ")")
@@ -88,10 +91,12 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
         insertSourceStmt.executeUpdate()
       }
     }
+  }
 
-    //Extracts the scaling factor, sampling interval, gid, and dimensions for the time series in storage
-    var stmt = this.connection.createStatement()
-    var results = stmt.executeQuery("SELECT * FROM time_series")
+  def getTimeSeries: util.HashMap[Integer, Array[Object]] = {
+    val columnsInNormalizedDimensions = dimensions.getColumns.length
+    val stmt = this.connection.createStatement()
+    val results = stmt.executeQuery("SELECT * FROM time_series")
     val timeSeriesInStorage = new util.HashMap[Integer, Array[Object]]()
     while (results.next) {
       //The metadata is stored as (Tid => Scaling Factor, Sampling Interval, Gid, Dimensions)
@@ -103,6 +108,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
 
       //Dimensions
       var column = 5
+      val dimensionTypes = dimensions.getTypes
       while(column <= columnsInNormalizedDimensions + 4) {
         dimensionTypes(column - 5) match {
           case Dimensions.Types.TEXT => metadata.add(results.getString(column).asInstanceOf[Object])
@@ -115,20 +121,10 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
       }
       timeSeriesInStorage.put(tid, metadata.toArray)
     }
+    timeSeriesInStorage
+  }
 
-
-    //Extracts the name of all models in storage
-    stmt = this.connection.createStatement()
-    results = stmt.executeQuery("SELECT * FROM model_type")
-    val modelsInStorage = new util.HashMap[String, Integer]()
-    while (results.next) {
-      modelsInStorage.put(results.getString(2), results.getInt(1))
-    }
-
-    //Initializes the caches managed by Storage
-    val modelsToInsert = super.initializeCaches(modelNames, dimensions, modelsInStorage, timeSeriesInStorage, derivedTimeSeries)
-
-    //Inserts the name of each model in the configuration file but not in the model table
+  def storeModelTypes(modelsToInsert: util.HashMap[String, Integer]): Unit = {
     val insertModelStmt = connection.prepareStatement("INSERT INTO model_type VALUES(?, ?)")
     for ((k, v) <- modelsToInsert.asScala) {
       insertModelStmt.clearParameters()
@@ -136,6 +132,16 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
       insertModelStmt.setString(2, k)
       insertModelStmt.executeUpdate()
     }
+  }
+
+  def getModelTypes: util.HashMap[String, Integer] = {
+    val stmt = this.connection.createStatement()
+    val results = stmt.executeQuery("SELECT * FROM model_type")
+    val modelsInStorage = new util.HashMap[String, Integer]()
+    while (results.next) {
+      modelsInStorage.put(results.getString(2), results.getInt(1))
+    }
+    modelsInStorage
   }
 
   override def getMaxTid: Int = {
@@ -261,11 +267,4 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
         throw new java.lang.RuntimeException(se)
     }
   }
-
-  /** Instance Variables **/
-  private var connection: Connection = _
-  private var insertStmt: PreparedStatement = _
-  private var getMaxTidStmt: PreparedStatement = _
-  private var getMaxGidStmt: PreparedStatement = _
-  private val (connectionString, textType, blobType) = splitConnectionStringAndTypes(connectionStringAndTypes)
 }

@@ -16,8 +16,8 @@ package dk.aau.modelardb.storage
 
 import java.sql.Timestamp
 import java.util
-import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
-import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
+import dk.aau.modelardb.core.utility.Static
+import dk.aau.modelardb.core.SegmentGroup
 import org.apache.parquet.hadoop.ParquetFileReader
 import org.apache.parquet.example.data.simple.SimpleGroup
 import org.apache.parquet.io.ColumnIOFactory
@@ -33,19 +33,16 @@ import org.h2.table.TableFilter
 class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
 
   /** Public Methods **/
-  override def initialize(timeSeriesGroups: Array[TimeSeriesGroup],
-                          derivedTimeSeries: util.HashMap[Integer, Array[Pair[String, ValueFunction]]],
-                          dimensions: Dimensions, modelNames: Array[String]): Unit = {
-    //NOTE: This data source is currently read only so new groups are an error
-    if (timeSeriesGroups.nonEmpty) {
-      throw new IllegalArgumentException("ModelarDB: ParquetStorage are read only")
-    }
+  //Storage
+  def storeTimeSeries(timeSeriesGroups: Array[dk.aau.modelardb.core.TimeSeriesGroup]): Unit = {
+    //TODO: Implement
+  }
 
-    //Extracts all metadata for the sources in storage
+  override def getTimeSeries: util.HashMap[Integer, Array[Object]] = {
     val source = getParquetReader(this.rootFolder + "/time_series.snappy.parquet")
     val sourcesInStorage = new util.HashMap[Integer, Array[Object]]()
     var pages = source.readNextRowGroup()
-    var schema = source.getFooter.getFileMetaData.getSchema
+    val schema = source.getFooter.getFileMetaData.getSchema
     while (pages != null) {
       //The metadata is stored as (Sid => Scaling, Resolution, Gid, Dimensions)
       //The parquet file consist of sid category concrete entity gid resolution scaling type
@@ -67,11 +64,17 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
       pages = source.readNextRowGroup()
     }
     source.close()
+    sourcesInStorage
+  }
 
-    //Extracts all model names from storage
+  override def storeModelTypes(modelsToInsert: java.util.HashMap[String,Integer]): Unit = {
+    //TODO: Implement
+  }
+
+  override def getModelTypes: util.HashMap[String, Integer] = {
     val model = getParquetReader(this.rootFolder + "/model_type.snappy.parquet")
-    pages = model.readNextRowGroup()
-    schema = model.getFooter.getFileMetaData.getSchema
+    var pages = model.readNextRowGroup()
+    val schema = model.getFooter.getFileMetaData.getSchema
     val modelsInStorage = new util.HashMap[String, Integer]()
     while (pages != null) {
       val columnIO = new ColumnIOFactory().getColumnIO(schema)
@@ -85,11 +88,8 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
       pages = model.readNextRowGroup()
     }
     model.close()
-
-    //Initializes the storage caches
-    super.initializeCaches(modelNames, dimensions, modelsInStorage, sourcesInStorage, derivedTimeSeries)
+    modelsInStorage
   }
-
 
   //H2Storage
   override def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = ???

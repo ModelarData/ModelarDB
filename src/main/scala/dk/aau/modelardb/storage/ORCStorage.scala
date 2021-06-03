@@ -30,8 +30,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{Row, SparkSession}
 
-import dk.aau.modelardb.core.utility.{Pair, ValueFunction}
-import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
+import dk.aau.modelardb.core.{SegmentGroup, TimeSeriesGroup}
 
 import scala.collection.JavaConverters._
 
@@ -46,21 +45,20 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     .addField("gaps", TypeDescription.createBinary())
 
   /** Public Methods **/
-  override def initialize(timeSeriesGroups: Array[TimeSeriesGroup],
-                          derivedTimeSeries: util.HashMap[Integer, Array[Pair[String, ValueFunction]]],
-                          dimensions: Dimensions, modelNames: Array[String]): Unit = {
-    //Inserts the metadata for the sources defined in the configuration file (Sid, Scaling, Resolution, Gid, Dimensions)
-    var schema = TypeDescription.createStruct()
+  //Storage
+  override def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
+    val schema = TypeDescription.createStruct()
       .addField("tid", TypeDescription.createInt())
       .addField("scaling_factor", TypeDescription.createFloat())
       .addField("sampling_interval", TypeDescription.createInt())
       .addField("gid", TypeDescription.createInt())
+
     for (dim <- dimensions.getColumns) {
       //HACK: Assumes all dimensions are strings
       schema.addField(dim, TypeDescription.createString())
     }
     val sourceOut = getWriter(this.rootFolder + "/time_series_new.orc", schema)
-    var batch = sourceOut.getSchema.createRowBatch()
+    val batch = sourceOut.getSchema.createRowBatch()
 
     for (tsg <- timeSeriesGroups) {
       for (ts <- tsg.getTimeSeries) {
@@ -82,11 +80,12 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     flush(sourceOut, batch)
     sourceOut.close()
     merge(this.rootFolder, "time_series")
+  }
 
-    //Extracts all metadata for the sources in storage
+  override def getTimeSeries: util.HashMap[Integer, Array[Object]] = {
     val sourceIn = getReader(new Path(this.rootFolder + "/time_series.orc"))
-    var rows = sourceIn.rows()
-    batch = sourceIn.getSchema.createRowBatch()
+    val rows = sourceIn.rows()
+    val batch = sourceIn.getSchema.createRowBatch()
     val columns = batch.cols.length
     val sourcesInStorage = new util.HashMap[Integer, Array[Object]]()
     //TODO: Fix java.lang.NullPointerException in readStripeFooter when using orc-core 1.6.4
@@ -106,33 +105,15 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
       }
       rows.close()
     }
+    sourcesInStorage
+  }
 
-    //Extracts all model names from storage
-    val modelsInStorage = new util.HashMap[String, Integer]()
-    try {
-      val modelIn = getReader(new Path(this.rootFolder + "/model_type.orc"))
-      rows = modelIn.rows()
-      batch = modelIn.getSchema.createRowBatch()
-      while (rows.nextBatch(batch)) {
-        for (row <- 0 until batch.size) {
-          val mid = batch.cols(0).asInstanceOf[LongColumnVector].vector(row).toInt
-          val cp = batch.cols(1).asInstanceOf[BytesColumnVector].toString(row)
-          modelsInStorage.put(cp, mid)
-        }
-      }
-    } catch {
-      case _: FileNotFoundException => //Ignore
-    }
-
-    //Initializes the storage caches
-    val modelsToInsert = super.initializeCaches(modelNames, dimensions, modelsInStorage, sourcesInStorage, derivedTimeSeries)
-
-    //Inserts the model's names for all of the models in the configuration file but not in storage
-    schema = TypeDescription.createStruct()
+  override def storeModelTypes(modelsToInsert: util.HashMap[String, Integer]): Unit = {
+    val schema = TypeDescription.createStruct()
       .addField("mid", TypeDescription.createInt())
       .addField("name", TypeDescription.createString())
     val modelOut = getWriter(this.rootFolder + "/model_type.orc_new", schema)
-    batch = modelOut.getSchema.createRowBatch()
+    val batch = modelOut.getSchema.createRowBatch()
 
     for ((k, v) <- modelsToInsert.asScala) {
       val row = { batch.size += 1; batch.size - 1 } //batch++
@@ -146,6 +127,25 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     flush(modelOut, batch)
     modelOut.close()
     merge(this.rootFolder, "model_type")
+  }
+
+  override def getModelTypes: util.HashMap[String, Integer] = {
+    val modelsInStorage = new util.HashMap[String, Integer]()
+    try {
+      val modelIn = getReader(new Path(this.rootFolder + "/model_type.orc"))
+      val rows = modelIn.rows()
+      val batch = modelIn.getSchema.createRowBatch()
+      while (rows.nextBatch(batch)) {
+        for (row <- 0 until batch.size) {
+          val mid = batch.cols(0).asInstanceOf[LongColumnVector].vector(row).toInt
+          val cp = batch.cols(1).asInstanceOf[BytesColumnVector].toString(row)
+          modelsInStorage.put(cp, mid)
+        }
+      }
+    } catch {
+      case _: FileNotFoundException => //Ignore
+    }
+    modelsInStorage
   }
 
   //H2Storage

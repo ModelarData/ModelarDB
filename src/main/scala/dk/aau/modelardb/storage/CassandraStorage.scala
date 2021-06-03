@@ -18,7 +18,7 @@ import com.datastax.oss.driver.api.core.cql.{BatchStatement, BatchType, Prepared
 import com.datastax.spark.connector._
 import com.datastax.spark.connector.cql.CassandraConnector
 import com.datastax.spark.connector.rdd.CassandraTableScanRDD
-import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
+import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{Dimensions, SegmentGroup, Storage, TimeSeriesGroup}
 import dk.aau.modelardb.engines.h2.{H2, H2Storage}
 import dk.aau.modelardb.engines.spark.{Spark, SparkStorage}
@@ -48,9 +48,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     createTables(dimensions)
   }
 
-  override def initialize(timeSeriesGroups: Array[TimeSeriesGroup],
-                          derivedTimeSeries: util.HashMap[Integer, Array[Pair[String, ValueFunction]]],
-                          dimensions: Dimensions, modelNames: Array[String]): Unit = {
+  def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
     val session = this.connector.openSession()
 
     //Gaps are encoded using 64 bits integers so groups cannot consist of more than 64 time series
@@ -79,12 +77,20 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
         session.execute(stmt.build())
       }
     }
+    session.close()
+
+    //Stores the current max gid for later as it is assumed to not be increased outside ModelarDB
+    this.currentMaxGid = getMaxGid()
+  }
+
+  def getTimeSeries: util.HashMap[Integer, Array[Object]] = {
+    val session = this.connector.openSession()
 
     //Extracts the scaling factor, sampling interval, gid, and dimensions for the time series in storage
-    var stmt = SimpleStatement.newInstance(s"SELECT * FROM ${this.keyspace}.time_series")
-    var results = session.execute(stmt)
+    val stmt = SimpleStatement.newInstance(s"SELECT * FROM ${this.keyspace}.time_series")
+    val results = session.execute(stmt)
     val timeSeriesInStorage = new util.HashMap[Integer, Array[Object]]()
-    var rows = results.iterator()
+    val rows = results.iterator()
     while (rows.hasNext) {
       //The metadata is stored as (Tid => Scaling, Sampling Interval, Gid, Dimensions)
       val row = rows.next
@@ -100,21 +106,12 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
       }
       timeSeriesInStorage.put(tid, metadata.toArray)
     }
+    session.close()
+    timeSeriesInStorage
+  }
 
-    //Extracts the name of all models in storage
-    stmt = SimpleStatement.newInstance(s"SELECT * FROM ${this.keyspace}.model_type")
-    results = session.execute(stmt)
-    val modelsInStorage = new util.HashMap[String, Integer]()
-
-    rows = results.iterator()
-    while (rows.hasNext) {
-      val row = rows.next
-      val value = row.getBigInteger(0).intValueExact()
-      modelsInStorage.put(row.getString(1), value)
-    }
-
-    //Initializes the caches managed by Storage
-    val modelsToInsert = super.initializeCaches(modelNames, dimensions, modelsInStorage, timeSeriesInStorage, derivedTimeSeries)
+  def storeModelTypes(modelsToInsert: util.HashMap[String, Integer]): Unit = {
+    val session = this.connector.openSession()
 
     //Inserts the name of each model in the configuration file but not in the model table
     val insertStmt = session.prepare(s"INSERT INTO ${this.keyspace}.model_type(mtid, name) VALUES(?, ?)")
@@ -126,9 +123,24 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
           .setString(1, k))
     }
     session.close()
+  }
 
-    //Stores the current max gid for later as it is assumed to not be increased outside ModelarDB
-    this.currentMaxGid = getMaxGid()
+  def getModelTypes: util.HashMap[String, Integer] = {
+    val session = this.connector.openSession()
+
+    //Extracts the name of all models in storage
+    val stmt = SimpleStatement.newInstance(s"SELECT * FROM ${this.keyspace}.model_type")
+    val results = session.execute(stmt)
+    val modelsInStorage = new util.HashMap[String, Integer]()
+
+    val rows = results.iterator()
+    while (rows.hasNext) {
+      val row = rows.next
+      val value = row.getBigInteger(0).intValueExact()
+      modelsInStorage.put(row.getString(1), value)
+    }
+    session.close()
+    modelsInStorage
   }
 
   override def getMaxTid: Int = {

@@ -64,7 +64,7 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
       if ( ! configuration.getDerivedTimeSeries.isEmpty) { //Initializes derived time series
         Partitioner.initializeTimeSeries(configuration, sparkStorage.getMaxTid)
       }
-      sparkStorage.initialize(Array(), configuration.getDerivedTimeSeries, dimensions, configuration.getModelTypeNames)
+      sparkStorage.storeMetadataAndInitializeCaches(configuration, Array())
       Spark.initialize(spark, configuration, sparkStorage, Range(0,0))
       null
     } else {
@@ -72,7 +72,7 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
       val newGid = sparkStorage.getMaxGid + 1
       val timeSeries = Partitioner.initializeTimeSeries(configuration, sparkStorage.getMaxTid)
       val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, sparkStorage.getMaxGid)
-      sparkStorage.initialize(timeSeriesGroups, configuration.getDerivedTimeSeries, dimensions, configuration.getModelTypeNames)
+      sparkStorage.storeMetadataAndInitializeCaches(configuration, timeSeriesGroups)
       Spark.initialize(spark, configuration, sparkStorage, Range(newGid, newGid + timeSeriesGroups.size))
       setupStream(spark, timeSeriesGroups)
     }

@@ -26,12 +26,15 @@ import org.apache.spark.sql.sources.Filter
 import java.sql.Timestamp
 import java.util
 
+//TODO: Ensure that FileStorage can never lose data if sub-type expose read and write methods for each table:
+//      - Add mergelog listing files that have been merged but not deleted yet because a query is using it.
+//      - Store list of currently active files that new queries can use and list of files to delete when not used.
 abstract class FileStorage(rootFolder: String) extends Storage with H2Storage with SparkStorage {
   /** Instance Variables **/
   protected var batchesSinceLastMerge: Int = 0
   protected val segmentFolder: String = rootFolder + "/segment"
   protected val segmentFolderPath: Path = new Path(segmentFolder)
-  protected val fileSystem: FileSystem = segmentFolderPath.getFileSystem(new Configuration())
+  protected val fileSystem: FileSystem = new Path(rootFolder).getFileSystem(new Configuration())
 
   /** Public Methods **/
   override def open(dimensions: Dimensions): Unit = {

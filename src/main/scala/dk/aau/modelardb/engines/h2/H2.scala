@@ -84,14 +84,14 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
       if ( ! configuration.getDerivedTimeSeries.isEmpty) { //Initializes derived time series
         Partitioner.initializeTimeSeries(configuration, h2storage.getMaxTid)
       }
-      h2storage.initialize(Array(), configuration.getDerivedTimeSeries, dimensions, configuration.getModelTypeNames)
+      h2storage.storeMetadataAndInitializeCaches(configuration, Array())
       return
     }
 
     //Initialize Ingestion
     val timeSeries = Partitioner.initializeTimeSeries(configuration, h2storage.getMaxTid)
     val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, h2storage.getMaxGid)
-    h2storage.initialize(timeSeriesGroups, configuration.getDerivedTimeSeries, dimensions, configuration.getModelTypeNames)
+    h2storage.storeMetadataAndInitializeCaches(configuration, timeSeriesGroups)
 
     val mtidCache = h2storage.mtidCache
     val ingestors = configuration.getIngestors
