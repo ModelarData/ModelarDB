@@ -25,6 +25,7 @@ import org.apache.spark.sql.sources.Filter
 
 import java.sql.Timestamp
 import java.util
+import java.util.UUID
 
 //TODO: Ensure that FileStorage can never lose data if sub-type expose read and write methods for each table:
 //      - Add mergelog listing files that have been merged but not deleted yet because a query is using it.
@@ -69,21 +70,33 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   /** Protected Methods **/
   protected def getMaxID(column: Int): Int
 
-  protected def merge(inputPaths: util.ArrayList[Path], output: String): Unit
+  protected def merge(inputPaths: util.ArrayList[Path], outputFilePath: String): Unit
 
-  protected def merge(folder: String, prefix: String): Unit = {
-    val files = listFiles(new Path(this.rootFolder))
+  protected def merge(folder: String, prefix: String, outputFileName: String): Unit = {
+    val files = listFiles(new Path(folder))
     files.removeIf((path: Path) => ! path.getName.startsWith(prefix))
-    merge(files, folder + "/" + prefix + ".orc")
+    merge(files, folder + "/" + outputFileName)
   }
 
   protected def shouldMerge(): Boolean = {
-    //TODO: How often should a merged be performed? N is chosen arbitrarily
+    //TODO: How often should a merged be performed? And should it be async in a different thread?
     this.batchesSinceLastMerge += 1
-    this.batchesSinceLastMerge == 500
+    if (this.batchesSinceLastMerge == 500) {
+      this.batchesSinceLastMerge = 0
+      true
+    } else {
+      false
+    }
+    true
+  }
+
+  protected def getSegmentPartPath(suffix: String): String = {
+    //The filenames purposely use the same structure as used by Apache Spark to make listing them simpler
+    this.segmentFolder + "/part-" +  UUID.randomUUID().toString + "-" + System.currentTimeMillis() + suffix
   }
 
   protected def listFiles(folder: Path): util.ArrayList[Path] = {
+    println(folder)
     val files = this.fileSystem.listFiles(folder, false)
     val fileLists = new util.ArrayList[Path]()
     while (files.hasNext) {
@@ -104,15 +117,22 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
         case sources.EqualTo("gid", value: Int) => withPredicates = withPredicates.filter(s"sid = $value")
         case sources.In("gid", value: Array[Any]) => withPredicates = withPredicates.filter(value.mkString("sid IN (", ",", ")"))
 
-        //Predicate push-down for et using SELECT * FROM segment WHERE et <=> ?
-        case sources.GreaterThan("et", value: Timestamp) => withPredicates.filter(s"end_time > '$value'")
-        case sources.GreaterThanOrEqual("et", value: Timestamp) => withPredicates.filter(s"end_time >= '$value'")
-        case sources.LessThan("et", value: Timestamp) => withPredicates.filter(s"end_time < '$value'")
-        case sources.LessThanOrEqual("et", value: Timestamp) => withPredicates.filter(s"end_time <= '$value'")
-        case sources.EqualTo("et", value: Timestamp) => withPredicates.filter(s"end_time = '$value'")
+        //Predicate push-down for et using SELECT * FROM segment WHERE start_time <=> ?
+        case sources.GreaterThan("start_time", value: Timestamp) => withPredicates.filter(s"start_time > '$value'")
+        case sources.GreaterThanOrEqual("start_time", value: Timestamp) => withPredicates.filter(s"start_time >= '$value'")
+        case sources.LessThan("start_time", value: Timestamp) => withPredicates.filter(s"start_time < '$value'")
+        case sources.LessThanOrEqual("start_time", value: Timestamp) => withPredicates.filter(s"start_time <= '$value'")
+        case sources.EqualTo("start_time", value: Timestamp) => withPredicates.filter(s"start_time = '$value'")
+
+        //Predicate push-down for et using SELECT * FROM segment WHERE end_time <=> ?
+        case sources.GreaterThan("end_time", value: Timestamp) => withPredicates.filter(s"end_time > '$value'")
+        case sources.GreaterThanOrEqual("end_time", value: Timestamp) => withPredicates.filter(s"end_time >= '$value'")
+        case sources.LessThan("end_time", value: Timestamp) => withPredicates.filter(s"end_time < '$value'")
+        case sources.LessThanOrEqual("end_time", value: Timestamp) => withPredicates.filter(s"end_time <= '$value'")
+        case sources.EqualTo("end_time", value: Timestamp) => withPredicates.filter(s"end_time = '$value'")
 
         //The predicate cannot be supported by the segment view so all we can do is inform the user
-        case p => Static.warn("ModelarDB: unsupported predicate for ParquetStorage " + p, 120); null
+        case p => Static.warn("ModelarDB: unsupported predicate for FileStorage " + p, 120); null
       }
     }
     withPredicates

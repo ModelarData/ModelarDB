@@ -14,23 +14,20 @@
  */
 package dk.aau.modelardb.storage
 
-
-import java.io.FileNotFoundException
-import java.sql.Timestamp
 import java.util
-import java.util.UUID
+import java.sql.Timestamp
+import java.io.FileNotFoundException
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-import org.h2.table.TableFilter
-
 import org.apache.hadoop.hive.ql.exec.vector._
-import org.apache.orc.{CompressionKind, OrcFile, Reader, TypeDescription, Writer}
-
+import org.apache.orc.{CompressionKind, OrcFile, Reader, RecordReader, TypeDescription, Writer}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.{Row, SparkSession}
-
+import org.apache.spark.sql.{Row, SaveMode, SparkSession}
+import org.h2.table.TableFilter
 import dk.aau.modelardb.core.{SegmentGroup, TimeSeriesGroup}
+import dk.aau.modelardb.core.utility.Static
+import dk.aau.modelardb.engines.spark.Spark
 
 import scala.collection.JavaConverters._
 
@@ -57,8 +54,8 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
       //HACK: Assumes all dimensions are strings
       schema.addField(dim, TypeDescription.createString())
     }
-    val sourceOut = getWriter(this.rootFolder + "/time_series_new.orc", schema)
-    val batch = sourceOut.getSchema.createRowBatch()
+    val source = getWriter(this.rootFolder + "/time_series_new.orc", schema)
+    val batch = source.getSchema.createRowBatch()
 
     for (tsg <- timeSeriesGroups) {
       for (ts <- tsg.getTimeSeries) {
@@ -71,122 +68,111 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
           //HACK: Assumes all dimensions are strings
           batch.cols(4 + mi._2).asInstanceOf[BytesColumnVector].setVal(row, mi._1.toString.getBytes)
         }
-
-        if (batch.size == batch.getMaxSize) {
-          flush(sourceOut, batch)
-        }
+        flushIfNecessary(source, batch)
       }
     }
-    flush(sourceOut, batch)
-    sourceOut.close()
-    merge(this.rootFolder, "time_series")
+    flush(source, batch)
+    source.close()
+    merge(this.rootFolder, "time_series", "time_series.orc")
   }
 
   override def getTimeSeries: util.HashMap[Integer, Array[Object]] = {
-    val sourceIn = getReader(new Path(this.rootFolder + "/time_series.orc"))
-    val rows = sourceIn.rows()
-    val batch = sourceIn.getSchema.createRowBatch()
-    val columns = batch.cols.length
-    val sourcesInStorage = new util.HashMap[Integer, Array[Object]]()
-    //TODO: Fix java.lang.NullPointerException in readStripeFooter when using orc-core 1.6.4
+    val timeSeriesInStorage = new util.HashMap[Integer, Array[Object]]()
+    val timeSeries = getReader(new Path(this.rootFolder + "/time_series.orc"))
+
+    //The metadata is stored as (Sid => Scaling, Resolution, Gid, Dimensions)
+    val rows = timeSeries.rows()
+    val batch = timeSeries.getSchema.createRowBatch()
+    //TODO Fix dead past end of RLE integer from compressed stream Stream for column 1 kind DATA position: 7 length: 7 range: 1 offset: 0 limit: 0
     while (rows.nextBatch(batch)) {
       for (row <- 0 until batch.size) {
-        //The metadata is stored as (Sid => Scaling, Resolution, Gid, Dimensions)
         val metadata = new util.ArrayList[Object]()
         val sid = batch.cols(0).asInstanceOf[LongColumnVector].vector(row)
         metadata.add(batch.cols(1).asInstanceOf[DoubleColumnVector].vector(row).toFloat.asInstanceOf[Object])
         metadata.add(batch.cols(2).asInstanceOf[LongColumnVector].vector(row).toInt.asInstanceOf[Object])
         metadata.add(batch.cols(3).asInstanceOf[LongColumnVector].vector(row).toInt.asInstanceOf[Object])
-        for (column <- 4 until columns) {
-          //HACK: Assumes all dimensions are strings
-          metadata.add(batch.cols(column).asInstanceOf[BytesColumnVector].toString(row))
-        }
-        sourcesInStorage.put(sid.toInt, metadata.toArray)
+        //TODO: Add support for dimensions
+        timeSeriesInStorage.put(sid.toInt, metadata.toArray)
       }
       rows.close()
     }
-    sourcesInStorage
+    timeSeries.close()
+    timeSeriesInStorage
   }
 
   override def storeModelTypes(modelsToInsert: util.HashMap[String, Integer]): Unit = {
     val schema = TypeDescription.createStruct()
       .addField("mid", TypeDescription.createInt())
       .addField("name", TypeDescription.createString())
-    val modelOut = getWriter(this.rootFolder + "/model_type.orc_new", schema)
-    val batch = modelOut.getSchema.createRowBatch()
+    val modelTypes = getWriter(this.rootFolder + "/model_type_new.orc", schema)
+    val batch = modelTypes.getSchema.createRowBatch()
 
     for ((k, v) <- modelsToInsert.asScala) {
       val row = { batch.size += 1; batch.size - 1 } //batch++
       batch.cols(0).asInstanceOf[LongColumnVector].vector(row) = v.intValue()
       batch.cols(1).asInstanceOf[BytesColumnVector].setVal(row, k.getBytes)
-
-      if (batch.size == batch.getMaxSize) {
-        flush(modelOut, batch)
-      }
+      flushIfNecessary(modelTypes, batch)
     }
-    flush(modelOut, batch)
-    modelOut.close()
-    merge(this.rootFolder, "model_type")
+    flush(modelTypes, batch)
+    modelTypes.close()
+    merge(this.rootFolder, "model_type", "model_type.orc")
   }
 
   override def getModelTypes: util.HashMap[String, Integer] = {
     val modelsInStorage = new util.HashMap[String, Integer]()
-    try {
-      val modelIn = getReader(new Path(this.rootFolder + "/model_type.orc"))
-      val rows = modelIn.rows()
-      val batch = modelIn.getSchema.createRowBatch()
-      while (rows.nextBatch(batch)) {
-        for (row <- 0 until batch.size) {
-          val mid = batch.cols(0).asInstanceOf[LongColumnVector].vector(row).toInt
-          val cp = batch.cols(1).asInstanceOf[BytesColumnVector].toString(row)
-          modelsInStorage.put(cp, mid)
-        }
-      }
+    val modelTypes = try {
+      getReader(new Path(this.rootFolder + "/model_type.orc"))
     } catch {
-      case _: FileNotFoundException => //Ignore
+      case _: FileNotFoundException => return modelsInStorage
+    }
+
+    val rows = modelTypes.rows()
+    val batch = modelTypes.getSchema.createRowBatch()
+    while (rows.nextBatch(batch)) {
+      for (row <- 0 until batch.size) {
+        val mid = batch.cols(0).asInstanceOf[LongColumnVector].vector(row).toInt
+        val cp = batch.cols(1).asInstanceOf[BytesColumnVector].toString(row)
+        modelsInStorage.put(cp, mid)
+      }
     }
     modelsInStorage
   }
 
   //H2Storage
   override def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
-    val segmentOut = getWriter(getSegmentPartLocation, this.segmentSchema)
-    val batch = segmentOut.getSchema.createRowBatch()
+    val segments = getWriter(getSegmentPartPath(".orc"), this.segmentSchema)
+    val batch = segments.getSchema.createRowBatch()
 
     for (segmentGroup <- segmentGroups.take(size)) {
       //TODO: is long or timestamp more efficient?
-      val row = { batch.size += 1; batch.size - 1 } //batch.size++
+      val row = { batch.size += 1; batch.size - 1 }
       batch.cols(0).asInstanceOf[LongColumnVector].vector(row) = segmentGroup.gid
       batch.cols(1).asInstanceOf[TimestampColumnVector].set(row, new Timestamp(segmentGroup.startTime))
       batch.cols(2).asInstanceOf[TimestampColumnVector].set(row, new Timestamp(segmentGroup.endTime))
       batch.cols(3).asInstanceOf[LongColumnVector].vector(row) = segmentGroup.mtid
       batch.cols(4).asInstanceOf[BytesColumnVector].setVal(row, segmentGroup.model)
       batch.cols(5).asInstanceOf[BytesColumnVector].setVal(row, segmentGroup.offsets)
-      if (batch.size == batch.getMaxSize) {
-        flush(segmentOut, batch)
-      }
+      flushIfNecessary(segments, batch)
     }
-    flush(segmentOut, batch)
-    segmentOut.close()
+    flush(segments, batch)
+    segments.close()
 
-    //After N batches the ORC files are merged together to reduce the overhead of reading many small files
     if (shouldMerge()) {
-      merge(listFiles(this.segmentFolderPath), getSegmentPartLocation)
-      this.batchesSinceLastMerge = 0
+      merge(this.segmentFolder, "part-", "segment.orc")
     }
   }
 
   override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
-    //TODO: is it possible to share implementation of Iterator[SegmentGroup] from different storage?
+    Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
     new Iterator[SegmentGroup] {
       /** Instance Variables **/
-      //Reads all non-hidden files in the folder so _SUCCESS is included, but it just treated as an empty ORC file
       private val segmentFiles = listFiles(segmentFolderPath).iterator()
-      private var segmentFile = getReader(segmentFiles.next())
-      private val rows = segmentFile.rows()
-      private val batch = segmentFile.getSchema.createRowBatch()
-      private var rowCount = batch.size
-      private var rowIndex = 0
+      private var segmentFile: Reader = _
+      private var rows: RecordReader = _
+      private var batch: VectorizedRowBatch = _
+      private var rowCount: Int = _
+      private var rowIndex: Int = 0
+      nextFile()
 
       /** Public Methods **/
       override def hasNext: Boolean = {
@@ -199,55 +185,54 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
         if (rows.nextBatch(batch)) {
           this.rowCount = this.batch.size
           this.rowIndex = 0
-          return hasNext
+          return true
         }
 
         //There are more files to read
+        this.rows.close()
+        this.segmentFile.close()
         if (this.segmentFiles.hasNext) {
-          this.segmentFile = getReader(this.segmentFiles.next())
-          this.rowIndex = 0
+          nextFile()
           return true
         }
 
         //All of the data in the file and all files have been read
-        this.rows.close()
-        this.segmentFile.close()
         false
       }
 
       override def next(): SegmentGroup = {
         val gid = this.batch.cols(0).asInstanceOf[LongColumnVector].vector(this.rowIndex).toInt
-        val startTime = this.batch.cols(1).asInstanceOf[LongColumnVector].vector(this.rowIndex)
-        val endTime = this.batch.cols(2).asInstanceOf[LongColumnVector].vector(this.rowIndex)
+        val startTime = this.batch.cols(1).asInstanceOf[TimestampColumnVector].getTime(this.rowIndex)
+        val endTime = this.batch.cols(2).asInstanceOf[TimestampColumnVector].getTime(this.rowIndex)
         val mtid = this.batch.cols(3).asInstanceOf[LongColumnVector].vector(this.rowIndex).toInt
         val model = readBytes(this.batch.cols(4).asInstanceOf[BytesColumnVector], this.rowIndex)
         val gaps = readBytes(this.batch.cols(5).asInstanceOf[BytesColumnVector], this.rowIndex)
         this.rowIndex += 1
         new SegmentGroup(gid, startTime, endTime, mtid, model, gaps)
       }
+
+      /** Private Methods **/
+      private def nextFile(): Unit = {
+        this.segmentFile = getReader(segmentFiles.next())
+        this.rows = this.segmentFile.rows()
+        this.batch = this.segmentFile.getSchema.createRowBatch()
+        this.rows.nextBatch(batch)
+        this.rowCount = this.batch.size
+        this.rowIndex = 0
+      }
     }
   }
 
   //SparkStorage
   override def storeSegmentGroups(sparkSession: SparkSession, rdd: RDD[Row]): Unit = {
-    /*
-    import org.apache.spark.sql.types._
-    val segmentSparkSchema = StructType(Seq(
-      StructField("gid", IntegerType, nullable = false),
-      StructField("start_time", TimestampType, nullable = false),
-      StructField("end_time", TimestampType, nullable = false),
-      StructField("mtid", IntegerType, nullable = false),
-      StructField("model", BinaryType, nullable = false),
-      StructField("gaps", BinaryType, nullable = false)))
-
     if ( ! shouldMerge) {
       //Add new ORC files for this batch to the existing folder
-      this.sparkSession.createDataFrame(rdd, segmentSparkSchema)
+      sparkSession.createDataFrame(rdd, Spark.segmentFileSchema)
         .write.mode(SaveMode.Append).orc(this.segmentFolder)
     } else {
       //Writes new ORC files with the segment on disk and from this batch
-      val rddDF = this.sparkSession.createDataFrame(rdd, segmentSparkSchema)
-        .union(this.sparkSession.read.schema(segmentSparkSchema).orc(this.segmentFolder))
+      val rddDF = sparkSession.createDataFrame(rdd, Spark.segmentFileSchema)
+        .union(sparkSession.read.schema(Spark.segmentFileSchema).orc(this.segmentFolder))
       val newSegmentFolder = new Path(this.rootFolder + "/segment_new")
       rddDF.write.orc(newSegmentFolder.toString)
 
@@ -255,7 +240,6 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
       this.fileSystem.delete(this.segmentFolderPath, true)
       this.fileSystem.rename(newSegmentFolder, this.segmentFolderPath)
     }
-    */
   }
 
   override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): RDD[Row] = {
@@ -283,9 +267,9 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     id.toInt
   }
 
-  protected override def merge(inputPaths: util.ArrayList[Path], output: String): Unit = {
+  protected override def merge(inputPaths: util.ArrayList[Path], outputFileName: String): Unit = {
     //NOTE: merge assumes all inputs share the same schema
-    val outputMerge = new Path(output + "_merge")
+    val outputMerge = new Path(outputFileName + "_merge")
     val configuration = OrcFile.writerOptions(new Configuration())
     OrcFile.mergeFiles(outputMerge, configuration, inputPaths)
 
@@ -293,13 +277,13 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     while (inputPathsIter.hasNext) {
       this.fileSystem.delete(inputPathsIter.next(), false)
     }
-    this.fileSystem.rename(outputMerge, new Path(output))
+    this.fileSystem.rename(outputMerge, new Path(outputFileName))
+    this.batchesSinceLastMerge = 0
   }
 
   /** Private Methods **/
   private def getReader(path: Path): Reader = {
-    val readerOptions = OrcFile.readerOptions(new Configuration)
-    OrcFile.createReader(path, readerOptions)
+    OrcFile.createReader(path, OrcFile.readerOptions(new Configuration))
   }
 
   private def getWriter(orcFile: String, schema: TypeDescription): Writer = {
@@ -309,15 +293,17 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     OrcFile.createWriter(new Path(orcFile), writerOptions)
   }
 
+  private def flushIfNecessary(writer: Writer, batch: VectorizedRowBatch): Unit = {
+    if (batch.size == batch.getMaxSize) {
+      flush(writer, batch)
+    }
+  }
+
   private def flush(writer: Writer, batch: VectorizedRowBatch): Unit = {
     if (batch.size != 0) {
       writer.addRowBatch(batch)
       batch.reset()
     }
-  }
-
-  private def getSegmentPartLocation: String = {
-    this.segmentFolder + "/part-" +  UUID.randomUUID().toString + "-" + System.currentTimeMillis() + ".orc"
   }
 
   private def readBytes(source: BytesColumnVector, row: Int): Array[Byte] = {

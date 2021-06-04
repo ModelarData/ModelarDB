@@ -21,6 +21,7 @@ import dk.aau.modelardb.engines.EngineUtilities
 import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrameReader, SparkSession}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 
@@ -136,6 +137,15 @@ object Spark {
   def getSparkStorage: SparkStorage = Spark.sparkStorage
   def getBroadcastedTimeSeriesTransformationCache: Broadcast[Array[ValueFunction]] = Spark.broadcastedTimeSeriesTransformationCache
   def isDataSetSmall(rows: RDD[_]): Boolean = rows.partitions.length <= parallelism
+
+  //The schema of the segment files are not places in FileStorage to allow H2 to use FileStorage without Apache Spark
+  val segmentFileSchema: StructType = StructType(Seq(
+    StructField("gid", IntegerType, nullable = false),
+    StructField("start_time", TimestampType, nullable = false),
+    StructField("end_time", TimestampType, nullable = false),
+    StructField("mtid", IntegerType, nullable = false),
+    StructField("model", BinaryType, nullable = false),
+    StructField("gaps", BinaryType, nullable = false)))
 
   /** Instance Variables **/
   private var parallelism: Int = _
