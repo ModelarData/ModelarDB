@@ -25,7 +25,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{Row, SaveMode, SparkSession}
 import org.h2.table.TableFilter
-import dk.aau.modelardb.core.{SegmentGroup, TimeSeriesGroup}
+import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.engines.spark.Spark
 
@@ -54,9 +54,10 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
       //HACK: Assumes all dimensions are strings
       schema.addField(dim, TypeDescription.createString())
     }
-    val source = getWriter(this.rootFolder + "/time_series_new.orc", schema)
+    val source = getWriter(this.rootFolder + "/time_series.orc_new", schema)
     val batch = source.getSchema.createRowBatch()
 
+    val dimensionTypes = dimensions.getTypes
     for (tsg <- timeSeriesGroups) {
       for (ts <- tsg.getTimeSeries) {
         val row = { batch.size += 1; batch.size - 1 } //batch.size++
@@ -65,33 +66,52 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
         batch.cols(2).asInstanceOf[LongColumnVector].vector(row) = ts.samplingInterval
         batch.cols(3).asInstanceOf[LongColumnVector].vector(row) = tsg.gid
         for (mi <- dimensions.get(ts.source).zipWithIndex) {
-          //HACK: Assumes all dimensions are strings
-          batch.cols(4 + mi._2).asInstanceOf[BytesColumnVector].setVal(row, mi._1.toString.getBytes)
+          dimensionTypes(mi._2) match {
+            case Dimensions.Types.TEXT => batch.cols(4 + mi._2).asInstanceOf[BytesColumnVector].setVal(row, mi._1.toString.getBytes)
+            case Dimensions.Types.INT => batch.cols(4 + mi._2).asInstanceOf[LongColumnVector].vector(row) = mi._1.asInstanceOf[Int]
+            case Dimensions.Types.LONG => batch.cols(4 + mi._2).asInstanceOf[LongColumnVector].vector(row) = mi._1.asInstanceOf[Long]
+            case Dimensions.Types.FLOAT => batch.cols(4 + mi._2).asInstanceOf[DoubleColumnVector].vector(row) = mi._1.asInstanceOf[Float]
+            case Dimensions.Types.DOUBLE => batch.cols(4 + mi._2).asInstanceOf[DoubleColumnVector].vector(row) = mi._1.asInstanceOf[Double]
+          }
         }
         flushIfNecessary(source, batch)
       }
     }
     flush(source, batch)
     source.close()
-    merge(this.rootFolder, "time_series", "time_series.orc")
+    merge("time_series.orc", "time_series.orc", "time_series.orc_new")
   }
 
   override def getTimeSeries: util.HashMap[Integer, Array[Object]] = {
+    val columnsInNormalizedDimensions = dimensions.getColumns.length
     val timeSeriesInStorage = new util.HashMap[Integer, Array[Object]]()
     val timeSeries = getReader(new Path(this.rootFolder + "/time_series.orc"))
 
-    //The metadata is stored as (Sid => Scaling, Resolution, Gid, Dimensions)
     val rows = timeSeries.rows()
     val batch = timeSeries.getSchema.createRowBatch()
     //TODO Fix dead past end of RLE integer from compressed stream Stream for column 1 kind DATA position: 7 length: 7 range: 1 offset: 0 limit: 0
     while (rows.nextBatch(batch)) {
       for (row <- 0 until batch.size) {
+        //The metadata is stored as (Sid => Scaling, Resolution, Gid, Dimensions)
         val metadata = new util.ArrayList[Object]()
         val sid = batch.cols(0).asInstanceOf[LongColumnVector].vector(row)
         metadata.add(batch.cols(1).asInstanceOf[DoubleColumnVector].vector(row).toFloat.asInstanceOf[Object])
         metadata.add(batch.cols(2).asInstanceOf[LongColumnVector].vector(row).toInt.asInstanceOf[Object])
         metadata.add(batch.cols(3).asInstanceOf[LongColumnVector].vector(row).toInt.asInstanceOf[Object])
-        //TODO: Add support for dimensions
+
+        //Dimensions
+        var column = 4
+        val dimensionTypes = dimensions.getTypes
+        while(column < columnsInNormalizedDimensions + 4) {
+          dimensionTypes(column - 4) match {
+            case Dimensions.Types.TEXT => metadata.add(batch.cols(column).asInstanceOf[BytesColumnVector].vector(row))
+            case Dimensions.Types.INT => metadata.add(batch.cols(column).asInstanceOf[LongColumnVector].vector(row).toInt.asInstanceOf[Object])
+            case Dimensions.Types.LONG => metadata.add(batch.cols(column).asInstanceOf[LongColumnVector].vector(row).asInstanceOf[Object])
+            case Dimensions.Types.FLOAT => metadata.add(batch.cols(column).asInstanceOf[DoubleColumnVector].vector(row).toFloat.asInstanceOf[Object])
+            case Dimensions.Types.DOUBLE => metadata.add(batch.cols(column).asInstanceOf[DoubleColumnVector].vector(row).asInstanceOf[Object])
+          }
+          column += 1
+        }
         timeSeriesInStorage.put(sid.toInt, metadata.toArray)
       }
       rows.close()
@@ -104,7 +124,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     val schema = TypeDescription.createStruct()
       .addField("mid", TypeDescription.createInt())
       .addField("name", TypeDescription.createString())
-    val modelTypes = getWriter(this.rootFolder + "/model_type_new.orc", schema)
+    val modelTypes = getWriter(this.rootFolder + "/model_type.orc_new", schema)
     val batch = modelTypes.getSchema.createRowBatch()
 
     for ((k, v) <- modelsToInsert.asScala) {
@@ -115,7 +135,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     }
     flush(modelTypes, batch)
     modelTypes.close()
-    merge(this.rootFolder, "model_type", "model_type.orc")
+    merge("model_type.orc", "model_type.orc", "model_type.orc_new")
   }
 
   override def getModelTypes: util.HashMap[String, Integer] = {
@@ -144,7 +164,6 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     val batch = segments.getSchema.createRowBatch()
 
     for (segmentGroup <- segmentGroups.take(size)) {
-      //TODO: is long or timestamp more efficient?
       val row = { batch.size += 1; batch.size - 1 }
       batch.cols(0).asInstanceOf[LongColumnVector].vector(row) = segmentGroup.gid
       batch.cols(1).asInstanceOf[TimestampColumnVector].set(row, new Timestamp(segmentGroup.startTime))
@@ -158,7 +177,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     segments.close()
 
     if (shouldMerge()) {
-      merge(this.segmentFolder, "part-", "segment.orc")
+      merge(new Path(this.segmentFolder + "/segment.orc"), listFiles(this.segmentFolderPath))
     }
   }
 
@@ -171,7 +190,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
       private var rows: RecordReader = _
       private var batch: VectorizedRowBatch = _
       private var rowCount: Int = _
-      private var rowIndex: Int = 0
+      private var rowIndex: Int = _
       nextFile()
 
       /** Public Methods **/
@@ -267,9 +286,9 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     id.toInt
   }
 
-  protected override def merge(inputPaths: util.ArrayList[Path], outputFileName: String): Unit = {
+  protected override def merge(outputFilePath: Path, inputPaths: util.ArrayList[Path]): Unit = {
     //NOTE: merge assumes all inputs share the same schema
-    val outputMerge = new Path(outputFileName + "_merge")
+    val outputMerge = new Path(outputFilePath + "_merge")
     val configuration = OrcFile.writerOptions(new Configuration())
     OrcFile.mergeFiles(outputMerge, configuration, inputPaths)
 
@@ -277,7 +296,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     while (inputPathsIter.hasNext) {
       this.fileSystem.delete(inputPathsIter.next(), false)
     }
-    this.fileSystem.rename(outputMerge, new Path(outputFileName))
+    this.fileSystem.rename(outputMerge, outputFilePath)
     this.batchesSinceLastMerge = 0
   }
 

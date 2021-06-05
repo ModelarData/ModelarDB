@@ -27,6 +27,7 @@ import java.sql.Timestamp
 import java.util
 import java.util.UUID
 
+//TODO: determine if long or timestamp is more efficient for Apache Parquet and Apache ORC.
 //TODO: Ensure that FileStorage can never lose data if sub-type expose read and write methods for each table:
 //      - Add mergelog listing files that have been merged but not deleted yet because a query is using it.
 //      - Store list of currently active files that new queries can use and list of files to delete when not used.
@@ -70,12 +71,18 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   /** Protected Methods **/
   protected def getMaxID(column: Int): Int
 
-  protected def merge(inputPaths: util.ArrayList[Path], outputFilePath: String): Unit
+  protected def merge(outputFilePath: Path, inputPaths: util.ArrayList[Path]): Unit
 
-  protected def merge(folder: String, prefix: String, outputFileName: String): Unit = {
-    val files = listFiles(new Path(folder))
-    files.removeIf((path: Path) => ! path.getName.startsWith(prefix))
-    merge(files, folder + "/" + outputFileName)
+  protected def merge(outputFileName: String, inputNames: String*): Unit = {
+    val slashedRootFolder = this.rootFolder + "/"
+    val inputPaths = new util.ArrayList[Path]()
+    inputNames.foreach(inputFile => {
+      val path = new Path(slashedRootFolder + inputFile)
+      if (this.fileSystem.exists(path)) {
+        inputPaths.add(path)
+      }
+    })
+    merge(new Path(slashedRootFolder + outputFileName), inputPaths)
   }
 
   protected def shouldMerge(): Boolean = {
@@ -96,7 +103,6 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   }
 
   protected def listFiles(folder: Path): util.ArrayList[Path] = {
-    println(folder)
     val files = this.fileSystem.listFiles(folder, false)
     val fileLists = new util.ArrayList[Path]()
     while (files.hasNext) {

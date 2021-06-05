@@ -18,21 +18,32 @@ import java.util
 import java.sql.Timestamp
 import java.io.FileNotFoundException
 import dk.aau.modelardb.core.utility.Static
-import dk.aau.modelardb.core.SegmentGroup
+import dk.aau.modelardb.core.{Dimensions, SegmentGroup}
 import dk.aau.modelardb.engines.spark.Spark
-import org.apache.parquet.hadoop.ParquetFileReader
+import org.apache.parquet.hadoop.{ParquetFileReader, ParquetFileWriter, ParquetWriter}
 import org.apache.parquet.example.data.simple.SimpleGroup
-import org.apache.parquet.io.ColumnIOFactory
+import org.apache.parquet.io.{ColumnIOFactory, MessageColumnIO,  RecordReader}
 import org.apache.parquet.example.data.simple.convert.GroupRecordConverter
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-import org.apache.parquet.hadoop.util.HadoopInputFile
+import org.apache.parquet.column.page.PageReadStore
+import org.apache.parquet.example.data.Group
+import org.apache.parquet.hadoop.util.{HadoopInputFile, HadoopOutputFile}
+import org.apache.parquet.schema.{MessageType, PrimitiveType, Type}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{Row, SaveMode, SparkSession}
 import org.apache.spark.sql.sources.Filter
 import org.h2.table.TableFilter
 
 class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
+  /** Instance Variables **/
+  private val segmentSchema = new MessageType("segment",
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "gid" ),
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT64, "start_time"),
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT64, "end_time"),
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "mtid" ),
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "model"),
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "gaps"))
 
   /** Public Methods **/
   //Storage
@@ -41,6 +52,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   override def getTimeSeries: util.HashMap[Integer, Array[Object]] = {
+    val columnsInNormalizedDimensions = dimensions.getColumns.length
     val timeSeriesInStorage = new util.HashMap[Integer, Array[Object]]()
     val timeSeries = try {
       getReader(new Path(this.rootFolder + "/time_series.parquet"))
@@ -48,19 +60,32 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
       case _: FileNotFoundException => return timeSeriesInStorage
     }
 
-    //The metadata is stored as (Sid => Scaling, Resolution, Gid, Dimensions)
     var pages = timeSeries.readNextRowGroup()
     val schema = timeSeries.getFooter.getFileMetaData.getSchema
     val columnIO = new ColumnIOFactory().getColumnIO(schema)
     while (pages != null) {
       val recordReader = columnIO.getRecordReader(pages, new GroupRecordConverter(schema))
       for (_ <- 0 until pages.getRowCount.toInt) {
+        //The metadata is stored as (Sid => Scaling, Resolution, Gid, Dimensions)
         val group = recordReader.read()
         val metadata = new util.ArrayList[Object]()
         metadata.add(group.getDouble(1, 0).toFloat.asInstanceOf[Object])
         metadata.add(group.getInteger(2, 0).asInstanceOf[Object])
         metadata.add(group.getInteger(3, 0).asInstanceOf[Object])
-        //TODO: Add support for dimensions
+
+        //Dimensions
+        var column = 4
+        val dimensionTypes = dimensions.getTypes
+        while(column < columnsInNormalizedDimensions + 4) {
+          dimensionTypes(column - 4) match {
+            case Dimensions.Types.TEXT => metadata.add(group.getString(column,0))
+            case Dimensions.Types.INT => metadata.add(group.getInteger(column,0).asInstanceOf[Object])
+            case Dimensions.Types.LONG => metadata.add(group.getLong(column,0).asInstanceOf[Object])
+            case Dimensions.Types.FLOAT => metadata.add(group.getFloat(column,0).asInstanceOf[Object])
+            case Dimensions.Types.DOUBLE => metadata.add(group.getDouble(column,0).asInstanceOf[Object])
+          }
+          column += 1
+        }
         timeSeriesInStorage.put(group.getInteger(0, 0), metadata.toArray)
       }
       pages = timeSeries.readNextRowGroup()
@@ -106,13 +131,14 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     new Iterator[SegmentGroup] {
       /** Instance Variables **/
       private val segmentFiles = listFiles(segmentFolderPath).iterator()
-      private var segmentFile = getReader(segmentFiles.next())
-      private val schema = segmentFile.getFooter.getFileMetaData.getSchema
-      private val columnIO = new ColumnIOFactory().getColumnIO(schema)
-      private var pages = segmentFile.readNextRowGroup()
-      private var recordReader = columnIO.getRecordReader(this.pages, new GroupRecordConverter(schema))
-      private var rowCount = this.pages.getRowCount
-      private var rowIndex = 0L
+      private var segmentFile: ParquetFileReader = _
+      private var schema: MessageType = _
+      private var columnIO: MessageColumnIO = _
+      private var pages: PageReadStore = _
+      private var recordReader: RecordReader[Group] = _
+      private var rowCount: Long = _
+      private var rowIndex: Long = _
+      nextFile()
 
       /** Public Methods **/
       override def hasNext: Boolean = {
@@ -124,16 +150,16 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
         //The current file contain additional batches
         this.pages = segmentFile.readNextRowGroup()
         if (this.pages != null) {
+          this.recordReader = this.columnIO.getRecordReader(this.pages, new GroupRecordConverter(schema))
           this.rowCount = this.pages.getRowCount
-          this.recordReader = columnIO.getRecordReader(this.pages, new GroupRecordConverter(schema))
           this.rowIndex = 0L
           return true
         }
 
         //There are more files to read
+        this.segmentFile.close()
         if (this.segmentFiles.hasNext) {
-          this.segmentFile = getReader(this.segmentFiles.next())
-          this.rowIndex = 0
+          nextFile()
           return true
         }
 
@@ -151,6 +177,17 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
         val gaps = simpleGroup.getBinary(5, 0).getBytesUnsafe
         this.rowIndex += 1
         new SegmentGroup(gid, startTime, endTime, mtid, model, gaps)
+      }
+
+      /** Private Methods **/
+      private def nextFile(): Unit = {
+        this.segmentFile = getReader(segmentFiles.next())
+        this.schema = this.segmentFile.getFooter.getFileMetaData.getSchema
+        this.columnIO = new ColumnIOFactory().getColumnIO(schema)
+        this.pages = segmentFile.readNextRowGroup()
+        this.recordReader = columnIO.getRecordReader(this.pages, new GroupRecordConverter(schema))
+        this.rowCount = this.pages.getRowCount
+        this.rowIndex = 0L
       }
     }
   }
@@ -199,9 +236,15 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     id
   }
 
-  protected override def merge(inputPaths: util.ArrayList[Path], output: String): Unit = ???
+  protected override def merge(output: Path, inputPaths: util.ArrayList[Path]): Unit = ???
 
   /** Private Methods **/
+  private def getWriter(path: Path): ParquetFileWriter = {
+    val inputFile = HadoopOutputFile.fromPath(path, new Configuration())
+    new ParquetFileWriter(inputFile, segmentSchema, ParquetFileWriter.Mode.CREATE,
+      ParquetWriter.DEFAULT_BLOCK_SIZE, ParquetWriter.MAX_PADDING_SIZE_DEFAULT)
+  }
+
   private def getReader(path: Path): ParquetFileReader = {
     ParquetFileReader.open(HadoopInputFile.fromPath(path, new Configuration()))
   }
