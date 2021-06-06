@@ -17,7 +17,9 @@ package dk.aau.modelardb.engines.h2
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{DataPoint, SegmentGroup}
 import dk.aau.modelardb.engines.{CodeGenerator, EngineUtilities, H2DataPointProjector, H2SegmentProjector}
+
 import org.h2.expression.aggregate.AbstractAggregate
+import org.h2.expression.condition.{Comparison, ConditionAndOr}
 import org.h2.expression.function.FunctionCall
 import org.h2.expression.{Expression, ExpressionColumn, ValueExpression}
 import org.h2.table.{Column, TableFilter}
@@ -141,25 +143,44 @@ object H2Projector {
   /** Private Methods **/
   private def tableFilterToColumns(filter: TableFilter): Array[Column] = {
     try {
+      val select = filter.getSelect
       val columnNames = mutable.HashSet[String]()
-      filter.getSelect.getExpressions.forEach(expression => {
-        expresionToColumns(expression, columnNames)
-      })
+      expressionToColumns(select.getCondition, columnNames)
+      expressionToColumns(select.getHaving, columnNames)
+      expressionToColumns(select.getQualify, columnNames)
+      if (select.getGroupBy != null) {
+        select.getGroupBy.forEach(expression => {
+          expressionToColumns(expression, columnNames)
+        })
+      }
+      if (select.getExpressions != null) {
+        select.getExpressions.forEach(expression => {
+          expressionToColumns(expression, columnNames)
+        })
+      }
       columnNames.toArray.map(columnName => filter.findColumn(columnName)).sortBy(_.getColumnId)
     } catch { //An unsupported type of expression was found so all of the columns are returned
       case _: IllegalArgumentException => filter.getColumns
     }
   }
 
-  private def expresionToColumns(expression: Expression, columnNames: mutable.HashSet[String]): Unit = {
+  private def expressionToColumns(expression: Expression, columnNames: mutable.HashSet[String]): Unit = {
     expression match {
+      case null => //Expression is NULL if the query did not include that type of predicate
+      //Select
       case abstractAggregate: AbstractAggregate => this.argsField.get(abstractAggregate)
-        .asInstanceOf[Array[Expression]].foreach(expresionToColumns(_, columnNames))
-      case functionCall: FunctionCall => functionCall.getArgs.foreach(expresionToColumns(_, columnNames))
+        .asInstanceOf[Array[Expression]].foreach(expressionToColumns(_, columnNames))
+      case functionCall: FunctionCall => functionCall.getArgs.foreach(expressionToColumns(_, columnNames))
       case expressionColumn: ExpressionColumn => columnNames.add(expressionColumn.getColumnName)
       case _: ValueExpression => //Ignore expressions that only contain values
+      //Condition
+      case c: Comparison =>
+        expressionToColumns(c.getSubexpression(0).asInstanceOf[ExpressionColumn], columnNames)
+      case cao: ConditionAndOr =>
+        expressionToColumns(cao.getSubexpression(0), columnNames)
+        expressionToColumns(cao.getSubexpression(1), columnNames)
       case p => Static.warn("ModelarDB: unsupported expression " + p.getClass, 120)
-        throw new IllegalArgumentException() //Uses to unwind recursive stack as all columns must be returned
+        throw new IllegalArgumentException() //Used to unwind the call stack as all columns must be returned
     }
   }
 }
