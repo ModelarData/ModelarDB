@@ -48,7 +48,27 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   /** Public Methods **/
   //Storage
   def storeTimeSeries(timeSeriesGroups: Array[dk.aau.modelardb.core.TimeSeriesGroup]): Unit = {
-    //TODO: Implement
+    val columns = new util.ArrayList[Type]()
+    columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "tid"))
+    columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.FLOAT, "scaling_factor"))
+    columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "sampling_interval"))
+    columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "gid"))
+
+    val dimensionTypes = dimensions.getTypes
+    for (dimi <- dimensions.getColumns.zipWithIndex) {
+      dimensionTypes(dimi._2) match {
+        case Dimensions.Types.TEXT => columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, dimi._1))
+        case Dimensions.Types.INT => columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, dimi._1))
+        case Dimensions.Types.LONG => columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT64, dimi._1))
+        case Dimensions.Types.FLOAT => columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.FLOAT, dimi._1))
+        case Dimensions.Types.DOUBLE => columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.DOUBLE, dimi._1))
+      }
+    }
+    val schema = new MessageType("time_series", columns)
+    val writer = getWriter(this.rootFolder + "/time_series.orc_new", schema)
+    //TODO: implement a way to write parquet files with different schemas?
+    // https://stackoverflow.com/questions/39728854/create-parquet-files-in-java
+    // https://github.com/mjakubowski84/parquet4s/blob/master/core/src/main/scala/com/github/mjakubowski84/parquet4s/ParquetWriter.scala
   }
 
   override def getTimeSeries: util.HashMap[Integer, Array[Object]] = {
@@ -239,9 +259,9 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   protected override def merge(output: Path, inputPaths: util.ArrayList[Path]): Unit = ???
 
   /** Private Methods **/
-  private def getWriter(path: Path): ParquetFileWriter = {
-    val inputFile = HadoopOutputFile.fromPath(path, new Configuration())
-    new ParquetFileWriter(inputFile, segmentSchema, ParquetFileWriter.Mode.CREATE,
+  private def getWriter(parquetFile: String, schema: MessageType): ParquetFileWriter = {
+    val inputFile = HadoopOutputFile.fromPath(new Path(parquetFile), new Configuration())
+    new ParquetFileWriter(inputFile, schema, ParquetFileWriter.Mode.CREATE,
       ParquetWriter.DEFAULT_BLOCK_SIZE, ParquetWriter.MAX_PADDING_SIZE_DEFAULT)
   }
 

@@ -50,14 +50,19 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
       .addField("sampling_interval", TypeDescription.createInt())
       .addField("gid", TypeDescription.createInt())
 
-    for (dim <- dimensions.getColumns) {
-      //HACK: Assumes all dimensions are strings
-      schema.addField(dim, TypeDescription.createString())
+    val dimensionTypes = dimensions.getTypes
+    for (dimi <- dimensions.getColumns.zipWithIndex) {
+      dimensionTypes(dimi._2) match {
+        case Dimensions.Types.TEXT => schema.addField(dimi._1, TypeDescription.createString())
+        case Dimensions.Types.INT => schema.addField(dimi._1, TypeDescription.createInt())
+        case Dimensions.Types.LONG => schema.addField(dimi._1, TypeDescription.createLong())
+        case Dimensions.Types.FLOAT => schema.addField(dimi._1, TypeDescription.createFloat())
+        case Dimensions.Types.DOUBLE => schema.addField(dimi._1, TypeDescription.createDouble())
+      }
     }
     val source = getWriter(this.rootFolder + "/time_series.orc_new", schema)
     val batch = source.getSchema.createRowBatch()
 
-    val dimensionTypes = dimensions.getTypes
     for (tsg <- timeSeriesGroups) {
       for (ts <- tsg.getTimeSeries) {
         val row = { batch.size += 1; batch.size - 1 } //batch.size++
