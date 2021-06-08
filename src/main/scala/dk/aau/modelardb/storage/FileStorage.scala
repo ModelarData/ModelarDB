@@ -20,13 +20,15 @@ import dk.aau.modelardb.engines.h2.H2Storage
 import dk.aau.modelardb.engines.spark.SparkStorage
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.spark.sql.{DataFrame, SparkSession, sources}
 import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.{DataFrame, SparkSession, sources}
 
 import java.sql.Timestamp
 import java.util
 import java.util.UUID
 
+//TODO: Evaluate the best compression and encoding methods for the segments.
+//TODO: Determine if ORC and Parquet files are read and written in the simplest way.
 //TODO: determine if long or timestamp is more efficient for Apache Parquet and Apache ORC.
 //TODO: Ensure that FileStorage can never lose data if sub-type expose read and write methods for each table:
 //      - Add mergelog listing files that have been merged but not deleted yet because a query is using it.

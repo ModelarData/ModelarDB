@@ -14,26 +14,30 @@
  */
 package dk.aau.modelardb.storage
 
-import java.util
-import java.sql.Timestamp
-import java.io.FileNotFoundException
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{Dimensions, SegmentGroup}
 import dk.aau.modelardb.engines.spark.Spark
-import org.apache.parquet.hadoop.{ParquetFileReader, ParquetFileWriter, ParquetWriter}
-import org.apache.parquet.example.data.simple.SimpleGroup
-import org.apache.parquet.io.{ColumnIOFactory, MessageColumnIO,  RecordReader}
-import org.apache.parquet.example.data.simple.convert.GroupRecordConverter
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.column.page.PageReadStore
 import org.apache.parquet.example.data.Group
-import org.apache.parquet.hadoop.util.{HadoopInputFile, HadoopOutputFile}
+import org.apache.parquet.example.data.simple.SimpleGroup
+import org.apache.parquet.example.data.simple.convert.GroupRecordConverter
+import org.apache.parquet.hadoop.{ParquetFileReader, ParquetWriter}
+import org.apache.parquet.hadoop.api.WriteSupport
+import org.apache.parquet.hadoop.example.GroupWriteSupport
+import org.apache.parquet.hadoop.metadata.CompressionCodecName
+import org.apache.parquet.hadoop.util.HadoopInputFile
+import org.apache.parquet.io.{ColumnIOFactory, MessageColumnIO, RecordReader}
 import org.apache.parquet.schema.{MessageType, PrimitiveType, Type}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{Row, SaveMode, SparkSession}
 import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.{Row, SaveMode, SparkSession}
 import org.h2.table.TableFilter
+
+import java.io.FileNotFoundException
+import java.sql.Timestamp
+import java.util
 
 class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   /** Instance Variables **/
@@ -65,10 +69,28 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
       }
     }
     val schema = new MessageType("time_series", columns)
-    val writer = getWriter(this.rootFolder + "/time_series.orc_new", schema)
-    //TODO: implement a way to write parquet files with different schemas?
-    // https://stackoverflow.com/questions/39728854/create-parquet-files-in-java
-    // https://github.com/mjakubowski84/parquet4s/blob/master/core/src/main/scala/com/github/mjakubowski84/parquet4s/ParquetWriter.scala
+    val writer = getWriter(this.rootFolder + "/time_series.parquet_new", schema)
+    for (tsg <- timeSeriesGroups) {
+      for (ts <- tsg.getTimeSeries) {
+        val group = new SimpleGroup(schema)
+        group.add(0, ts.tid)
+        group.add(1, ts.scalingFactor)
+        group.add(2, ts.samplingInterval)
+        group.add(3, tsg.gid)
+        for (mi <- dimensions.get(ts.source).zipWithIndex) {
+          dimensionTypes(mi._2) match {
+            case Dimensions.Types.TEXT => group.add(4 + mi._2, mi._1.toString)
+            case Dimensions.Types.INT => group.add(4 + mi._2, mi._1.asInstanceOf[Int])
+            case Dimensions.Types.LONG => group.add(4 + mi._2, mi._1.asInstanceOf[Long])
+            case Dimensions.Types.FLOAT => group.add(4 + mi._2, mi._1.asInstanceOf[Float])
+            case Dimensions.Types.DOUBLE => group.add(4 + mi._2, mi._1.asInstanceOf[Double])
+          }
+        }
+        writer.write(group)
+      }
+    }
+    writer.close()
+    merge("time_series.parquet", "time_series.parquet", "time_series.parquet_new")
   }
 
   override def getTimeSeries: util.HashMap[Integer, Array[Object]] = {
@@ -239,7 +261,11 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
 
   /** Protected Methods **/
   protected override def getMaxID(index: Int): Int = {
-    val reader = getReader(new Path(this.rootFolder + "/time_series.parquet"))
+    val reader = try {
+      getReader(new Path(this.rootFolder + "/time_series.parquet"))
+    } catch {
+      case _: FileNotFoundException => return 0
+    }
     var id = 0
     val schema = reader.getFooter.getFileMetaData.getSchema
     val columnIO = new ColumnIOFactory().getColumnIO(schema)
@@ -259,13 +285,28 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   protected override def merge(output: Path, inputPaths: util.ArrayList[Path]): Unit = ???
 
   /** Private Methods **/
-  private def getWriter(parquetFile: String, schema: MessageType): ParquetFileWriter = {
-    val inputFile = HadoopOutputFile.fromPath(new Path(parquetFile), new Configuration())
-    new ParquetFileWriter(inputFile, schema, ParquetFileWriter.Mode.CREATE,
-      ParquetWriter.DEFAULT_BLOCK_SIZE, ParquetWriter.MAX_PADDING_SIZE_DEFAULT)
+  private def getWriter(parquetFile: String, schema: MessageType): ParquetWriter[Group] = {
+    new ParquetWriterBuilder(new Path(parquetFile))
+      .withType(schema).withCompressionCodec(CompressionCodecName.SNAPPY).build()
   }
 
-  private def getReader(path: Path): ParquetFileReader = {
+  private def getReader(path: Path) = {
     ParquetFileReader.open(HadoopInputFile.fromPath(path, new Configuration()))
+  }
+}
+
+private class ParquetWriterBuilder(path: Path) extends ParquetWriter.Builder[Group, ParquetWriterBuilder](path) {
+  /** Instance Variables * */
+  private var messageType: MessageType = _
+
+  /** Public Methods * */
+  def withType(messageType: MessageType): ParquetWriterBuilder = {
+    this.messageType =  messageType
+    this
+  }
+  override protected def self: ParquetWriterBuilder = this
+  override protected def getWriteSupport(conf: Configuration): WriteSupport[Group] = {
+    GroupWriteSupport.setSchema(this.messageType, conf)
+    new GroupWriteSupport()
   }
 }

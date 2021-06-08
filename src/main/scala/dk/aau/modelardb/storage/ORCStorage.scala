@@ -14,9 +14,9 @@
  */
 package dk.aau.modelardb.storage
 
-import java.util
-import java.sql.Timestamp
-import java.io.FileNotFoundException
+import dk.aau.modelardb.core.utility.Static
+import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
+import dk.aau.modelardb.engines.spark.Spark
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.ql.exec.vector._
@@ -25,10 +25,10 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{Row, SaveMode, SparkSession}
 import org.h2.table.TableFilter
-import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
-import dk.aau.modelardb.core.utility.Static
-import dk.aau.modelardb.engines.spark.Spark
 
+import java.io.FileNotFoundException
+import java.sql.Timestamp
+import java.util
 import scala.collection.JavaConverters._
 
 class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
