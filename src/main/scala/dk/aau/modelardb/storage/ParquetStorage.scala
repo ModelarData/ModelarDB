@@ -23,11 +23,12 @@ import org.apache.parquet.column.page.PageReadStore
 import org.apache.parquet.example.data.Group
 import org.apache.parquet.example.data.simple.SimpleGroup
 import org.apache.parquet.example.data.simple.convert.GroupRecordConverter
-import org.apache.parquet.hadoop.{ParquetFileReader, ParquetWriter}
 import org.apache.parquet.hadoop.api.WriteSupport
 import org.apache.parquet.hadoop.example.GroupWriteSupport
 import org.apache.parquet.hadoop.metadata.CompressionCodecName
 import org.apache.parquet.hadoop.util.HadoopInputFile
+import org.apache.parquet.hadoop.{ParquetFileReader, ParquetWriter}
+import org.apache.parquet.io.api.Binary
 import org.apache.parquet.io.{ColumnIOFactory, MessageColumnIO, RecordReader}
 import org.apache.parquet.schema.{MessageType, PrimitiveType, Type}
 import org.apache.spark.rdd.RDD
@@ -38,6 +39,7 @@ import org.h2.table.TableFilter
 import java.io.FileNotFoundException
 import java.sql.Timestamp
 import java.util
+import scala.collection.JavaConverters._
 
 class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   /** Instance Variables **/
@@ -69,7 +71,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
       }
     }
     val schema = new MessageType("time_series", columns)
-    val writer = getWriter(this.rootFolder + "/time_series.parquet_new", schema)
+    val writer = getWriter(new Path(this.rootFolder + "/time_series.parquet_new"), schema)
     for (tsg <- timeSeriesGroups) {
       for (ts <- tsg.getTimeSeries) {
         val group = new SimpleGroup(schema)
@@ -111,7 +113,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
         //The metadata is stored as (Sid => Scaling, Resolution, Gid, Dimensions)
         val group = recordReader.read()
         val metadata = new util.ArrayList[Object]()
-        metadata.add(group.getDouble(1, 0).toFloat.asInstanceOf[Object])
+        metadata.add(group.getFloat(1, 0).asInstanceOf[Object])
         metadata.add(group.getInteger(2, 0).asInstanceOf[Object])
         metadata.add(group.getInteger(3, 0).asInstanceOf[Object])
 
@@ -137,7 +139,19 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   override def storeModelTypes(modelsToInsert: java.util.HashMap[String,Integer]): Unit = {
-    //TODO: Implement
+    val schema = new MessageType("model_type",
+      new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "mid"),
+      new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "name"))
+
+    val writer = getWriter(new Path(this.rootFolder + "/model_type.parquet_new"), schema)
+    for ((k, v) <- modelsToInsert.asScala) {
+      val group = new SimpleGroup(schema)
+      group.add(0, v.intValue())
+      group.add(1, k)
+      writer.write(group)
+    }
+    writer.close()
+    merge("model_type.parquet", "model_type.parquet", "model_type.parquet_new")
   }
 
   override def getModelTypes: util.HashMap[String, Integer] = {
@@ -166,7 +180,24 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   //H2Storage
-  override def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = ???
+  override def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
+    val writer = getWriter(new Path(getSegmentPartPath(".parquet")), this.segmentSchema)
+    for (segmentGroup <- segmentGroups.take(size)) {
+      val group = new SimpleGroup(this.segmentSchema)
+      group.add(0, segmentGroup.gid)
+      group.add(1, segmentGroup.startTime)
+      group.add(2, segmentGroup.endTime)
+      group.add(3, segmentGroup.mtid)
+      group.add(4, Binary.fromConstantByteArray(segmentGroup.model))
+      group.add(5, Binary.fromConstantByteArray(segmentGroup.offsets))
+      writer.write(group)
+    }
+    writer.close()
+
+    if (shouldMerge()) {
+      merge(new Path(this.segmentFolder + "/segment.parquet"), listFiles(this.segmentFolderPath))
+    }
+  }
 
   override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
     Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
@@ -174,7 +205,6 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
       /** Instance Variables **/
       private val segmentFiles = listFiles(segmentFolderPath).iterator()
       private var segmentFile: ParquetFileReader = _
-      private var schema: MessageType = _
       private var columnIO: MessageColumnIO = _
       private var pages: PageReadStore = _
       private var recordReader: RecordReader[Group] = _
@@ -190,9 +220,9 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
         }
 
         //The current file contain additional batches
-        this.pages = segmentFile.readNextRowGroup()
+        this.pages = this.segmentFile.readNextRowGroup()
         if (this.pages != null) {
-          this.recordReader = this.columnIO.getRecordReader(this.pages, new GroupRecordConverter(schema))
+          this.recordReader = this.columnIO.getRecordReader(this.pages, new GroupRecordConverter(segmentSchema))
           this.rowCount = this.pages.getRowCount
           this.rowIndex = 0L
           return true
@@ -224,10 +254,9 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
       /** Private Methods **/
       private def nextFile(): Unit = {
         this.segmentFile = getReader(segmentFiles.next())
-        this.schema = this.segmentFile.getFooter.getFileMetaData.getSchema
-        this.columnIO = new ColumnIOFactory().getColumnIO(schema)
+        this.columnIO = new ColumnIOFactory().getColumnIO(segmentSchema)
         this.pages = segmentFile.readNextRowGroup()
-        this.recordReader = columnIO.getRecordReader(this.pages, new GroupRecordConverter(schema))
+        this.recordReader = columnIO.getRecordReader(this.pages, new GroupRecordConverter(segmentSchema))
         this.rowCount = this.pages.getRowCount
         this.rowIndex = 0L
       }
@@ -282,11 +311,43 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     id
   }
 
-  protected override def merge(output: Path, inputPaths: util.ArrayList[Path]): Unit = ???
+  protected override def merge(outputFilePath: Path, inputPaths: util.ArrayList[Path]): Unit = {
+    //TODO: determine why merge throws UnsupportedOperationException for model types and time series but not segment
+    //NOTE: merge assumes all inputs share the same schema
+    val inputPathsScala = inputPaths.asScala
+    val segmentFile = getReader(inputPaths.get(0))
+    segmentFile.close()
+
+    //Write the new file
+    val outputMerge  = new Path(outputFilePath + "_merge")
+    val writer = getWriter(outputMerge, this.segmentSchema)
+    for (inputPath <- inputPathsScala) {
+      val segmentFile = getReader(inputPath)
+      val columnIO = new ColumnIOFactory().getColumnIO(schema)
+      var pages = segmentFile.readNextRowGroup()
+
+      while (pages != null) {
+        val recordReader = columnIO.getRecordReader(pages, new GroupRecordConverter(schema))
+        for (_ <- 0L until pages.getRowCount) {
+          writer.write(recordReader.read)
+        }
+        pages = segmentFile.readNextRowGroup()
+      }
+      segmentFile.close()
+    }
+    writer.close()
+
+    //Delete the old files
+    for (inputPath <- inputPathsScala) {
+      this.fileSystem.delete(inputPath, false)
+    }
+    this.fileSystem.rename(outputMerge, outputFilePath)
+    this.batchesSinceLastMerge = 0
+  }
 
   /** Private Methods **/
-  private def getWriter(parquetFile: String, schema: MessageType): ParquetWriter[Group] = {
-    new ParquetWriterBuilder(new Path(parquetFile))
+  private def getWriter(parquetFile: Path, schema: MessageType): ParquetWriter[Group] = {
+    new ParquetWriterBuilder(parquetFile)
       .withType(schema).withCompressionCodec(CompressionCodecName.SNAPPY).build()
   }
 
@@ -299,9 +360,9 @@ private class ParquetWriterBuilder(path: Path) extends ParquetWriter.Builder[Gro
   /** Instance Variables * */
   private var messageType: MessageType = _
 
-  /** Public Methods * */
+  /** Public Methods **/
   def withType(messageType: MessageType): ParquetWriterBuilder = {
-    this.messageType =  messageType
+    this.messageType = messageType
     this
   }
   override protected def self: ParquetWriterBuilder = this

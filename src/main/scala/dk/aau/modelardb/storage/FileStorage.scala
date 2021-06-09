@@ -30,6 +30,7 @@ import java.util.UUID
 //TODO: Evaluate the best compression and encoding methods for the segments.
 //TODO: Determine if ORC and Parquet files are read and written in the simplest way.
 //TODO: determine if long or timestamp is more efficient for Apache Parquet and Apache ORC.
+//TODO: Add a get dimension schema of currently stored data in storage so dimensions are not needed or can be checked.
 //TODO: Ensure that FileStorage can never lose data if sub-type expose read and write methods for each table:
 //      - Add mergelog listing files that have been merged but not deleted yet because a query is using it.
 //      - Store list of currently active files that new queries can use and list of files to delete when not used.
@@ -53,7 +54,7 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
       fs.mkdirs(segment)
     }
 
-    //TODO: Figure out why this have to be changed when writing an ORC file
+    //TODO: Figure out why this have to be set when writing an ORC file
     ssb.config("spark.sql.orc.impl", "native").getOrCreate()
   }
 

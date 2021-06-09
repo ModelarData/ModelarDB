@@ -179,6 +179,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
       batch = batch.add(boundStatement)
 
       //The maximum batch size supported by Cassandra
+      //TODO: Determine if this is the best batch size or too large
       if (batch.size() == 65535) {
         session.execute(batch)
         batch.clear()
