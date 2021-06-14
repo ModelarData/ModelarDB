@@ -55,19 +55,28 @@ object Interface {
 
         //Query
         Static.info("ModelarDB: connection is ready")
-        while (true) {
-          val query = in.readLine().trim()
-          if (query == ":quit") {
-            //Cleanup
-            in.close()
-            out.close()
-            clientSocket.close()
-            Static.info("ModelarDB: conection is closed")
-            return
-          } else if (query.nonEmpty) {
-            execute(query, out.write)
-            out.flush()
+
+        try {
+          var stop = true
+          while (stop) {
+            val query = in.readLine().trim()
+            if ( ! query.startsWith("--") && query.contains("SELECT")) {
+              execute(query, out.write)
+              out.flush()
+            } else if (query.nonEmpty) {
+              in.close()
+              out.close()
+              clientSocket.close()
+              stop = false //The empty string terminates the connection
+              Static.info("ModelarDB: conection is closed")
+            } else {
+              out.write("only SELECT is supported")
+              out.flush()
+            }
           }
+        } catch {
+          case _: NullPointerException =>
+            //Thrown if the client closes in while ModelarDB waits for input
         }
       })
     }
