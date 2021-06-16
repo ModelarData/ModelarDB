@@ -316,6 +316,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     //NOTE: merge assumes all inputs share the same schema
     val inputPathsScala = inputPaths.asScala
     val segmentFile = getReader(inputPaths.get(0))
+    val schema = segmentFile.getFooter.getFileMetaData.getSchema
     segmentFile.close()
 
     //Write the new file
