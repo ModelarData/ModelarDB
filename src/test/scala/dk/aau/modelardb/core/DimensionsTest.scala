@@ -54,25 +54,17 @@ class DimensionsTest extends AnyWordSpec {
       0, "unix", "UTC", 1, "en"))
 
     "create nine time series groups based on correlation by source" in {
-      val configuration = new Configuration()
-      configuration.add("modelardb.batch_size", 500)
-      configuration.add("modelardb.dimensions", dimensions)
       val correlation = new Correlation()
       correlation.addSources(Array("house_1-channel_1.dat", "house_1-channel_2.dat"))
-      configuration.add("modelardb.correlations", Array(correlation))
-      val groups = Partitioner.groupTimeSeries(configuration, timeSeries, 0)
+      val groups = Partitioner.groupTimeSeries(Array(correlation), dimensions, timeSeries, 0)
       assert(groups.length == 9)
     }
 
     "create five time series groups based on correlation by dimensions" in {
-      val configuration = new Configuration()
-      configuration.add("modelardb.batch_size", 500)
-      configuration.add("modelardb.dimensions", dimensions)
       val correlation = new Correlation()
       correlation.addDimensionAndLCA("Type", 0, dimensions)
       correlation.addDimensionAndLCA("Location", 1, dimensions)
-      configuration.add("modelardb.correlations", Array(correlation))
-      val groups = Partitioner.groupTimeSeries(configuration, timeSeries, 0)
+      val groups = Partitioner.groupTimeSeries(Array(correlation), dimensions, timeSeries, 0)
       assert(groups.length == 5)
     }
 
@@ -83,7 +75,7 @@ class DimensionsTest extends AnyWordSpec {
       val correlation = new Correlation()
       correlation.setDistance(0.25F)
       configuration.add("modelardb.correlations", Array(correlation))
-      val groups = Partitioner.groupTimeSeries(configuration, timeSeries, 0)
+      val groups = Partitioner.groupTimeSeries(Array(correlation), dimensions, timeSeries, 0)
       assert(groups.length == 5)
     }
   }

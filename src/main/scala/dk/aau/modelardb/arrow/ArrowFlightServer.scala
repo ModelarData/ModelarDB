@@ -1,10 +1,10 @@
 package dk.aau.modelardb.arrow
 
 import akka.stream.scaladsl.SourceQueueWithComplete
-import dk.aau.modelardb.ConfigUtil
 import dk.aau.modelardb.arrow.ArrowUtil.jdbcToArrow
-import dk.aau.modelardb.core.{SegmentGroup, Storage}
-import dk.aau.modelardb.engines.{QueryEngine, RDBMSEngineUtilities}
+import dk.aau.modelardb.config.{ArrowConfig, ArrowServerConfig}
+import dk.aau.modelardb.core.{Dimensions, SegmentGroup, Storage}
+import dk.aau.modelardb.engines.QueryEngine
 import dk.aau.modelardb.storage.{JDBCStorage, StorageFactory}
 import org.apache.arrow.flight.{FlightServer, Location}
 import org.apache.arrow.memory.RootAllocator
@@ -13,11 +13,13 @@ import org.apache.arrow.vector.VectorSchemaRoot
 import java.nio.charset.StandardCharsets
 import java.sql.DriverManager
 import java.time.Instant
+import java.util.concurrent.TimeUnit
+import scala.util.{Failure, Success, Try}
 
-class ArrowFlightServer private(queryEngine: QueryEngine, storage: Storage) {
+class ArrowFlightServer private(host: String, port: Int, queryEngine: QueryEngine, storage: Storage) {
 
   val allocator = new RootAllocator(Long.MaxValue)
-  val location = new Location("grpc+tcp://localhost:6006")
+  val location = new Location(s"grpc+tcp://$host:$port")
 
   val producer = new ArrowFlightProducer(queryEngine, storage)
 
@@ -26,10 +28,20 @@ class ArrowFlightServer private(queryEngine: QueryEngine, storage: Storage) {
     .build()
 
   def start(): FlightServer = {
-    server.start()
+    Try {
+      server.start()
+    }.fold[FlightServer](
+      {
+        case _: IllegalStateException => server
+        case throwable: Throwable => throw throwable
+      },
+      { _ => server }
+    )
   }
+
   def stop(): Unit = {
     server.shutdown()
+    server.awaitTermination(10, TimeUnit.SECONDS)
   }
 }
 
@@ -37,24 +49,24 @@ object ArrowFlightServer {
 
   private var instance: ArrowFlightServer = null
 
-  def apply(sqlEngine: QueryEngine, storage: Storage): ArrowFlightServer = {
-    if (instance == null) {
-      instance = new ArrowFlightServer(sqlEngine, storage)
-    }
-    instance
+  def apply(config: ArrowConfig, sqlEngine: QueryEngine, storage: Storage): ArrowFlightServer = {
+//    if (instance == null) {
+//      instance = new ArrowFlightServer(config.server.host, config.server.port, sqlEngine, storage)
+//    }
+//    instance
+    new ArrowFlightServer(config.server.host, config.server.port, sqlEngine, storage)
   }
 
 
   /** For use when running code locally. Helps with testing */
   def main(args: Array[String]): Unit = {
-
-    /* Setup Test Data */
-    val config = ConfigUtil.readConfigurationFile(args(0))
+    val serverConfig = ArrowServerConfig("localhost", 6006)
+    val config = ArrowConfig("/test/path", serverConfig, /*client=*/ null)
     val storage = StorageFactory.getStorage("jdbc:h2:file:./h2db;AUTO_SERVER=TRUE").asInstanceOf[JDBCStorage]
-    val dbUtils = RDBMSEngineUtilities(config, storage)
-    val dimensions = config.getDimensions
+    val dimensions = new Dimensions(Array.empty[String])
     storage.open(dimensions)
 
+    /* Setup Test Data */
     val conn = DriverManager.getConnection("jdbc:h2:mem:")
 
     val updateStmt = conn.createStatement()
@@ -81,7 +93,7 @@ object ArrowFlightServer {
     val stmt = conn.createStatement()
     val rs = stmt.executeQuery("select * from segment")
 
-    val testData = new QueryEngine {
+    val testEngine = new QueryEngine {
 
       override def start(): Unit = null
 
@@ -93,7 +105,7 @@ object ArrowFlightServer {
 
     }
 
-    ArrowFlightServer(testData, dbUtils.storage)
+    ArrowFlightServer(config, testEngine, storage)
 
   }
 }

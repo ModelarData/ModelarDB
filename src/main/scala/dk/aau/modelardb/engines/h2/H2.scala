@@ -12,6 +12,7 @@ import dk.aau.modelardb.core.utility.{Pair, SegmentFunction, Static, ValueFuncti
 import dk.aau.modelardb.core.{Configuration, Dimensions, Partitioner, SegmentGroup, Storage, WorkingSet}
 import dk.aau.modelardb.engines.{PredicatePushDown, QueryEngine, RDBMSEngineUtilities}
 import dk.aau.modelardb.core.Dimensions.Types
+import dk.aau.modelardb.config.{Config, ModelarConfig}
 import org.apache.arrow.vector.VectorSchemaRoot
 import org.h2.expression.condition.{Comparison, ConditionAndOr, ConditionInConstantSet}
 import org.h2.expression.{Expression, ExpressionColumn, ValueExpression}
@@ -35,10 +36,10 @@ import scala.collection.mutable
 //TODO: Support requiredColumns and test that predicate push-down works with all storage backends.
 //TODO: determine if the segments should be filtered by the segment view and than data point view like done for Spark
 //TODO: Share as much code as possible between H2 and Spark and structure their use of the two views the same.
-class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine {
+class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
   /** Instance Variables **/
   private var finalizedSegmentsIndex = 0
-  private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](configuration.getBatchSize())
+  private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](config.batchSize)
   private var numberOfRunningIngestors: CountDownLatch = _
   private val cacheLock = new ReentrantReadWriteLock()
   private val temporarySegments = mutable.HashMap[Int, Array[SegmentGroup]]()
@@ -52,8 +53,8 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
     //Documentation: http://www.h2database.com/html/features.html#in_memory_databases
     val stmt = connection.createStatement()
     //Documentation: https://www.h2database.com/html/commands.html#create_table
-    stmt.execute(H2.getCreateDataPointViewSQL(configuration.getDimensions))
-    stmt.execute(H2.getCreateSegmentViewSQL(configuration.getDimensions))
+    stmt.execute(H2.getCreateDataPointViewSQL(config.dimensions))
+    stmt.execute(H2.getCreateSegmentViewSQL(config.dimensions))
     //Documentation: https://www.h2database.com/html/commands.html#create_aggregate
     stmt.execute(H2.getCreateUDAFSQL("COUNT_S"))
     stmt.execute(H2.getCreateUDAFSQL("MIN_S"))
@@ -94,21 +95,22 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
 //  private def startIngestion(): Unit = {
   private def startIngestion(queue: SourceQueueWithComplete[SegmentGroup]): Unit = {
     //Initialize Storage
-    val dimensions = configuration.getDimensions
+    val dimensions = config.dimensions
+    val correlations = config.correlations
     h2storage.open(dimensions)
-    val timeSeries = Partitioner.initializeTimeSeries(configuration, h2storage.getMaxTid)
-    val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, h2storage.getMaxGid)
-    h2storage.initialize(timeSeriesGroups, configuration.getDerivedTimeSeries(), dimensions, configuration.getModelTypeNames)
-    if (timeSeriesGroups.isEmpty || configuration.getIngestors() == 0) {
+    val timeSeries = Partitioner.initializeTimeSeries(config, h2storage.getMaxTid)
+    val timeSeriesGroups = Partitioner.groupTimeSeries(correlations, dimensions, timeSeries, h2storage.getMaxGid)
+    h2storage.initialize(timeSeriesGroups, config.derivedTimeSeries, dimensions, config.models)
+    if (timeSeriesGroups.isEmpty || config.ingestors == 0) {
       //There are no time series to ingest or no ingestors to ingest them with
       this.numberOfRunningIngestors = new CountDownLatch(0)
       return
     }
 
     val mtidCache = h2storage.mtidCache
-    val threads = configuration.getIngestors()
+    val threads = config.ingestors
     this.numberOfRunningIngestors = new CountDownLatch(threads)
-    val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, mtidCache, threads)
+    val workingSets = Partitioner.partitionTimeSeries(config, timeSeriesGroups, mtidCache, threads)
 
     //Start Ingestion
     if (workingSets.nonEmpty) {
@@ -139,7 +141,7 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
         cacheLock.writeLock().lock()
         finalizedSegments(finalizedSegmentsIndex) = new SegmentGroup(gid, startTime, endTime, mtid, model, gaps)
         finalizedSegmentsIndex += 1
-        if (finalizedSegmentsIndex == configuration.getBatchSize()) {
+        if (finalizedSegmentsIndex == config.batchSize) {
 //          h2storage.storeSegmentGroups(finalizedSegments, finalizedSegmentsIndex)
           finalizedSegments.foreach(queue.offer)
           finalizedSegmentsIndex = 0

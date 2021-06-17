@@ -2,6 +2,7 @@ package dk.aau.modelardb.engines.h2
 
 import dk.aau.modelardb.core.models.ModelTypeFactory
 import dk.aau.modelardb.H2Provider
+import dk.aau.modelardb.config.{Config, ModelarConfig}
 import dk.aau.modelardb.core.{Configuration, Dimensions, SegmentGroup}
 import dk.aau.modelardb.storage.JDBCStorage
 import org.h2.expression.condition.{Comparison, ConditionAndOr}
@@ -10,9 +11,12 @@ import org.h2.table.TableFilter
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+import pureconfig.{ConfigReader, ConfigSource}
+import pureconfig.generic.auto._
 
 import java.sql.{DriverManager, Statement}
 import java.time.Instant
+import java.util.TimeZone
 
 class H2Test extends AnyFlatSpec with Matchers with MockFactory with H2Provider {
 
@@ -50,9 +54,10 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory with H2Provider 
       storage.modelTypeCache = Array(model, model)
       storage.dimensionsCache = Array(null, Array())
 
-      val configuration = new Configuration()
-      configuration.add("modelardb.batch_size", 500)
-      val h2 = new H2(configuration, storage)
+      import ModelarConfig.timezoneReader // needed to read config
+      val config = ConfigSource.resources("application-test.conf").loadOrThrow[Config]
+      val modelarConfig = config.modelarDb
+      val h2 = new H2(modelarConfig, storage)
       H2.initialize(h2, storage)
 
       statement.execute(H2.getCreateSegmentViewSQL(new Dimensions(Array())))
@@ -79,5 +84,5 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory with H2Provider 
   }
 
   /* HACK: needed because JDBCStorage class init fails when constructor arg is null */
-  private class JDBCStorageNoArgs extends JDBCStorage("jdbc:h2:mem", null)
+  private class JDBCStorageNoArgs extends JDBCStorage("jdbc:h2:mem")
 }

@@ -1,19 +1,16 @@
 package dk.aau.modelardb.arrow
 
-import dk.aau.modelardb.config.{ArrowConfig, Config}
+import dk.aau.modelardb.config.ArrowConfig
 import dk.aau.modelardb.core.SegmentGroup
 import io.grpc.ManagedChannelBuilder
-import org.apache.arrow.flight.FlightClient.PutListener
-import org.apache.arrow.flight.{AsyncPutListener, FlightDescriptor, FlightGrpcUtils, PutResult, SyncPutListener, Ticket}
+import org.apache.arrow.flight.{AsyncPutListener, FlightDescriptor, FlightGrpcUtils, PutResult}
 import org.apache.arrow.memory.RootAllocator
 import org.apache.arrow.vector.VectorSchemaRoot
-
-import java.nio.charset.StandardCharsets
 
 class ArrowFlightClient(config: ArrowConfig) {
 
   val channel = ManagedChannelBuilder
-    .forAddress(config.host, config.port)
+    .forAddress(config.client.host, config.client.port)
     .usePlaintext()
     .build()
 
@@ -24,7 +21,7 @@ class ArrowFlightClient(config: ArrowConfig) {
 
   val metadataListener = new AsyncPutListener {
     override def onNext(result: PutResult): Unit = {
-      println("received message from server: ", result)
+      println(s"received message from server: $result")
       result.close()
     }
   }
@@ -60,15 +57,6 @@ object ArrowFlightClient {
     val allocator = new RootAllocator()
     val client = FlightGrpcUtils.createFlightClient(allocator, channel)
 
-//    val ticket = new Ticket("select * from segment limit 10".getBytes(StandardCharsets.UTF_8))
-//    val stream = client.getStream(ticket)
-//    while(stream.next()) {
-//      val result = stream.getRoot.contentToTSVString()
-//      println(s"got result:")
-//      println(result)
-//    }
-//    stream.close()
-
     val desc = FlightDescriptor.path("sensor/1")
     val root = ArrowUtil.insertTestSGData(10,
       VectorSchemaRoot.create(SegmentGroupSchema.arrowSchema, allocator)
@@ -76,7 +64,7 @@ object ArrowFlightClient {
 
     val metadataListener = new AsyncPutListener {
       override def onNext(result: PutResult): Unit = {
-        println("received message from server: ", result)
+        println(s"received message from server: $result")
         result.close()
       }
     }

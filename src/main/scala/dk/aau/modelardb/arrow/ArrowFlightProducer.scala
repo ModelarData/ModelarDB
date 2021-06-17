@@ -17,7 +17,7 @@ import scala.util.Try
 class ArrowFlightProducer(queryEngine: QueryEngine, storage: Storage) extends FlightProducer {
 
   override def getStream(context: CallContext, ticket: Ticket, listener: ServerStreamListener): Unit = {
-    val sql = new String(ticket.getBytes, StandardCharsets.UTF_8)
+    val sql = new String(ticket.getBytes, StandardCharsets.UTF_8) // Assumes ticket is just a SQL query
 
     val root = queryEngine.execute(sql)
     listener.start(root)
@@ -26,7 +26,9 @@ class ArrowFlightProducer(queryEngine: QueryEngine, storage: Storage) extends Fl
     root.close()
   }
 
-  override def listFlights(context: CallContext, criteria: Criteria, listener: StreamListener[FlightInfo]): Unit = ???
+  override def listFlights(context: CallContext, criteria: Criteria, listener: StreamListener[FlightInfo]): Unit = {
+    listener.onError(???)
+  }
 
   override def getFlightInfo(context: CallContext, descriptor: FlightDescriptor): FlightInfo = ???
 
@@ -38,10 +40,15 @@ class ArrowFlightProducer(queryEngine: QueryEngine, storage: Storage) extends Fl
         ArrowUtil.storeData(storage, flightRoot)
       }
       flightRoot.close()
+      flightStream.close()
     }
   }
 
-  override def doAction(context: CallContext, action: Action, listener: StreamListener[Result]): Unit = ???
+  override def doAction(context: CallContext, action: Action, listener: StreamListener[Result]): Unit = {
+    listener.onError(???)
+  }
 
-  override def listActions(context: CallContext, listener: StreamListener[ActionType]): Unit = ???
+  override def listActions(context: CallContext, listener: StreamListener[ActionType]): Unit = {
+    listener.onError(???)
+  }
 }
