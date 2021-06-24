@@ -5,6 +5,7 @@ scalacOptions ++= Seq("-opt:l:inline", "-opt-inline-from:<sources>", "-feature",
 
 val AkkaVersion = "2.6.13"
 val SparkVersion = "3.1.1"
+val arrowVersion = "4.0.1"
 
 libraryDependencies ++= Seq(
   /* Code Generation */
@@ -35,8 +36,10 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion,
 
   /* Arrow */
-  "org.apache.arrow" % "flight-grpc" % "3.0.0",
-  "org.apache.arrow" % "arrow-jdbc" % "3.0.0",
+  "org.apache.arrow" % "flight-grpc" % arrowVersion,
+  "org.apache.arrow" % "arrow-jdbc" % arrowVersion,
+
+  "org.eclipse.milo" % "sdk-client" % "0.6.1",
 
   /* Testing */
   "org.scalatest" %% "scalatest" % "3.2.5" % Test,
