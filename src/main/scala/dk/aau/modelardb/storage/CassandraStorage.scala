@@ -25,7 +25,8 @@ import dk.aau.modelardb.engines.spark.{Spark, SparkStorage}
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.types.{BinaryType, IntegerType, StructField, StructType, TimestampType}
+import org.apache.spark.sql.{Row, SaveMode, SparkSession}
 import org.h2.table.TableFilter
 
 import java.nio.ByteBuffer
@@ -119,7 +120,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     while (rows.hasNext) {
       val row = rows.next
       val mtid = row.getInt("mtid")
-      modelsInStorage.put(row.getString("model_type"), mtid)
+      modelsInStorage.put(row.getString("name"), mtid)
     }
     session.close()
     modelsInStorage
@@ -204,16 +205,28 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
   }
 
   override def storeSegmentGroups(sparkSession: SparkSession, rdd: RDD[Row]): Unit = {
-    rdd.saveToCassandra(this.keyspace, "segment",
-      SomeColumns("gid", "start_time", "end_time", "mtid", "model", "gaps"))
+    val schema: StructType = StructType(Seq(
+      StructField("gid", IntegerType, nullable = false),
+      StructField("start_time", TimestampType, nullable = false),
+      StructField("end_time", TimestampType, nullable = false),
+      StructField("mtid", IntegerType, nullable = false),
+      StructField("model", BinaryType, nullable = false),
+      StructField("gaps", BinaryType, nullable = false)))
+    sparkSession.createDataFrame(rdd, schema).write.format("org.apache.spark.sql.cassandra")
+      .option("keyspace", this.keyspace).option("table", "segment").mode(SaveMode.Append).save()
   }
 
   override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): RDD[Row] = {
+    val df = sparkSession.read.table(s"cassandra.${this.keyspace}.segment")
+      .select("gid", "start_time", "end_time", "mtid", "model", "gaps")
+
     val predicate = Spark.filtersToSQLPredicates(filters)
     Static.info(s"ModelarDB: constructed predicates ($predicate)", 120)
-    sparkSession.read.table(s"cassandra.${this.keyspace}.segment")
-      .select("gid", "start_time", "end_time", "mtid", "model", "gaps")
-      .rdd
+    if (predicate.isEmpty) {
+      df.rdd
+    } else {
+      df.where(predicate).rdd
+    }
   }
 
   /** Private Methods **/
@@ -274,8 +287,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
   private def storeSegmentGroups(session: CqlSession, batch: util.ArrayList[BoundStatement]): Unit = {
     val batchStatement = BatchStatement.newInstance(BatchType.LOGGED)
     batchStatement.setIdempotent(true)
-    batchStatement.addAll(batch)
-    session.execute(batchStatement)
+    session.execute(batchStatement.addAll(batch))
     batch.clear()
   }
 }
