@@ -23,10 +23,8 @@ import dk.aau.modelardb.core.{Dimensions, SegmentGroup, Storage, TimeSeriesGroup
 import dk.aau.modelardb.engines.h2.{H2, H2Storage}
 import dk.aau.modelardb.engines.spark.{Spark, SparkStorage}
 import org.apache.spark.SparkConf
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{BinaryType, IntegerType, StructField, StructType, TimestampType}
-import org.apache.spark.sql.{Row, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 import org.h2.table.TableFilter
 
 import java.nio.ByteBuffer
@@ -204,29 +202,15 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     sparkSession
   }
 
-  override def storeSegmentGroups(sparkSession: SparkSession, rdd: RDD[Row]): Unit = {
-    val schema: StructType = StructType(Seq(
-      StructField("gid", IntegerType, nullable = false),
-      StructField("start_time", TimestampType, nullable = false),
-      StructField("end_time", TimestampType, nullable = false),
-      StructField("mtid", IntegerType, nullable = false),
-      StructField("model", BinaryType, nullable = false),
-      StructField("gaps", BinaryType, nullable = false)))
-    sparkSession.createDataFrame(rdd, schema).write.format("org.apache.spark.sql.cassandra")
-      .option("keyspace", this.keyspace).option("table", "segment").mode(SaveMode.Append).save()
+  override def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit = {
+    df.write.format("org.apache.spark.sql.cassandra")
+      .option("keyspace", this.keyspace).option("table", "segment")
+      .mode(SaveMode.Append).save()
   }
 
-  override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): RDD[Row] = {
-    val df = sparkSession.read.table(s"cassandra.${this.keyspace}.segment")
-      .select("gid", "start_time", "end_time", "mtid", "model", "gaps")
-
-    val predicate = Spark.filtersToSQLPredicates(filters)
-    Static.info(s"ModelarDB: constructed predicates ($predicate)", 120)
-    if (predicate.isEmpty) {
-      df.rdd
-    } else {
-      df.where(predicate).rdd
-    }
+  override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame = {
+    Spark.applyFiltersToDataFrame(sparkSession.read.table(s"cassandra.${this.keyspace}.segment")
+      .select("gid", "start_time", "end_time", "mtid", "model", "gaps"), filters)
   }
 
   /** Private Methods **/

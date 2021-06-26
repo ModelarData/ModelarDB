@@ -31,13 +31,11 @@ import org.apache.parquet.hadoop.{ParquetFileReader, ParquetWriter}
 import org.apache.parquet.io.api.Binary
 import org.apache.parquet.io.{ColumnIOFactory, MessageColumnIO, RecordReader}
 import org.apache.parquet.schema.{MessageType, PrimitiveType, Type}
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.{Row, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 import org.h2.table.TableFilter
 
 import java.io.FileNotFoundException
-import java.sql.Timestamp
 import java.util
 import scala.collection.JavaConverters._
 
@@ -269,28 +267,24 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   //SparkStorage
-  override def storeSegmentGroups(sparkSession: SparkSession, rdd: RDD[Row]): Unit = {
+  override def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit = {
     if ( ! shouldMerge) {
       //Add new Parquet files for this batch to the existing folder
-      sparkSession.createDataFrame(rdd, Spark.segmentFileSchema)
-        .write.mode(SaveMode.Append).parquet(this.segmentFolder)
+      df.write.mode(SaveMode.Append).parquet(this.segmentFolder)
     } else {
       //Writes new Parquet files with the segment on disk and from this batch
-      val rddDF = sparkSession.createDataFrame(rdd, Spark.segmentFileSchema)
-        .union(sparkSession.read.schema(Spark.segmentFileSchema).parquet(this.segmentFolder))
+      val mergedDF = df.union(sparkSession.read.schema(Spark.getStorageSegmentGroupsSchema).parquet(this.segmentFolder))
       val newSegmentFolder = new Path(this.rootFolder + "/segment_new")
-      rddDF.write.parquet(newSegmentFolder.toString)
+      mergedDF.write.parquet(newSegmentFolder.toString)
 
-      //Overwrite the old segment folder with the new segment folder
+      //Overwrite the old segment files with the new segment file
       this.fileSystem.delete(this.segmentFolderPath, true)
       this.fileSystem.rename(newSegmentFolder, this.segmentFolderPath)
     }
   }
 
-  override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): RDD[Row] = {
-    val df = sparkSession.read.parquet(this.rootFolder + "/segment/segment.parquet")
-    pushDownSparkFilters(df, filters).rdd.map(row => Row(row.getInt(0), new Timestamp(row.getLong(1)),
-      new Timestamp(row.getLong(2)), row.getInt(3), row.getAs[Array[Byte]](4), row.getAs[Array[Byte]](5)))
+  override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame = {
+    Spark.applyFiltersToDataFrame(sparkSession.read.parquet(this.rootFolder + "/segment"), filters)
   }
 
   /** Protected Methods **/

@@ -14,16 +14,13 @@
  */
 package dk.aau.modelardb.storage
 
-import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{Dimensions, Storage}
 import dk.aau.modelardb.engines.h2.H2Storage
 import dk.aau.modelardb.engines.spark.SparkStorage
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.{DataFrame, SparkSession, sources}
+import org.apache.spark.sql.SparkSession
 
-import java.sql.Timestamp
 import java.util
 import java.util.UUID
 
@@ -97,7 +94,7 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
     } else {
       false
     }
-    true
+    true //TODO: Test merging through unit tests
   }
 
   protected def getSegmentPartPath(suffix: String): String = {
@@ -112,38 +109,5 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
       fileLists.add(files.next().getPath)
     }
     fileLists
-  }
-  
-  protected def pushDownSparkFilters(df: DataFrame, filters: Array[Filter]): DataFrame = {
-    var withPredicates = df
-    for (filter: Filter <- filters) {
-      filter match {
-        //Predicate push-down for gid using SELECT * FROM segment with GID = ? and gid IN (..)
-        case sources.GreaterThan("gid", value: Int) => withPredicates = withPredicates.filter(s"sid > $value")
-        case sources.GreaterThanOrEqual("gid", value: Int) => withPredicates = withPredicates.filter(s"sid >= $value")
-        case sources.LessThan("gid", value: Int) => withPredicates = withPredicates.filter(s"sid < $value")
-        case sources.LessThanOrEqual("gid", value: Int) => withPredicates = withPredicates.filter(s"sid <= $value")
-        case sources.EqualTo("gid", value: Int) => withPredicates = withPredicates.filter(s"sid = $value")
-        case sources.In("gid", value: Array[Any]) => withPredicates = withPredicates.filter(value.mkString("sid IN (", ",", ")"))
-
-        //Predicate push-down for et using SELECT * FROM segment WHERE start_time <=> ?
-        case sources.GreaterThan("start_time", value: Timestamp) => withPredicates.filter(s"start_time > '$value'")
-        case sources.GreaterThanOrEqual("start_time", value: Timestamp) => withPredicates.filter(s"start_time >= '$value'")
-        case sources.LessThan("start_time", value: Timestamp) => withPredicates.filter(s"start_time < '$value'")
-        case sources.LessThanOrEqual("start_time", value: Timestamp) => withPredicates.filter(s"start_time <= '$value'")
-        case sources.EqualTo("start_time", value: Timestamp) => withPredicates.filter(s"start_time = '$value'")
-
-        //Predicate push-down for et using SELECT * FROM segment WHERE end_time <=> ?
-        case sources.GreaterThan("end_time", value: Timestamp) => withPredicates.filter(s"end_time > '$value'")
-        case sources.GreaterThanOrEqual("end_time", value: Timestamp) => withPredicates.filter(s"end_time >= '$value'")
-        case sources.LessThan("end_time", value: Timestamp) => withPredicates.filter(s"end_time < '$value'")
-        case sources.LessThanOrEqual("end_time", value: Timestamp) => withPredicates.filter(s"end_time <= '$value'")
-        case sources.EqualTo("end_time", value: Timestamp) => withPredicates.filter(s"end_time = '$value'")
-
-        //The predicate cannot be supported by the segment view so all we can do is inform the user
-        case p => Static.warn("ModelarDB: unsupported predicate for FileStorage " + p, 120); null
-      }
-    }
-    withPredicates
   }
 }

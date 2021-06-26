@@ -21,9 +21,8 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.ql.exec.vector._
 import org.apache.orc.{CompressionKind, OrcFile, Reader, RecordReader, TypeDescription, Writer}
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.{Row, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 import org.h2.table.TableFilter
 
 import java.io.FileNotFoundException
@@ -248,26 +247,24 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   //SparkStorage
-  override def storeSegmentGroups(sparkSession: SparkSession, rdd: RDD[Row]): Unit = {
+  override def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit = {
     if ( ! shouldMerge) {
       //Add new ORC files for this batch to the existing folder
-      sparkSession.createDataFrame(rdd, Spark.segmentFileSchema)
-        .write.mode(SaveMode.Append).orc(this.segmentFolder)
+      df.write.mode(SaveMode.Append).orc(this.segmentFolder)
     } else {
       //Writes new ORC files with the segment on disk and from this batch
-      val rddDF = sparkSession.createDataFrame(rdd, Spark.segmentFileSchema)
-        .union(sparkSession.read.schema(Spark.segmentFileSchema).orc(this.segmentFolder))
+      val mergedDF = df.union(sparkSession.read.schema(Spark.getStorageSegmentGroupsSchema).orc(this.segmentFolder))
       val newSegmentFolder = new Path(this.rootFolder + "/segment_new")
-      rddDF.write.orc(newSegmentFolder.toString)
+      mergedDF.write.orc(newSegmentFolder.toString)
 
-      //Overwrite the old segment folder with the new segment folder
+      //Overwrite the old segment files with the new segment file
       this.fileSystem.delete(this.segmentFolderPath, true)
       this.fileSystem.rename(newSegmentFolder, this.segmentFolderPath)
     }
   }
 
-  override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): RDD[Row] = {
-    sparkSession.read.orc(this.rootFolder + "/segment").rdd
+  override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame = {
+    Spark.applyFiltersToDataFrame(sparkSession.read.orc(this.rootFolder + "/segment"), filters)
   }
 
   /** Protected Methods **/

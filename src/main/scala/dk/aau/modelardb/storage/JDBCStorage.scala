@@ -17,10 +17,9 @@ package dk.aau.modelardb.storage
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.engines.h2.{H2, H2Storage}
-import dk.aau.modelardb.engines.spark.SparkStorage
-import org.apache.spark.rdd.RDD
+import dk.aau.modelardb.engines.spark.{Spark, SparkStorage}
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.h2.table.TableFilter
 
 import java.sql.{Array => _, _}
@@ -190,18 +189,18 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     ssb.getOrCreate()
   }
 
-  override def storeSegmentGroups(sparkSession: SparkSession, rdd: RDD[Row]): Unit = {
-    val groups = rdd.collect().map(row => new SegmentGroup(row.getInt(0), row.getTimestamp(1).getTime,
+  override def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit = {
+    val groups = df.collect().map(row => new SegmentGroup(row.getInt(0), row.getTimestamp(1).getTime,
       row.getTimestamp(2).getTime, row.getInt(3), row.getAs[Array[Byte]](4), row.getAs[Array[Byte]](5)))
     storeSegmentGroups(groups, groups.length)
   }
 
-  override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): RDD[Row] = {
+  override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame = {
     Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
     val rows = getSegmentGroups("").map(sg => {
       Row(sg.gid, new Timestamp(sg.startTime), new Timestamp(sg.endTime), sg.mtid, sg.model, sg.offsets)
     })
-    sparkSession.sparkContext.parallelize(rows.toSeq)
+    sparkSession.createDataFrame(sparkSession.sparkContext.parallelize(rows.toSeq), Spark.getStorageSegmentGroupsSchema)
   }
 
   /** Private Methods **/

@@ -25,7 +25,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrameReader, SparkSession, sources}
+import org.apache.spark.sql.{DataFrame, DataFrameReader, SparkSession, sources}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 
 class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
@@ -124,6 +124,20 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
 }
 
 object Spark {
+  /** Instance Variables **/
+  private var parallelism: Int = _
+  private var cache: SparkCache = _
+  private var viewProvider: DataFrameReader = _
+  private var sparkStorage: SparkStorage = _
+  private var broadcastedTimeSeriesTransformationCache: Broadcast[Array[ValueFunction]] = _
+  private val storageSegmentGroupsSchema: StructType = StructType(Seq(
+    StructField("gid", IntegerType, nullable = false),
+    StructField("start_time", TimestampType, nullable = false),
+    StructField("end_time", TimestampType, nullable = false),
+    StructField("mtid", IntegerType, nullable = false),
+    StructField("model", BinaryType, nullable = false),
+    StructField("gaps", BinaryType, nullable = false)))
+
   /** Constructors **/
   def initialize(spark: SparkSession, configuration: Configuration, sparkStorage: SparkStorage, newGids: Range): Unit = {
     this.parallelism = spark.sparkContext.defaultParallelism
@@ -139,9 +153,10 @@ object Spark {
   def getViewProvider: DataFrameReader = Spark.viewProvider
   def getSparkStorage: SparkStorage = Spark.sparkStorage
   def getBroadcastedTimeSeriesTransformationCache: Broadcast[Array[ValueFunction]] = Spark.broadcastedTimeSeriesTransformationCache
+  def getStorageSegmentGroupsSchema: StructType = this.storageSegmentGroupsSchema
   def isDataSetSmall(rows: RDD[_]): Boolean = rows.partitions.length <= parallelism
 
-  def filtersToSQLPredicates(filters: Array[Filter]): String = {
+  def applyFiltersToDataFrame(df: DataFrame, filters: Array[Filter]): DataFrame = {
     //All filters must be parsed as a set of conjunctions as Apache Spark SQL represents OR as a separate case class
     val predicates = mutable.ArrayBuffer[String]()
     for (filter: Filter <- filters) {
@@ -169,22 +184,12 @@ object Spark {
         case p => Static.warn("ModelarDB: unsupported predicate " + p, 120)
       }
     }
-    predicates.mkString(" AND ")
+    val predicate = predicates.mkString(" AND ")
+    Static.info(s"ModelarDB: constructed predicates ($predicate)", 120)
+    if (predicate.isEmpty) {
+      df
+    } else {
+      df.where(predicate)
+    }
   }
-
-  //The schema of the segment files are not places in FileStorage to allow H2 to use FileStorage without Apache Spark
-  val segmentFileSchema: StructType = StructType(Seq(
-    StructField("gid", IntegerType, nullable = false),
-    StructField("start_time", TimestampType, nullable = false),
-    StructField("end_time", TimestampType, nullable = false),
-    StructField("mtid", IntegerType, nullable = false),
-    StructField("model", BinaryType, nullable = false),
-    StructField("gaps", BinaryType, nullable = false)))
-
-  /** Instance Variables **/
-  private var parallelism: Int = _
-  private var cache: SparkCache = _
-  private var viewProvider: DataFrameReader = _
-  private var sparkStorage: SparkStorage = _
-  private var broadcastedTimeSeriesTransformationCache: Broadcast[Array[ValueFunction]] = _
 }

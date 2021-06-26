@@ -15,12 +15,11 @@
 package dk.aau.modelardb.engines.spark
 
 import dk.aau.modelardb.core.{Dimensions, Storage}
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 trait SparkStorage extends Storage {
   def open(ssb: SparkSession.Builder, dimensions: Dimensions): SparkSession
-  def storeSegmentGroups(sparkSession: SparkSession, rdd: RDD[Row]): Unit
-  def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): RDD[Row]
+  def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit
+  def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame
 }
