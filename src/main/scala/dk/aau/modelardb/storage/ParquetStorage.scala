@@ -31,6 +31,7 @@ import org.apache.parquet.hadoop.{ParquetFileReader, ParquetWriter}
 import org.apache.parquet.io.api.Binary
 import org.apache.parquet.io.{ColumnIOFactory, MessageColumnIO, RecordReader}
 import org.apache.parquet.schema.{MessageType, PrimitiveType, Type}
+import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 import org.h2.table.TableFilter
@@ -39,41 +40,40 @@ import java.io.FileNotFoundException
 import java.util
 import scala.collection.JavaConverters._
 
-//TODO: determine if using required fields and many rows, or repeated fields and few rows are better?
 class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   /** Instance Variables **/
   private val segmentSchema = new MessageType("segment",
-    new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.INT32, "gid" ),
-    new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.INT64, "start_time"),
-    new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.INT64, "end_time"),
-    new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.INT32, "mtid" ),
-    new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.BINARY, "model"),
-    new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.BINARY, "gaps"))
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "gid" ),
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT64, "start_time"),
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT64, "end_time"),
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "mtid" ),
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "model"),
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "gaps"))
 
   /** Public Methods **/
   //Storage
   def storeTimeSeries(timeSeriesGroups: Array[dk.aau.modelardb.core.TimeSeriesGroup]): Unit = {
     val columns = new util.ArrayList[Type]()
-    columns.add(new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.INT32, "tid"))
-    columns.add(new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.FLOAT, "scaling_factor"))
-    columns.add(new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.INT32, "sampling_interval"))
-    columns.add(new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.INT32, "gid"))
+    columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "tid"))
+    columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.FLOAT, "scaling_factor"))
+    columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "sampling_interval"))
+    columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "gid"))
 
     val dimensionTypes = dimensions.getTypes
     for (dimi <- dimensions.getColumns.zipWithIndex) {
       dimensionTypes(dimi._2) match {
-        case Dimensions.Types.TEXT => columns.add(new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.BINARY, dimi._1))
-        case Dimensions.Types.INT => columns.add(new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.INT32, dimi._1))
-        case Dimensions.Types.LONG => columns.add(new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.INT64, dimi._1))
-        case Dimensions.Types.FLOAT => columns.add(new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.FLOAT, dimi._1))
-        case Dimensions.Types.DOUBLE => columns.add(new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.DOUBLE, dimi._1))
+        case Dimensions.Types.TEXT => columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, dimi._1))
+        case Dimensions.Types.INT => columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, dimi._1))
+        case Dimensions.Types.LONG => columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT64, dimi._1))
+        case Dimensions.Types.FLOAT => columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.FLOAT, dimi._1))
+        case Dimensions.Types.DOUBLE => columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.DOUBLE, dimi._1))
       }
     }
     val schema = new MessageType("time_series", columns)
     val writer = getWriter(new Path(this.rootFolder + "/time_series.parquet_new"), schema)
-    val group = new SimpleGroup(schema)
     for (tsg <- timeSeriesGroups) {
       for (ts <- tsg.getTimeSeries) {
+        val group = new SimpleGroup(schema)
         group.add(0, ts.tid)
         group.add(1, ts.scalingFactor)
         group.add(2, ts.samplingInterval)
@@ -87,9 +87,9 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
             case Dimensions.Types.DOUBLE => group.add(4 + mi._2, mi._1.asInstanceOf[Double])
           }
         }
+        writer.write(group)
       }
     }
-    writer.write(group)
     writer.close()
     merge("time_series.parquet", "time_series.parquet", "time_series.parquet_new")
   }
@@ -111,27 +111,25 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
       for (_ <- 0 until pages.getRowCount.toInt) {
         //The metadata is stored as (Sid => Scaling, Resolution, Gid, Dimensions)
         val group = recordReader.read()
-        for (index  <- 0 until group.getFieldRepetitionCount(0)) {
-          val metadata = new util.ArrayList[Object]()
-          metadata.add(group.getFloat(1, index).asInstanceOf[Object])
-          metadata.add(group.getInteger(2, index).asInstanceOf[Object])
-          metadata.add(group.getInteger(3, index).asInstanceOf[Object])
+        val metadata = new util.ArrayList[Object]()
+        metadata.add(group.getFloat(1, 0).asInstanceOf[Object])
+        metadata.add(group.getInteger(2, 0).asInstanceOf[Object])
+        metadata.add(group.getInteger(3, 0).asInstanceOf[Object])
 
-          //Dimensions
-          var column = 4
-          val dimensionTypes = dimensions.getTypes
-          while (column < columnsInNormalizedDimensions + 4) {
-            dimensionTypes(column - 4) match {
-              case Dimensions.Types.TEXT => metadata.add(group.getString(column, index))
-              case Dimensions.Types.INT => metadata.add(group.getInteger(column, index).asInstanceOf[Object])
-              case Dimensions.Types.LONG => metadata.add(group.getLong(column, index).asInstanceOf[Object])
-              case Dimensions.Types.FLOAT => metadata.add(group.getFloat(column, index).asInstanceOf[Object])
-              case Dimensions.Types.DOUBLE => metadata.add(group.getDouble(column, index).asInstanceOf[Object])
-            }
-            column += 1
+        //Dimensions
+        var column = 4
+        val dimensionTypes = dimensions.getTypes
+        while (column < columnsInNormalizedDimensions + 4) {
+          dimensionTypes(column - 4) match {
+            case Dimensions.Types.TEXT => metadata.add(group.getString(column, 0))
+            case Dimensions.Types.INT => metadata.add(group.getInteger(column, 0).asInstanceOf[Object])
+            case Dimensions.Types.LONG => metadata.add(group.getLong(column, 0).asInstanceOf[Object])
+            case Dimensions.Types.FLOAT => metadata.add(group.getFloat(column, 0).asInstanceOf[Object])
+            case Dimensions.Types.DOUBLE => metadata.add(group.getDouble(column, 0).asInstanceOf[Object])
           }
-          timeSeriesInStorage.put(group.getInteger(0, index), metadata.toArray)
+          column += 1
         }
+        timeSeriesInStorage.put(group.getInteger(0, 0), metadata.toArray)
       }
       pages = timeSeries.readNextRowGroup()
     }
@@ -141,16 +139,16 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
 
   override def storeModelTypes(modelsToInsert: java.util.HashMap[String,Integer]): Unit = {
     val schema = new MessageType("model_type",
-      new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.INT32, "mid"),
-      new PrimitiveType(Type.Repetition.REPEATED, PrimitiveType.PrimitiveTypeName.BINARY, "name"))
+      new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "mid"),
+      new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "name"))
 
     val writer = getWriter(new Path(this.rootFolder + "/model_type.parquet_new"), schema)
-    val group = new SimpleGroup(schema)
     for ((k, v) <- modelsToInsert.asScala) {
+      val group = new SimpleGroup(schema)
       group.add(0, v.intValue())
       group.add(1, k)
+      writer.write(group)
     }
-    writer.write(group)
     writer.close()
     merge("model_type.parquet", "model_type.parquet", "model_type.parquet_new")
   }
@@ -170,11 +168,9 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
       val recordReader = columnIO.getRecordReader(pages, new GroupRecordConverter(schema))
       for (_ <- 0 until pages.getRowCount.toInt) {
         val group = recordReader.read()
-        for (index  <- 0 until group.getFieldRepetitionCount(0)) {
-          val mid = group.getInteger(0, index)
-          val name = group.getString(1, index)
-          modelsInStorage.put(name, mid)
-        }
+        val mid = group.getInteger(0, 0)
+        val name = group.getString(1, 0)
+        modelsInStorage.put(name, mid)
       }
       pages = modelTypes.readNextRowGroup()
     }
@@ -185,16 +181,16 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   //H2Storage
   override def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
     val writer = getWriter(new Path(getSegmentPartPath(".parquet")), this.segmentSchema)
-    val group = new SimpleGroup(this.segmentSchema)
     for (segmentGroup <- segmentGroups.take(size)) {
+      val group = new SimpleGroup(this.segmentSchema)
       group.add(0, segmentGroup.gid)
       group.add(1, segmentGroup.startTime)
       group.add(2, segmentGroup.endTime)
       group.add(3, segmentGroup.mtid)
       group.add(4, Binary.fromConstantByteArray(segmentGroup.model))
       group.add(5, Binary.fromConstantByteArray(segmentGroup.offsets))
+      writer.write(group)
     }
-    writer.write(group)
     writer.close()
 
     if (shouldMerge()) {
@@ -285,6 +281,8 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
 
   override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame = {
     Spark.applyFiltersToDataFrame(sparkSession.read.parquet(this.rootFolder + "/segment"), filters)
+      .withColumn("start_time", (col("start_time") / 1000L).cast("timestamp"))
+      .withColumn("end_time", (col("end_time") / 1000L).cast("timestamp"))
   }
 
   /** Protected Methods **/
@@ -302,9 +300,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
       val recordReader = columnIO.getRecordReader(pages, new GroupRecordConverter(schema))
       for (_ <- 0 until pages.getRowCount.toInt) {
         val simpleGroup = recordReader.read.asInstanceOf[SimpleGroup]
-        for (index  <- 0 until simpleGroup.getFieldRepetitionCount(0)) {
-          id = Math.max(id, simpleGroup.getInteger(fieldIndex, index))
-        }
+        id = Math.max(id, simpleGroup.getInteger(fieldIndex, 0))
       }
       pages = reader.readNextRowGroup()
     }
