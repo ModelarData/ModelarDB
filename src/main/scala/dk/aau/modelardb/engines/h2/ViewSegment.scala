@@ -1,3 +1,17 @@
+/* Copyright 2021 The ModelarDB Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package dk.aau.modelardb.engines.h2
 
 import dk.aau.modelardb.core.SegmentGroup
@@ -9,16 +23,13 @@ import org.h2.index.{Cursor, Index, IndexLookupBatch, IndexType}
 import org.h2.result.{Row, SearchRow, SortOrder}
 import org.h2.schema.Schema
 import org.h2.table._
-import org.h2.value.{Value, ValueBytes, ValueInt, ValueString, ValueTimestamp}
 
 import java.{lang, util}
 
-//Documentation: https://www.h2database.com/html/features.html#pluggable_tables
 class ViewSegment extends TableEngine {
   override def createTable(data: CreateTableData): Table = new ViewSegmentTable(data)
 }
 
-//Documentation: https://www.h2database.com/html/features.html#pluggable_tables
 class ViewSegmentTable(data: CreateTableData) extends TableBase(data) {
   override def lock(session: Session, exclusive: Boolean, forceLockEvenInMvcc: Boolean): Boolean = false
 
@@ -168,43 +179,20 @@ class ViewSegmentIndex(table: Table) extends Index {
 class ViewSegmentCursor(filter: TableFilter) extends Cursor {
 
   /** Instance Variables **/
-  private val dimensionsCache = H2.h2storage.dimensionsCache
-  private val groupMetadataCache = H2.h2storage.groupMetadataCache
-  private val segments: Iterator[SegmentGroup] = (H2.h2storage.getSegmentGroups(filter) ++ H2.h2.getInMemorySegmentGroups())
-    .flatMap(_.explode(this.groupMetadataCache, H2.h2storage.groupDerivedCache))
-  private val currentRow = new Array[Value](if (this.dimensionsCache.length == 1) 7 else 7 + this.dimensionsCache(1).length) //0 is null
+  private val segments: Iterator[SegmentGroup] = H2.h2.getSegmentGroups(filter)
+    .flatMap(_.explode(H2.h2storage.groupMetadataCache, H2.h2storage.groupDerivedCache))
+  private val values = H2Projector.segmentProjection(segments, filter)
   private val currentViewRow = new ViewRow()
 
   /** Public Methods **/
   override def get(): Row = ???
 
   override def getSearchRow: SearchRow = {
-    this.currentViewRow.setValueList(this.currentRow)
+    this.currentViewRow.setValueList(this.values.next())
     this.currentViewRow
   }
 
-  override def next(): Boolean = {
-    if (this.segments.hasNext) {
-      val segment = this.segments.next()
-      this.currentRow(0) = ValueInt.get(segment.gid) //HACK: exploded so it is a tid
-      this.currentRow(1) = ValueTimestamp.fromMillis(segment.startTime, 0)
-      this.currentRow(2) = ValueTimestamp.fromMillis(segment.endTime, 0)
-      this.currentRow(3) = ValueInt.get(this.groupMetadataCache(segment.gid)(0))
-      this.currentRow(4) = ValueInt.get(segment.mtid)
-      this.currentRow(5) = ValueBytes.get(segment.model)
-      this.currentRow(6) = ValueBytes.get(segment.offsets)
-
-      //TODO: determine if foreach or indexes are faster and generate a method that add the members without assuming they are strings
-      var index = 7
-      for (member <- this.dimensionsCache(segment.gid)) { //HACK: exploded so it is a tid
-        this.currentRow(index) = ValueString.get(member.asInstanceOf[String])
-        index += 1
-      }
-      true
-    } else {
-      false
-    }
-  }
+  override def next(): Boolean = this.segments.hasNext
 
   override def previous(): Boolean = false
 }

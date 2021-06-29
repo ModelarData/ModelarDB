@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -70,11 +70,13 @@ public class SegmentGenerator {
     }
 
     /** Package Methods **/
-    void consumeAllDataPoints() {
+    boolean consumeAllDataPoints() {
+        boolean consumedDataPoints = false;
         while (this.timeSeriesGroup.hasNext()) {
             //Ingests data points until a split occurs or no more data points are available
             while (this.splitSegmentGenerators.isEmpty() && this.timeSeriesGroup.hasNext()) {
                 consumeDataPoints(this.timeSeriesGroup.next(), this.timeSeriesGroup.getActiveTimeSeries());
+                consumedDataPoints = true;
             }
 
             //Ingests data points for all splits until they are all joined or no more data points are available
@@ -87,12 +89,18 @@ public class SegmentGenerator {
                     if (sg.timeSeriesGroup.hasNext()) {
                         splitSegmentGeneratorHasNext = true;
                         sg.consumeDataPoints(sg.timeSeriesGroup.next(), sg.timeSeriesGroup.getActiveTimeSeries());
+                        consumedDataPoints = true;
                     }
                 }
                 this.splitSegmentGenerators.removeAll(Collections.singleton(null));
                 joinGroupsIfTheirTimeSeriesAreCorrelated();
             }
         }
+        return consumedDataPoints;
+    }
+
+    TimeSeriesGroup getTimeSeriesGroup() {
+        return this.timeSeriesGroup;
     }
 
     void close() {

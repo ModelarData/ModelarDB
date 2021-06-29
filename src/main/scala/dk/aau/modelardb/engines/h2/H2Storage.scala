@@ -1,4 +1,4 @@
-/* Copyright 2018-2021 Aalborg University
+/* Copyright 2021 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
  */
 package dk.aau.modelardb.engines.h2
 
-import org.h2.table.TableFilter
 import dk.aau.modelardb.core.{SegmentGroup, Storage}
+import org.h2.table.TableFilter
 
 trait H2Storage extends Storage {
   def storeSegmentGroups(segments: Array[SegmentGroup], length: Int): Unit

@@ -19,11 +19,10 @@ libraryDependencies ++= Seq(
 
   /* Storage Layer */
   //H2 is a full RDBMS with both a query engine and a storage layer
-  "com.datastax.spark" %% "spark-cassandra-connector" % "3.0.1",
+  "com.datastax.spark" %% "spark-cassandra-connector" % "3.0.1" % "provided", //Requires Spark
   "org.apache.hadoop" % "hadoop-client" % "3.2.0", //Same as Apache Spark
   "org.apache.parquet" % "parquet-hadoop" % "1.10.1", //Same as Apache Spark
   "org.apache.orc" % "orc-core" % "1.5.12", //Same as Apache Spark
-  "org.xerial" % "sqlite-jdbc" % "3.34.0",
 
   /* Logging and Config */
   "ch.qos.logback" % "logback-classic" % "1.2.3",
@@ -42,8 +41,8 @@ libraryDependencies ++= Seq(
   "org.eclipse.milo" % "sdk-client" % "0.6.1",
 
   /* Testing */
-  "org.scalatest" %% "scalatest" % "3.2.5" % Test,
-  "org.scalacheck" %% "scalacheck" % "1.14.1" % Test,
+  "org.scalatest" %% "scalatest" % "3.2.9" % Test,
+  "org.scalacheck" %% "scalacheck" % "1.15.4" % Test,
   "org.scalamock" %% "scalamock" % "5.1.0" % Test
 )
 
@@ -52,6 +51,9 @@ Compile / run := Defaults.runTask(
   Compile / fullClasspath,
   Compile / run / mainClass,
   Compile / run / runner).evaluated
+
+/* Make SBT fork for all tasks so the JDBC is always available */
+fork := true
 
 /* Disables log buffering when running tests for nicer output */
 Test / logBuffered := false
@@ -87,7 +89,6 @@ credentials +=
 Credentials(
   "GitHub Package Registry",
   "maven.pkg.github.com",
-  "_", // The username is ignored when a GITHUB_TOKEN is used for login
+  "_", // The username is ignored when using a GITHUB_TOKEN is used for login
   sys.env.getOrElse("GITHUB_TOKEN", "") // getOrElse allows SBT to always run
 )
-

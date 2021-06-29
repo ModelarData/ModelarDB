@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -126,7 +126,15 @@ public class TimeSeriesGroup implements Serializable {
         return this.timeSeries;
     }
 
-    public String getSource() {
+    public String getTids() {
+        StringJoiner sj = new StringJoiner(",", "{", "}");
+        for (TimeSeries ts : this.timeSeries) {
+            sj.add(Integer.toString(ts.tid));
+        }
+        return sj.toString();
+    }
+
+    public String getSources() {
         StringJoiner sj = new StringJoiner(",", "{", "}");
         for (TimeSeries ts : this.timeSeries) {
             sj.add(ts.source);

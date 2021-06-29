@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,6 @@
  */
 package dk.aau.modelardb.storage
 
-import java.math.BigInteger
-import java.nio.ByteBuffer
-import java.sql.Timestamp
-import java.time.Instant
-import java.util
-import scala.collection.JavaConverters._
 import com.datastax.oss.driver.api.core.cql.{BatchStatement, BatchType, PreparedStatement, SimpleStatement}
 import com.datastax.spark.connector._
 import com.datastax.spark.connector.cql.CassandraConnector
@@ -27,12 +21,19 @@ import com.datastax.spark.connector.rdd.CassandraTableScanRDD
 import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
 import dk.aau.modelardb.core.{Dimensions, SegmentGroup, Storage, TimeSeriesGroup}
 import dk.aau.modelardb.engines.h2.{H2, H2Storage}
-import org.h2.table.TableFilter
 import dk.aau.modelardb.engines.spark.{Spark, SparkStorage}
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{Row, SparkSession, sources}
+import org.h2.table.TableFilter
+
+import java.math.BigInteger
+import java.nio.ByteBuffer
+import java.sql.Timestamp
+import java.time.Instant
+import java.util
+import scala.collection.JavaConverters._
 
 class CassandraStorage(connectionString: String) extends Storage with H2Storage with SparkStorage {
 
@@ -130,11 +131,11 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     this.currentMaxGid = getMaxGid()
   }
 
-  override def getMaxTid(): Int = {
+  override def getMaxTid: Int = {
     getMaxID(s"SELECT DISTINCT tid FROM ${this.keyspace}.time_series")
   }
 
-  override def getMaxGid(): Int = {
+  override def getMaxGid: Int = {
     getMaxID(s"SELECT gid FROM ${this.keyspace}.time_series")
   }
 
@@ -176,8 +177,8 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
   }
 
   def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
-    val predicates = H2.expressionToSQLPredicates(filter.getSelect.getCondition(),
-      this.timeSeriesGroupCache, this.inverseDimensionsCache, true).strip()
+    val predicates = H2.expressionToSQLPredicates(filter.getSelect.getCondition,
+      this.timeSeriesGroupCache, this.memberTimeSeriesCache, supportsOr = false)
     val session = this.connector.openSession()
     val results = if (predicates.isEmpty) {
       session.execute(s"SELECT * FROM ${this.keyspace}.segment").iterator()
@@ -230,8 +231,8 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
       val gaps = Static.gapsToBits(row.getAs[Array[Byte]](5), gmdc(gid))
       val ts = row.getTimestamp(1).getTime
       val te = row.getTimestamp(2).getTime
-      val res = gmdc(gid)(0)
-      val size = (te - ts) / res
+      val si = gmdc(gid)(0)
+      val size = (te - ts) / si
 
       (gid, gaps, size, te, row.getInt(3), row.getAs[Array[Byte]](4))
     }).saveToCassandra(this.keyspace, "segment", SomeColumns("gid", "gaps", "size", "end_time", "mtid", "model"))
@@ -239,7 +240,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
 
   override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): RDD[Row] = {
     //The function mapping from Cassandra to Spark rows must be stored in a local variable to not serialize the object
-    val rowsToRows = getRowsToRows()
+    val rowsToRows = getRowsToRows
     val rdd = sparkSession.sparkContext.cassandraTable(this.keyspace, "segment")
 
     //Constructs a CQL WHERE clause and the maximum start time Apache Spark should read rows until
@@ -290,7 +291,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.model_type(mtid VARINT, name TEXT, PRIMARY KEY (mtid));")
     session.execute(createTable)
 
-    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.time_series(tid VARINT, scaling_factor FLOAT, sampling_interval VARINT, gid VARINT ${dimensions.getSchema("TEXT")}, PRIMARY KEY (tid));")
+    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.time_series(tid VARINT, scaling_factor FLOAT, sampling_interval VARINT, gid VARINT${getDimensionsSQL(dimensions, "TEXT")}, PRIMARY KEY (tid));")
     session.execute(createTable)
 
     //The insert statement will be used for every batch of segments
@@ -383,7 +384,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
       })
   }
 
-  private def getRowsToRows(): CassandraRow => Row = {
+  private def getRowsToRows: CassandraRow => Row = {
     val gmdc = this.groupMetadataCache
 
     //Converts the Cassandra rows to Spark rows and reconstructs start_time from length

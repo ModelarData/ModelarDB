@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import dk.aau.modelardb.core.models.ModelTypeFactory;
 import dk.aau.modelardb.core.timeseries.TimeSeries;
 import dk.aau.modelardb.core.utility.Logger;
 import dk.aau.modelardb.core.utility.SegmentFunction;
-import dk.aau.modelardb.core.utility.Static;
 
 import java.io.IOException;
 import java.io.Serializable;
@@ -28,7 +27,6 @@ import java.nio.channels.Selector;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
-import java.util.StringJoiner;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -50,12 +48,12 @@ public class WorkingSet implements Serializable {
 
     /** Public Methods **/
     public void process(SegmentFunction consumeTemporarySegment, SegmentFunction consumeFinalizedSegment,
-                        BooleanSupplier haveExcutionBeenTerminated) throws IOException {
+                        BooleanSupplier haveExecutionBeenTerminated) throws IOException {
         //DEBUG: initializes the timer stored in the logger
         this.logger.getTimeSpan();
         this.consumeTemporarySegment = consumeTemporarySegment;
         this.consumeFinalizedSegment = consumeFinalizedSegment;
-        this.haveExecutionBeenTerminated = haveExcutionBeenTerminated;
+        this.haveExecutionBeenTerminated = haveExecutionBeenTerminated;
 
         processBounded();
         processUnbounded();
@@ -67,20 +65,32 @@ public class WorkingSet implements Serializable {
     }
 
     public String toString() {
-        return "=========================================================================================================================\n" +
-                "Working Set [Current Gid: " +
-                this.timeSeriesGroups[this.currentTimeSeriesGroup].gid +
-                " | Total TSGs: " +
-                this.timeSeriesGroups.length +
-                " | Current TSG: " +
-                (this.currentTimeSeriesGroup + 1) +
-                " | Error Bound: " +
-                this.errorBound +
-                " | Length Bound: " +
-                this.lengthBound +
-                " | Maximum Latency: " +
-                this.maximumLatency +
-                "\n=========================================================================================================================";
+        String body = "Working Set [Current Gid: " + this.timeSeriesGroups[this.currentTimeSeriesGroup].gid +
+                " | Total TSGs: " + this.timeSeriesGroups.length +
+                " | Current TSG: " + (this.currentTimeSeriesGroup + 1) + //Parentheses makes the + add instead of concat
+                " | Error Bound: " + this.errorBound +
+                " | Length Bound: " + this.lengthBound +
+                " | Maximum Latency: " + this.maximumLatency;
+        String headerFooter = "=".repeat(body.length());
+        return headerFooter + "\n" + body + "\n" + headerFooter;
+    }
+
+    public static String toString(WorkingSet[] workingSets) {
+        String[] bodies = Arrays.stream(workingSets).map(ws ->
+                "Working Set [Current Gid: " + ws.timeSeriesGroups[ws.currentTimeSeriesGroup].gid +
+                        " | Total TSGs: " + ws.timeSeriesGroups.length +
+                        " | Current TSG: " + (ws.currentTimeSeriesGroup + 1) + //Parentheses makes the + add instead of concat
+                        " | Error Bound: " + ws.errorBound +
+                        " | Length Bound: " + ws.lengthBound +
+                        " | Maximum Latency: " + ws.maximumLatency).toArray(String[]::new);
+        int longestLine = Arrays.stream(bodies).mapToInt(String::length).max().getAsInt(); //workingSets is never empty
+        String headerFooter = "=".repeat(longestLine);
+        StringBuilder body = new StringBuilder();
+        for (String line : bodies) {
+            body.append(line);
+            body.append('\n');
+        }
+        return headerFooter + "\n" + body + headerFooter;
     }
 
     /** Private Methods **/
@@ -91,11 +101,10 @@ public class WorkingSet implements Serializable {
             if (this.haveExecutionBeenTerminated.getAsBoolean()) {
                 return;
             }
-
             SegmentGenerator sg = getNextSegmentGenerator();
             sg.consumeAllDataPoints();
             sg.close();
-            sg.logger.printGeneratorResult();
+            sg.logger.printGeneratorResult(sg.getTimeSeriesGroup());
             this.logger.add(sg.logger);
         }
     }
@@ -136,14 +145,13 @@ public class WorkingSet implements Serializable {
                     throw new IOException("CORE: non-readable channel selected");
                 }
 
-                //Processes the data points using the segment generator and closes the channel if an error occur
+                //Ingests the data points using the segment generator and closes the channels if it no longer provides data
                 SegmentGenerator sg = (SegmentGenerator) key.attachment();
-                try {
-                    sg.consumeAllDataPoints();
-                } catch (RuntimeException re) {
+                if ( ! sg.consumeAllDataPoints()) {
                     sg.close();
-                    sg.logger.printGeneratorResult();
+                    sg.logger.printGeneratorResult(sg.getTimeSeriesGroup());
                     this.logger.add(sg.logger);
+                    key.cancel();
                     unboundedChannelsRegistered--;
                 }
 
@@ -170,25 +178,8 @@ public class WorkingSet implements Serializable {
         if (this.dynamicSplitFraction != 0.0F) {
             tids = Arrays.stream(tsg.getTimeSeries()).map(ts -> ts.tid).collect(Collectors.toList());
         }
-
-        //The source the data is ingested from is printed before ingestion is done to simplify debugging deadlocks
-        if (this.currentTimeSeriesGroup > 1) {
-            System.out.println("---------------------------------------------------------");
-        }
-        System.out.println("Gid: " + tsg.gid);
-        System.out.println("Tids: " + getTids(tsg));
-        System.out.println("Sources: " + tsg.getSource());
-        System.out.println("Ingested: " + Static.getIPs());
         return new SegmentGenerator(tsg, modelTypeInitializer, fallbackModelType, tids, this.maximumLatency,
                 this.dynamicSplitFraction, this.consumeTemporarySegment, this.consumeFinalizedSegment);
-    }
-
-    private String getTids(TimeSeriesGroup timeSeriesGroup) {
-        StringJoiner sj = new StringJoiner(",", "{", "}");
-        for (TimeSeries ts : timeSeriesGroup.getTimeSeries()) {
-            sj.add(Integer.toString(ts.tid));
-        }
-        return sj.toString();
     }
 
     /** Instance Variables **/

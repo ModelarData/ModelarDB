@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,36 +99,6 @@ public class Dimensions {
         return this.types;
     }
 
-    public String getSchema(String textType) {
-        //TODO: should getSchema should be in the storage backends so each can use the syntax and types it prefers?
-        if (this.types.length == 0) {
-            return "";
-        }
-
-        //The schema is build with a starting comma so it is easy to embed into a CREATE table statement
-        StringBuilder sb = new StringBuilder();
-        sb.append(", ");
-        int withPunctuation = this.columns.length - 1;
-        for (int i = 0; i <  withPunctuation; i++) {
-            sb.append(this.columns[i]);
-            sb.append(' ');
-            if (this.types[i] == Types.TEXT) {
-                sb.append(textType);
-            } else {
-                sb.append(this.types[i].toString());
-            }
-            sb.append(", ");
-        }
-        sb.append(this.columns[withPunctuation]);
-        sb.append(' ');
-        if (this.types[withPunctuation] == Types.TEXT) {
-            sb.append(textType);
-        } else {
-            sb.append(this.types[withPunctuation].toString());
-        }
-        return sb.toString();
-    }
-
     public float getLowestNoneZeroDistance() {
         if (this.names.length == 0) {
             throw new IllegalArgumentException("CORE: grouping by dimensions requires a dimensions file");
@@ -205,7 +175,7 @@ public class Dimensions {
             }
         }
         catch (NumberFormatException nfe){
-            throw new IllegalArgumentException("CORE: \"" + member+ "\" is not a \"" + this.types[index] + "\"");
+            throw new IllegalArgumentException("CORE: \"" + member+ "\" is not a \"" + this.types[index] + "\"", nfe);
         }
     }
 
@@ -293,7 +263,7 @@ public class Dimensions {
                 }
             }
             catch (NumberFormatException nfe){
-                throw new IllegalArgumentException("CORE: \"" + line + "\" is not a \"" + this.types[i] + "\"");
+                throw new IllegalArgumentException("CORE: \"" + line + "\" is not a \"" + this.types[i] + "\"", nfe);
             }
         }
         return parsed;

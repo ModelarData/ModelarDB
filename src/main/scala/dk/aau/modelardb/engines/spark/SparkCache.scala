@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,6 @@
  */
 package dk.aau.modelardb.engines.spark
 
-import java.sql.Timestamp
-import java.util.concurrent.locks.ReentrantReadWriteLock
-
 import dk.aau.modelardb.core.utility.Static
 import edu.berkeley.cs.amplab.spark.indexedrdd.IndexedRDD
 import edu.berkeley.cs.amplab.spark.indexedrdd.IndexedRDD.intSet
@@ -24,7 +21,23 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{Row, SparkSession}
 
+import java.sql.Timestamp
+import java.util.concurrent.locks.ReentrantReadWriteLock
+
 class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
+
+  /** Instance Variables **/
+  private var checkpointCounter = 10
+  private val emptyRDD = spark.sparkContext.emptyRDD[Row]
+  private val cacheLock = new ReentrantReadWriteLock()
+  private var lastFlush = 0
+
+  private var storageCacheKey: Array[Filter] = Array(null)
+  private var storageCacheRDD = this.emptyRDD
+
+  private var temporaryRDD: IndexedRDD[Int, Array[Row]] = getIndexedRDD
+  private var finalizedRDD = this.emptyRDD
+  private var ingestedRDD = this.emptyRDD
 
   /** Public Methods **/
   def update(microBatch: RDD[Row]): Unit = {
@@ -33,7 +46,7 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
     //Updates the cache of temporary segments (they are marked as false in column seven)
     this.temporaryRDD = this.temporaryRDD.multiputRDD(
       microBatch.map(row => (row.getInt(0), Array(row))),
-      (_, r1: Array[Row], r2: Array[Row]) => updateTemporarySegment(r1, r2))
+      (_, r1: Array[Row], r2: Array[Row]) => SparkCache.updateTemporarySegment(r1, r2))
 
     //Flushes the ingested finalized segments to disk if the user-configurable batch size is reached
     this.finalizedRDD = spark.sparkContext.union(this.finalizedRDD, microBatch.filter(_.getBoolean(6)))
@@ -118,7 +131,7 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
     Spark.getSparkStorage.getSegmentGroups(spark, filters)
   }
 
-  private def getIndexedRDD(): IndexedRDD[Int, Array[Row]] = {
+  private def getIndexedRDD: IndexedRDD[Int, Array[Row]] = {
     //The IndexedRDD is populated with empty arrays for each new gid so that the merge function is always executed
     val initialData: Array[(Int, Array[Row])] = if (newGids.isEmpty) {
       Array()
@@ -141,7 +154,14 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
       indexedRDD.persist()
     }
   }
+}
 
+object SparkCache {
+
+  /** Instance Variables **/
+  private val groupMetadataCache = Spark.getSparkStorage.groupMetadataCache
+
+  /** Private Methods **/
   private def updateTemporarySegment(buffer: Array[Row], input: Array[Row]): Array[Row] = {
     //The gaps are extracted from the new finalized or temporary segment
     val inputRow = input(0)
@@ -184,22 +204,9 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
       //A split has occurred and multiple segments now represent what one did before, so the new ones are appended
       buffer.filter(_ != null) ++ input
     } else {
-      //A join have occurred and one segment now represent what two did before, so duplicates must be removed
+      //If temporary segment have been deleted, e.g., because a join have occurred and one segment now represents
+      // what two did before, null values and possible duplicate temporary segments must be removed from the cache
       buffer.filter(_ != null).distinct
     }
   }
-
-  /** Instance Variables **/
-  private var checkpointCounter = 10
-  private val emptyRDD = spark.sparkContext.emptyRDD[Row]
-  private val groupMetadataCache = Spark.getSparkStorage.groupMetadataCache
-  private val cacheLock = new ReentrantReadWriteLock()
-  private var lastFlush = 0
-
-  private var storageCacheKey: Array[Filter] = Array(null)
-  private var storageCacheRDD = this.emptyRDD
-
-  private var temporaryRDD: IndexedRDD[Int, Array[Row]] = getIndexedRDD()
-  private var finalizedRDD = this.emptyRDD
-  private var ingestedRDD = this.emptyRDD
 }

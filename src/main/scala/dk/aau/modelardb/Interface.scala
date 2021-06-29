@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,11 @@ import org.apache.arrow.vector.VectorSchemaRoot
 import org.apache.arrow.vector.ipc.ArrowStreamWriter
 
 import java.io.OutputStream
+import java.nio.charset.StandardCharsets
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.{Files, Paths}
+import java.nio.file.{Files, Paths}
+import java.util.concurrent.{Executor, Executors}
 import scala.io.Source
 import scala.io.StdIn.readLine
 
@@ -31,7 +34,7 @@ object Interface {
 
   /** Instance Variables **/
   var queryEngine: QueryEngine = _
-
+  val executor = Executors.newCachedThreadPool()
   var humanFriendly = false
 
   /** Public Methods **/
@@ -39,8 +42,8 @@ object Interface {
     humanFriendly = config.modelarDb.human
     this.queryEngine = queryEngine
     config.modelarDb.interface.toLowerCase match {
-      case "socket" => socket()
-      case "http" => http()
+      case "socket" => socket(executor)
+      case "http" => http(executor)
       case "repl" => repl(config.modelarDb.storage)
       case path if Files.exists(Paths.get(path)) => file(path)
       case _ => throw new java.lang.UnsupportedOperationException("unknown value for modelardb.interface in the config file")
@@ -48,41 +51,51 @@ object Interface {
   }
 
   /** Private Methods **/
-  private def socket(): Unit = {
+  private def socket(executor: Executor): Unit = {
     //Setup
-    Static.info("ModelarDB: preparing socket end-point (Port: 9999)")
     val serverSocket = new java.net.ServerSocket(9999)
-    val clientSocket = serverSocket.accept()
-    val in = new java.io.BufferedReader(new java.io.InputStreamReader(clientSocket.getInputStream))
-    val out = clientSocket.getOutputStream
 
-    //Query
-    Static.info("ModelarDB: the socket is ready to receive queries (Port: 9999)")
     while (true) {
-      val query = in.readLine().trim() // TODO: Handle ctrl-c (as of now it throws NPE because readLine becomes null
-      if (query == ":quit") {
-        Static.info("ModelarDB: received termination command, shutdown imminent")
-        cleanUp()
-        return
-      } else if (query.nonEmpty) {
-        execute(query, out)
-        out.flush()
-      }
+      Static.info("ModelarDB: socket end-point is ready (Port: 9999)")
+      val clientSocket = serverSocket.accept()
+      executor.execute(() => {
+        val in = new java.io.BufferedReader(new java.io.InputStreamReader(clientSocket.getInputStream))
+        val out = clientSocket.getOutputStream
+
+        //Query
+        Static.info("ModelarDB: connection is ready")
+
+        try {
+          var stop = true
+          while (stop) {
+            val query = in.readLine().trim()
+            if ( ! query.startsWith("--") && query.contains("SELECT")) {
+              execute(query, out)
+              out.flush()
+            } else if (query.nonEmpty) {
+              in.close()
+              out.close()
+              clientSocket.close()
+              stop = false //The empty string terminates the connection
+              Static.info("ModelarDB: conection is closed")
+            } else {
+              out.write("only SELECT is supported".getBytes(StandardCharsets.UTF_8))
+              out.flush()
+            }
+          }
+        } catch {
+          case _: NullPointerException =>
+            //Thrown if the client closes in while ModelarDB waits for input
+        }
+      })
     }
-    cleanUp()
 
     //Cleanup
-    def cleanUp(): Unit = {
-      in.close()
-      out.close()
-      clientSocket.close()
-      serverSocket.close()
-    }
+    serverSocket.close()
   }
 
-  private def http(): Unit = {
+  private def http(executor: Executor): Unit = {
     //Setup
-    Static.info("ModelarDB: preparing HTTP end-point (Port: 9999)")
     val server = HttpServer.create(new java.net.InetSocketAddress(9999), 0)
 
     //Query
@@ -98,10 +111,11 @@ object Interface {
       }
     }
 
-    //Starts a HTTP server that executes QueryHandler for each incoming request on /
+    //Configures the HTTP server to executes QueryHandler on a separate thread for each incoming request on /
     server.createContext("/", new QueryHandler())
+    server.setExecutor(executor)
     server.start()
-    Static.info("ModelarDB: the HTTP server is ready to receive queries (Port: 9999)")
+    Static.info("ModelarDB: HTTP end-point is ready (Port: 9999)")
     scala.io.StdIn.readLine() //Prevents the method from returning to keep the server running
 
     //Cleanup
@@ -136,8 +150,8 @@ object Interface {
   private def execute(query: String, out: OutputStream): Unit = {
     val st = System.currentTimeMillis()
     val result: VectorSchemaRoot = try {
-      val query_rewritten = query.replace("COUNT_S(#)", "COUNT_S(start_time, end_time, sampling_interval)")
-          .replace("#", "tid, start_time, end_time, sampling_interval, mtid, model, gaps")
+      val query_rewritten = query.replace("COUNT_S(#)", "COUNT_S(tid, start_time, end_time)")
+        .replace("#", "tid, start_time, end_time, mtid, model, gaps")
       queryEngine.execute(query_rewritten)
     } catch {
       case e: Exception =>

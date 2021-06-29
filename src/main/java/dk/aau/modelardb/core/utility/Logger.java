@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 package dk.aau.modelardb.core.utility;
 
 import dk.aau.modelardb.core.DataPoint;
+import dk.aau.modelardb.core.TimeSeriesGroup;
 import dk.aau.modelardb.core.models.ModelType;
 
 import java.io.IOException;
@@ -34,6 +35,7 @@ public class Logger implements Serializable {
 
     /** Public Methods **/
     public void add(Logger logger) {
+        this.processingTime = Long.max(this.processingTime, logger.processingTime);
         this.temporarySegmentCounter += logger.temporarySegmentCounter;
         this.temporaryDataPointCounter += logger.temporaryDataPointCounter;
 
@@ -71,7 +73,7 @@ public class Logger implements Serializable {
 
     public void updateTemporarySegmentCounters(ModelType temporaryModelType, int segmentGapsSize) {
         this.temporarySegmentCounter += 1;
-        this.temporaryDataPointCounter += (this.groupSize - segmentGapsSize) * temporaryModelType.length();
+        this.temporaryDataPointCounter += (long) (this.groupSize - segmentGapsSize) * temporaryModelType.length();
     }
 
     public void updateFinalizedSegmentCounters(ModelType finalizedModelType, int segmentGapsSize) {
@@ -86,33 +88,42 @@ public class Logger implements Serializable {
         this.finalizedSegmentCounter.put(modelType, count + 1);
 
         count = this.finalizedDataPointCounter.getOrDefault(modelType, 0L);
-        long dataPoints = (this.groupSize  - segmentGapsSize) * finalizedModelType.length();
+        long dataPoints = (long) (this.groupSize - segmentGapsSize) * finalizedModelType.length();
         this.finalizedDataPointCounter.put(modelType, count + dataPoints);
 
         this.finalizedGapsSize += segmentGapsSize * 4;
     }
 
-    public void printGeneratorResult() {
+    public void printGeneratorResult(TimeSeriesGroup tsg) {
+        StringBuilder sb = new StringBuilder(); //Used by multiple threads so a single print must be used
+        //Prints information about the time series
+        sb.append("Gid: ").append(tsg.gid).append('\n')
+                .append("Tids: ").append(tsg.getTids()).append('\n')
+                .append("Sources: ").append(tsg.getSources()).append('\n')
+                .append("Ingested: ").append(Static.getIPs()).append('\n');
+
         //Prints the number of points that have been stored as each type of segment for debugging
-        System.out.println("\nTemporary Segment Counter - Total: " + this.temporarySegmentCounter);
-        System.out.println("Temporary DataPoint Counter - Total: " + this.temporaryDataPointCounter);
+        sb.append("\nTemporary Segment Counter - Total: ").append(this.temporarySegmentCounter).append('\n');
+        sb.append("Temporary DataPoint Counter - Total: ").append(this.temporaryDataPointCounter).append('\n');
 
         long finalizedCounter = this.finalizedSegmentCounter.values().stream().mapToLong(Long::longValue).sum();
-        System.out.println("\nFinalized Segment Counter - Total: " + finalizedCounter);
+        sb.append("\nFinalized Segment Counter - Total: ").append(finalizedCounter).append('\n');
         for (Map.Entry<String, Long> e : this.finalizedSegmentCounter.entrySet()) {
-            System.out.println("-- " + e.getKey() + " | Count: " + e.getValue());
+            sb.append("-- ").append(e.getKey()).append(" | Count: ").append(e.getValue()).append('\n');
         }
 
         finalizedCounter = this.finalizedDataPointCounter.values().stream().mapToLong(Long::longValue).sum();
-        System.out.println("\nFinalized Segment DataPoint Counter - Total: " + finalizedCounter);
+        sb.append("\nFinalized Segment DataPoint Counter - Total: ").append(finalizedCounter).append('\n');
         for (Map.Entry<String, Long> e : this.finalizedDataPointCounter.entrySet()) {
-            System.out.println("-- " + e.getKey() + " | DataPoint: " + e.getValue());
+            sb.append("-- ").append(e.getKey()).append(" | DataPoint: ").append(e.getValue()).append('\n');
         }
         //     DPs tid: int, ts: long, v: float
         // Segment gid: int, start_time: long, end_time: long, mtid: int, model: bytes[], gaps: bytes[]
         //4 + 8 + 4 = 16 * data points is reduced to 4 + 8 + 8 + 4 + sizeof model + sizeof gaps
         double finalizedTotalSize = this.finalizedMetadataSize + this.finalizedModelsSize + this.finalizedGapsSize;
-        System.out.println("\nCompression Ratio: " + (16.0 * finalizedCounter) / finalizedTotalSize);
+        sb.append("\nCompression Ratio: ").append((16.0 * finalizedCounter) / finalizedTotalSize).append('\n');
+        sb.append("---------------------------------------------------------");
+        System.out.println(sb);
     }
 
     public void printWorkingSetResult() {
@@ -120,7 +131,7 @@ public class Logger implements Serializable {
         long finalizedPointCounter = this.finalizedDataPointCounter.values().stream().mapToLong(Long::longValue).sum();
         int cs = Float.toString(finalizedPointCounter).length();
 
-        System.out.println("=========================================================");
+        //The header is already printed by printGeneratorResult
         System.out.println("Time: " + getTimeSpan());
         System.out.println("Segments: " + finalizedSegmentCounter);
         System.out.println("Data Points: " + finalizedPointCounter);
@@ -131,7 +142,7 @@ public class Logger implements Serializable {
         printAlignedDebugVariables("Gaps Size", this.finalizedGapsSize, cs);
         System.out.println("---------------------------------------------------------");
         printAlignedDebugVariables("Total Size", getTotalSize(), cs);
-        System.out.println("=========================================================");
+        System.out.println("---------------------------------------------------------");
     }
 
     /** Private Methods **/

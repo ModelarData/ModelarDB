@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,19 @@
  */
 package dk.aau.modelardb.core.utility;
 
-import dk.aau.modelardb.core.*;
+import dk.aau.modelardb.core.DataPoint;
 import dk.aau.modelardb.core.timeseries.TimeSeries;
 
-import java.io.IOException;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.BitSet;
+import java.util.Enumeration;
 
 public class Static {
 

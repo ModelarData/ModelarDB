@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,8 +30,8 @@ object StorageFactory {
         throw new java.lang.IllegalArgumentException("ModelarDB: unknown value for modelardb.storage in the config file")
       }
     } catch {
-      case _: Exception =>
-        throw new java.lang.IllegalArgumentException("ModelarDB: failed to initialize modelardb.storage from the config file")
+      case e: Exception =>
+        throw new java.lang.IllegalArgumentException("ModelarDB: failed to initialize modelardb.storage from the config file", e)
     }
   }
 }

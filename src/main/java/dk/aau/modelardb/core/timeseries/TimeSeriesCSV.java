@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,14 @@
  */
 package dk.aau.modelardb.core.timeseries;
 
+import dk.aau.modelardb.core.DataPoint;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
-import java.nio.channels.*;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
+import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.text.NumberFormat;
@@ -26,7 +30,6 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 import java.util.zip.GZIPInputStream;
-import dk.aau.modelardb.core.DataPoint;
 
 public class TimeSeriesCSV extends TimeSeries {
 
@@ -43,6 +46,7 @@ public class TimeSeriesCSV extends TimeSeries {
         this.hasHeader = hasHeader;
         this.splitString = splitString;
         this.scalingFactor = 1.0F;
+
 
         this.timestampColumnIndex = timestampColumnIndex;
         switch (dateFormat) {
@@ -89,7 +93,8 @@ public class TimeSeriesCSV extends TimeSeries {
             this.byteBuffer = ByteBuffer.allocate(this.bufferSize);
             if (this.hasHeader) {
                 readLines();
-            }
+		this.nextBuffer.delete(0, this.nextBuffer.indexOf("\n") + 1);
+	    }
         } catch (IOException ioe) {
             //An unchecked exception is used so the function can be called in a lambda function
             throw new RuntimeException(ioe);
@@ -143,16 +148,14 @@ public class TimeSeriesCSV extends TimeSeries {
 
     /** Private Methods **/
     private void readLines() throws IOException {
-        int lastChar;
-
-        //Reads a whole line from the channel by looking for either a new line or if no additional bytes are returned
+        //Reads until the channel no longer provides any bytes or at least one full data point have been read
+        int bytesRead;
         do {
             this.byteBuffer.clear();
-            this.channel.read(this.byteBuffer);
-            lastChar = this.byteBuffer.position();
+            bytesRead = this.channel.read(this.byteBuffer);
             this.byteBuffer.flip();
             this.decodeBuffer.append(StandardCharsets.UTF_8.decode(this.byteBuffer));
-        } while (lastChar != 0 && this.decodeBuffer.indexOf("\n") == -1);
+        } while (bytesRead != -1 && this.decodeBuffer.indexOf("\n") == -1);
 
         //Transfer all fully read data points into a new buffer to simplify the remaining implementation
         int lastFullyParsedDataPoint = this.decodeBuffer.lastIndexOf("\n") + 1;

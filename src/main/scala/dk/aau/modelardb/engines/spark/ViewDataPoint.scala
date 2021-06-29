@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,13 @@
  */
 package dk.aau.modelardb.engines.spark
 
-import java.sql.Timestamp
-
 import dk.aau.modelardb.core.utility.Static
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{Row, SQLContext, sources}
+
+import java.sql.Timestamp
 
 class ViewDataPoint(dimensions: Array[StructField]) (@transient override val sqlContext: SQLContext)
   extends BaseRelation with PrunedFilteredScan {
@@ -40,7 +40,7 @@ class ViewDataPoint(dimensions: Array[StructField]) (@transient override val sql
     Static.info("ModelarDB: data point filters { " + filters.mkString(" ") + " }")
 
     val rows = getDataPointRDD(filters)
-    SparkGridder.dataPointProjection(rows, requiredColumns)
+    SparkProjector.dataPointProjection(rows, requiredColumns)
   }
 
   /** Private Methods **/
@@ -68,12 +68,12 @@ class ViewDataPoint(dimensions: Array[StructField]) (@transient override val sql
           df.filter(s"$column = '$value'") else df.filter(s"$column = $value")
 
         //If a predicate is not supported by the segment view all we can do is inform the user
-        case p => Static.warn("ModelarDB: unsupported predicate for DataPointView predicate push-down " + p)
+        case p => Static.warn("ModelarDB: unsupported predicate for Data Point View predicate push-down " + p)
       }
     }
 
     //Dimensions are appended to each data point if necessary, so they are not requested from the segment view
-    df = df.select("tid", "start_time", "end_time", "sampling_interval", "mtid", "model", "gaps")
+    df = df.select("tid", "start_time", "end_time", "mtid", "model", "gaps")
     df.rdd
   }
 }

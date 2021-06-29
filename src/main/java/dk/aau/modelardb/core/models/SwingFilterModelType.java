@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,9 @@ class SwingFilterModelType extends ModelType {
     /** Constructors **/
     SwingFilterModelType(int mtid, float errorBound, int lengthBound) {
         super(mtid, errorBound, lengthBound);
-        this.withinErrorBound = true;
+        if (errorBound < 0.0 || 100.0 < errorBound) {
+            throw new IllegalArgumentException("CORE: for SwingFilterModelType modelardb.error_bound must be a percentage");
+        }
     }
 
     /** Public Methods **/

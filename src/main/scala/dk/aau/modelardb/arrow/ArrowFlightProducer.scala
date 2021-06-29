@@ -2,17 +2,10 @@ package dk.aau.modelardb.arrow
 
 import dk.aau.modelardb.core.Storage
 import dk.aau.modelardb.engines.QueryEngine
-import dk.aau.modelardb.engines.h2.H2Storage
-import org.apache.arrow.adapter.jdbc.JdbcToArrowUtils
 import org.apache.arrow.flight.FlightProducer._
 import org.apache.arrow.flight.{Action, ActionType, Criteria, FlightDescriptor, FlightInfo, FlightProducer, FlightStream, PutResult, Result, Ticket}
-import org.apache.arrow.memory.RootAllocator
-import org.apache.arrow.vector.{BigIntVector, VectorSchemaRoot}
-import org.apache.arrow.vector.util.VectorSchemaRootAppender
 
 import java.nio.charset.StandardCharsets
-import java.sql.ResultSet
-import scala.util.Try
 
 class ArrowFlightProducer(queryEngine: QueryEngine, storage: Storage) extends FlightProducer {
 

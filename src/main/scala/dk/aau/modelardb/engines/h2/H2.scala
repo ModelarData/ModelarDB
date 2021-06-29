@@ -1,126 +1,116 @@
+/* Copyright 2021 The ModelarDB Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package dk.aau.modelardb.engines.h2
 
-import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
-
-import java.sql.{Connection, DriverManager}
-import dk.aau.modelardb.Interface
-import dk.aau.modelardb.core.utility.{SegmentFunction, Static}
-import dk.aau.modelardb.core.{Configuration, Dimensions, Partitioner, SegmentGroup, WorkingSet}
-import dk.aau.modelardb.engines.PredicatePushDown
+import akka.stream.scaladsl.SourceQueueWithComplete
 import dk.aau.modelardb.arrow.ArrowUtil
-import dk.aau.modelardb.core.utility.{Pair, SegmentFunction, Static, ValueFunction}
-import dk.aau.modelardb.core.{Configuration, Dimensions, Partitioner, SegmentGroup, Storage, WorkingSet}
-import dk.aau.modelardb.engines.{PredicatePushDown, QueryEngine, RDBMSEngineUtilities}
+import dk.aau.modelardb.config.ModelarConfig
 import dk.aau.modelardb.core.Dimensions.Types
-import dk.aau.modelardb.config.{Config, ModelarConfig}
+import dk.aau.modelardb.core._
+import dk.aau.modelardb.core.utility.{Logger, SegmentFunction, Static}
+import dk.aau.modelardb.engines.{EngineUtilities, QueryEngine}
 import org.apache.arrow.vector.VectorSchemaRoot
 import org.h2.expression.condition.{Comparison, ConditionAndOr, ConditionInConstantSet}
 import org.h2.expression.{Expression, ExpressionColumn, ValueExpression}
+import org.h2.table.TableFilter
 import org.h2.value.{ValueInt, ValueTimestamp}
 
-import java.util.TimeZone
-import java.util.HashMap
-import java.util.concurrent.CountDownLatch
+import java.sql.DriverManager
+import java.util
+import java.util.concurrent.{CountDownLatch, Executors}
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.function.BooleanSupplier
+import java.util.{Base64, TimeZone}
 import scala.collection.mutable
 
-//TODO: Can a WAL on data points be implemented per ingestor if it of static size (time) and have a bitmap of groups?
-//TODO: Determine if adding the values to a pre-allocated array in the views is faster than having the branches.
-//TODO: Determine if the data point views should get segments from the segment views for filtering like spark
-//TODO: Implement a proper cache for segments retrieved from storage. Maybe store them as Gid, ST, ET intervals.
-//TODO: Merge the loggers from each thread before printing them to make them easier to read the results.
-//TODO: Make the two gridding methods used by the SparkEngine generic enough that all engines can use them.
-//TODO: Determine how to ingest and execute queries in parallel without ever introducing duplicate data points.
-//      Maybe having a shared read/write lock on storage (instead of engine) that engines can use when reading or writing.
-//TODO: Support requiredColumns and test that predicate push-down works with all storage backends.
-//TODO: determine if the segments should be filtered by the segment view and than data point view like done for Spark
-//TODO: Share as much code as possible between H2 and Spark and structure their use of the two views the same.
 class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
   /** Instance Variables **/
   private var finalizedSegmentsIndex = 0
   private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](config.batchSize)
+  private var workingSets: Array[WorkingSet] = _
   private var numberOfRunningIngestors: CountDownLatch = _
   private val cacheLock = new ReentrantReadWriteLock()
   private val temporarySegments = mutable.HashMap[Int, Array[SegmentGroup]]()
-  val connection = DriverManager.getConnection("jdbc:h2:mem:")
+  private val base64Encoder = Base64.getEncoder
+  val connection = DriverManager.getConnection(H2.h2ConnectionString)
+  val executor = Executors.newCachedThreadPool()
 
   /** Public Methods **/
   def start(): Unit = ???
 
   def start(queue: SourceQueueWithComplete[SegmentGroup]): Unit = {
+
     //Initialize
-    //Documentation: http://www.h2database.com/html/features.html#in_memory_databases
     val stmt = connection.createStatement()
-    //Documentation: https://www.h2database.com/html/commands.html#create_table
     stmt.execute(H2.getCreateDataPointViewSQL(config.dimensions))
     stmt.execute(H2.getCreateSegmentViewSQL(config.dimensions))
-    //Documentation: https://www.h2database.com/html/commands.html#create_aggregate
-    stmt.execute(H2.getCreateUDAFSQL("COUNT_S"))
-    stmt.execute(H2.getCreateUDAFSQL("MIN_S"))
-    stmt.execute(H2.getCreateUDAFSQL("MAX_S"))
-    stmt.execute(H2.getCreateUDAFSQL("SUM_S"))
-    stmt.execute(H2.getCreateUDAFSQL("AVG_S"))
-
-    stmt.execute(H2.getCreateUDAFSQL("COUNT_MONTH"))
-    stmt.execute(H2.getCreateUDAFSQL("MIN_MONTH"))
-    stmt.execute(H2.getCreateUDAFSQL("MAX_MONTH"))
-    stmt.execute(H2.getCreateUDAFSQL("SUM_MONTH"))
-    stmt.execute(H2.getCreateUDAFSQL("AVG_MONTH"))
+    H2UDAF.initialize(stmt)
     stmt.close()
+    val dimensions = config.dimensions
+    EngineUtilities.initialize(dimensions)
 
     //Ingestion
     H2.initialize(this, h2storage)
     startIngestion(queue)
     waitUntilIngestionIsDone(queue)
-
+    
   }
 
-  //Shutdown
   def stop(): Unit = {
     connection.close()
   }
 
-
-  def getInMemorySegmentGroups(): Iterator[SegmentGroup] = {
+  def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
     this.cacheLock.readLock().lock()
     val cachedTemporarySegments = this.temporarySegments.values.flatten.toArray
     val cachedFinalizedSegments = this.finalizedSegments.take(this.finalizedSegmentsIndex)
+    val persistedFinalizedSegments = this.h2storage.getSegmentGroups(filter)
     this.cacheLock.readLock().unlock()
-    cachedTemporarySegments.iterator ++ cachedFinalizedSegments.iterator
+    cachedTemporarySegments.iterator ++ cachedFinalizedSegments.iterator ++ persistedFinalizedSegments
   }
 
   /** Private Methods **/
   //Ingestion
-//  private def startIngestion(): Unit = {
   private def startIngestion(queue: SourceQueueWithComplete[SegmentGroup]): Unit = {
     //Initialize Storage
     val dimensions = config.dimensions
     val correlations = config.correlations
     h2storage.open(dimensions)
-    val timeSeries = Partitioner.initializeTimeSeries(config, h2storage.getMaxTid)
-    val timeSeriesGroups = Partitioner.groupTimeSeries(correlations, dimensions, timeSeries, h2storage.getMaxGid)
-    h2storage.initialize(timeSeriesGroups, config.derivedTimeSeries, dimensions, config.models)
-    if (timeSeriesGroups.isEmpty || config.ingestors == 0) {
-      //There are no time series to ingest or no ingestors to ingest them with
-      this.numberOfRunningIngestors = new CountDownLatch(0)
+    if (config.ingestors == 0) {
+      if ( ! config.derivedTimeSeries.isEmpty) { //Initializes derived time series
+        Partitioner.initializeTimeSeries(config, h2storage.getMaxTid)
+      }
+      h2storage.initialize(Array(), config.derivedTimeSeries, dimensions, config.models)
       return
     }
 
+    //Initialize Ingestion
+    val timeSeries = Partitioner.initializeTimeSeries(config, h2storage.getMaxTid)
+    val timeSeriesGroups = Partitioner.groupTimeSeries(correlations, dimensions, timeSeries, h2storage.getMaxGid)
+    h2storage.initialize(timeSeriesGroups, config.derivedTimeSeries, dimensions, config.models)
+
     val mtidCache = h2storage.mtidCache
-    val threads = config.ingestors
-    this.numberOfRunningIngestors = new CountDownLatch(threads)
-    val workingSets = Partitioner.partitionTimeSeries(config, timeSeriesGroups, mtidCache, threads)
+    val ingestors = config.ingestors
+    this.numberOfRunningIngestors = new CountDownLatch(ingestors)
+    this.workingSets = Partitioner.partitionTimeSeries(config, timeSeriesGroups, mtidCache, ingestors)
 
     //Start Ingestion
-    if (workingSets.nonEmpty) {
-      for (workingSet <- workingSets) {
-        new Thread {
-          override def run {
-            ingest(workingSet, queue)
-          }
-        }.start()
-      }
+    Static.info("ModelarDB: waiting for all ingestors to finnish")
+    println(WorkingSet.toString(workingSets))
+    for (workingSet <- workingSets) {
+      executor.execute(() => ingest(workingSet, queue))
     }
   }
 
@@ -131,7 +121,7 @@ class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
         cacheLock.writeLock().lock()
         val newTemporarySegment = new SegmentGroup(gid, startTime, endTime, mtid, model, gaps)
         val currentTemporarySegments = temporarySegments.getOrElse(gid, Array())
-        temporarySegments(gid) = updateTemporarySegment(currentTemporarySegments, newTemporarySegment, true)
+        temporarySegments(gid) = updateTemporarySegment(currentTemporarySegments, newTemporarySegment, isTemporary = true)
         cacheLock.writeLock().unlock()
       }
     }
@@ -139,7 +129,13 @@ class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
     val consumeFinalized = new SegmentFunction {
       override def emit(gid: Int, startTime: Long, endTime: Long, mtid: Int, model: Array[Byte], gaps: Array[Byte]): Unit = {
         cacheLock.writeLock().lock()
-        finalizedSegments(finalizedSegmentsIndex) = new SegmentGroup(gid, startTime, endTime, mtid, model, gaps)
+        //Update the current temporary segments
+        val newFinalizedSegment = new SegmentGroup(gid, startTime, endTime, mtid, model, gaps)
+        val currentTemporarySegments = temporarySegments.getOrElse(gid, Array())
+        temporarySegments(gid) = updateTemporarySegment(currentTemporarySegments, newFinalizedSegment, isTemporary = false)
+
+        //Batch the finalized segment
+        finalizedSegments(finalizedSegmentsIndex) = newFinalizedSegment
         finalizedSegmentsIndex += 1
         if (finalizedSegmentsIndex == config.batchSize) {
 //          h2storage.storeSegmentGroups(finalizedSegments, finalizedSegmentsIndex)
@@ -155,16 +151,23 @@ class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
     }
 
     //Start Ingestion
-    println(workingSet)
     workingSet.process(consumeTemporary, consumeFinalized, isTerminated)
 
     //Write remaining finalized segments
     cacheLock.writeLock().lock()
     h2storage.storeSegmentGroups(finalizedSegments, finalizedSegmentsIndex)
     finalizedSegmentsIndex = 0
-    cacheLock.writeLock().unlock()
-    workingSet.logger.printWorkingSetResult()
+
+    //The CountDownLatch is decremented in the lock to ensure countDown and getCount is atomic
     this.numberOfRunningIngestors.countDown()
+    if (this.numberOfRunningIngestors.getCount == 0) {
+      val logger = new Logger()
+      this.workingSets.foreach(ws => logger.add(ws.logger))
+      logger.printWorkingSetResult()
+      if (this.numberOfRunningIngestors != null) {
+      }
+    }
+    cacheLock.writeLock().unlock()
   }
 
   private def updateTemporarySegment(cache: Array[SegmentGroup], inputSegmentGroup: SegmentGroup,
@@ -209,17 +212,16 @@ class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
       //A split has occurred and multiple segments now represent what one did before, so the new ones are appended
       cache.filter(_ != null) :+ inputSegmentGroup
     } else {
-      //A join have occurred and one segment now represent what two did before, so duplicates must be removed
+      //If temporary segment have been deleted, e.g., because a join have occurred and one segment now represents
+      // what two did before, null values and possible duplicate temporary segments must be removed from the cache
       cache.filter(_ != null).distinct
     }
   }
 
-//  private def waitUntilIngestionIsDone(): Unit = {
   private def waitUntilIngestionIsDone(queue: SourceQueueWithComplete[SegmentGroup]): Unit = {
-    if (this.numberOfRunningIngestors.getCount != 0) {
-      Static.info("ModelarDB: waiting for all ingestors to finnish")
+    if (this.numberOfRunningIngestors != null) {
+      this.numberOfRunningIngestors.await()
     }
-    this.numberOfRunningIngestors.await()
     queue.complete()
   }
 
@@ -233,7 +235,7 @@ class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
   }
 
   //Query Processing
-  private def executeQuery(connection: Connection, query: String): Array[String] = {
+  private def executeQuery(query: String): Array[String] = {
     //Execute Query
     val stmt = connection.createStatement()
     stmt.execute(query)
@@ -271,6 +273,10 @@ class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
     //Numbers should not be quoted
     if (value.isInstanceOf[Int] || value.isInstanceOf[Float]) {
       output.append(value)
+    } else if (value.isInstanceOf[Array[Byte]]) {
+      output.append('"')
+      output.append(this.base64Encoder.encodeToString(value.asInstanceOf[Array[Byte]]))
+      output.append('"')
     } else {
       output.append('"')
       output.append(value)
@@ -284,6 +290,7 @@ object H2 {
   /** Instance Variables * */
   var h2: H2 = _ //Provides access to the h2 and h2storage instances from the views
   var h2storage: H2Storage =  _
+  private val h2ConnectionString: String = "jdbc:h2:mem:modelardb"
   private val compareTypeField = classOf[Comparison].getDeclaredField("compareType")
   this.compareTypeField.setAccessible(true)
   private val compareTypeMethod = classOf[Comparison].getDeclaredMethod("getCompareOperator", classOf[Int])
@@ -298,7 +305,6 @@ object H2 {
   }
 
   //Data Point View
-  //Documentation: https://www.h2database.com/html/features.html#pluggable_tables
   def getCreateDataPointViewSQL(dimensions: Dimensions): String = {
     s"""CREATE TABLE DataPoint(tid INT, timestamp TIMESTAMP, value REAL${H2.getDimensionColumns(dimensions)})
        |ENGINE "dk.aau.modelardb.engines.h2.ViewDataPoint";
@@ -306,22 +312,14 @@ object H2 {
   }
 
   //Segment View
-  //Documentation: https://www.h2database.com/html/features.html#pluggable_tables
   def getCreateSegmentViewSQL(dimensions: Dimensions): String = {
     s"""CREATE TABLE Segment
-       |(tid INT, start_time TIMESTAMP, end_time TIMESTAMP, sampling_interval INT, mtid INT, model BINARY, gaps BINARY${H2.getDimensionColumns(dimensions)})
+       |(tid INT, start_time TIMESTAMP, end_time TIMESTAMP, mtid INT, model BINARY, gaps BINARY${H2.getDimensionColumns(dimensions)})
        |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
        |""".stripMargin
   }
 
-  //Segment View UDAFs
-  def getCreateUDAFSQL(sqlName: String): String = {
-    val splitSQLName = sqlName.split("_")
-    val className = splitSQLName.map(_.toLowerCase.capitalize).mkString("")
-    s"""CREATE AGGREGATE $sqlName FOR "dk.aau.modelardb.engines.h2.$className";"""
-  }
-
-  def expressionToSQLPredicates(expression: Expression, tsgc: Array[Int], idc: HashMap[String, HashMap[Object, Array[Integer]]],
+  def expressionToSQLPredicates(expression: Expression, tsgc: Array[Int], idc: util.HashMap[String, util.HashMap[Object, Array[Integer]]],
                                 supportsOr: Boolean): String = { //HACK: supportsOR ensures Cassandra does not receive an OR operator
     expression match {
       //NO PREDICATES
@@ -335,18 +333,18 @@ object H2 {
         (ec.getColumnName, operator) match {
           //TID
           case ("TID", "=") => val tid = ve.getValue(null).asInstanceOf[ValueInt].getInt
-            " GID = " + PredicatePushDown.tidPointToGidPoint(tid, tsgc)
+            "GID = " + EngineUtilities.tidPointToGidPoint(tid, tsgc)
           //TIMESTAMP
-          case ("TIMESTAMP", ">") => " END_TIME > " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
-          case ("TIMESTAMP", ">=") => " END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
-          case ("TIMESTAMP", "<") => " STAT_TIME < " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
-          case ("TIMESTAMP", "<=") => " START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
+          case ("TIMESTAMP", ">") => "END_TIME > " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
+          case ("TIMESTAMP", ">=") => "END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
+          case ("TIMESTAMP", "<") => "START_TIME < " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
+          case ("TIMESTAMP", "<=") => "START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
           case ("TIMESTAMP", "=") =>
-            " (START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime +
+            "(START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime +
               " AND END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime + ")"
           //DIMENSIONS
           case (columnName, "=") if idc.containsKey(columnName) =>
-            PredicatePushDown.dimensionEqualToGidIn(columnName, ve.getValue(null).getObject(), idc).mkString("GID IN (", ",", ")")
+            EngineUtilities.dimensionEqualToGidIn(columnName, ve.getValue(null).getObject, idc).mkString("GID IN (", ",", ")")
           case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
         }
       //IN
@@ -357,7 +355,7 @@ object H2 {
             for (i <- Range(1, cin.getSubexpressionCount)) {
               tids(i - 1) = cin.getSubexpression(i).getValue(null).asInstanceOf[ValueInt].getInt
             }
-            PredicatePushDown.tidInToGidIn(tids, tsgc).mkString("GID IN (", ",", ")")
+            EngineUtilities.tidInToGidIn(tids, tsgc).mkString("GID IN (", ",", ")")
           case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
         }
       //AND

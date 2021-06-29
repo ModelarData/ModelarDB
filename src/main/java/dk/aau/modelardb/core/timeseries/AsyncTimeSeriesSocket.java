@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,9 @@
  */
 package dk.aau.modelardb.core.timeseries;
 
+import dk.aau.modelardb.core.DataPoint;
+import dk.aau.modelardb.core.SegmentGenerator;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -24,9 +27,6 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
-
-import dk.aau.modelardb.core.DataPoint;
-import dk.aau.modelardb.core.SegmentGenerator;
 
 public class AsyncTimeSeriesSocket extends TimeSeries implements AsyncTimeSeries {
 
@@ -131,16 +131,15 @@ public class AsyncTimeSeriesSocket extends TimeSeries implements AsyncTimeSeries
 
     /** Private Methods **/
     private void readLines() throws IOException {
-        int lastChar;
-
-        //Reads a whole line from the channel by looking for either a new line or if no additional bytes are returned
+        //Reads until at least one full data point have been read as read() does not always add bytes
+        // to this.byteBuffer for some time after the Selector in WorkingSet have returned rom Select()
+        int bytesRead;
         do {
             this.byteBuffer.clear();
-            this.channel.read(this.byteBuffer);
-            lastChar = this.byteBuffer.position();
+            bytesRead = this.channel.read(this.byteBuffer);
             this.byteBuffer.flip();
             this.decodeBuffer.append(StandardCharsets.UTF_8.decode(this.byteBuffer));
-        } while (lastChar != 0 && this.decodeBuffer.indexOf("\n") == -1);
+        } while (bytesRead != -1 && this.decodeBuffer.indexOf("\n") == -1); //-1 means the channel has reached end-of-stream
 
         //Transfer all fully read data points into a new buffer to simplify the remaining implementation
         int lastFullyParsedDataPoint = this.decodeBuffer.lastIndexOf("\n") + 1;

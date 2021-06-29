@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2021 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,12 @@
  */
 package dk.aau.modelardb.core.timeseries;
 
+import dk.aau.modelardb.core.DataPoint;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.column.page.PageReadStore;
-import org.apache.parquet.example.data.simple.SimpleGroup;
+import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.simple.convert.GroupRecordConverter;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.util.HadoopInputFile;
@@ -28,7 +29,6 @@ import org.apache.parquet.io.MessageColumnIO;
 import org.apache.parquet.io.RecordReader;
 import org.apache.parquet.schema.MessageType;
 
-import dk.aau.modelardb.core.DataPoint;
 import java.io.IOException;
 
 public class TimeSeriesParquet extends TimeSeries {
@@ -58,8 +58,8 @@ public class TimeSeriesParquet extends TimeSeries {
     }
 
     public DataPoint next() {
-        SimpleGroup rowGroup = (SimpleGroup) this.recordReader.read();
-        long timestamp = rowGroup.getLong(0, 0) / 1000;
+        Group rowGroup = this.recordReader.read();
+        long timestamp = rowGroup.getLong(0, 0);
         float value = rowGroup.getFloat(1, 0);
         this.rowIndex++;
         return new DataPoint(this.tid, timestamp, this.scalingFactor * value);
@@ -109,5 +109,5 @@ public class TimeSeriesParquet extends TimeSeries {
     private long rowCount;
     private ParquetFileReader fileReader;
     private MessageType schema;
-    private RecordReader recordReader;
+    private RecordReader<Group> recordReader;
 }

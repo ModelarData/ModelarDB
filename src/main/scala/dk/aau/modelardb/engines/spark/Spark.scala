@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,13 @@ import akka.stream.scaladsl.SourceQueueWithComplete
 import dk.aau.modelardb.Interface
 import dk.aau.modelardb.arrow.ArrowUtil
 import dk.aau.modelardb.config.ModelarConfig
+import dk.aau.modelardb.config.ModelarConfig
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
 import dk.aau.modelardb.engines.QueryEngine
 import org.apache.arrow.vector.VectorSchemaRoot
+import dk.aau.modelardb.core.utility.{Static, ValueFunction}
+import dk.aau.modelardb.engines.EngineUtilities
 import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
@@ -31,8 +34,6 @@ import org.apache.spark.sql.{DataFrameReader, SparkSession}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 
 import java.util
-import scala.collection.JavaConverters
-import scala.collection.JavaConverters.mutableMapAsJavaMapConverter
 
 class Spark(config: ModelarConfig, sparkStorage: SparkStorage) extends QueryEngine {
 
@@ -108,10 +109,8 @@ class Spark(config: ModelarConfig, sparkStorage: SparkStorage) extends QueryEngi
     segmentView.createOrReplaceTempView("Segment")
     val dataPointView = vp.option("type", "DataPoint").load()
     dataPointView.createOrReplaceTempView("DataPoint")
-    SparkGridder.initialize(
-      segmentView.schema.zipWithIndex.map(t => t._1.name -> (t._2 + 1)).toMap,
-      dataPointView.schema.zipWithIndex.map(t => t._1.name -> (t._2 + 1)).toMap)
     SparkUDAF.initialize(spark)
+    EngineUtilities.initialize(dimensions)
 
     //Last, return the Spark interfaces so they can be controlled
     (spark, ssc)
@@ -151,7 +150,7 @@ object Spark {
     this.parallelism = spark.sparkContext.defaultParallelism
     this.relations = spark.read.format("dk.aau.modelardb.engines.spark.ViewProvider")
     this.sparkStorage = null
-    this.broadcastedSTC = spark.sparkContext.broadcast(sparkStorage.timeSeriesTransformationCache)
+    this.broadcastedTimeSeriesTransformationCache = spark.sparkContext.broadcast(sparkStorage.timeSeriesTransformationCache)
     this.sparkStorage = sparkStorage
     this.cache = new SparkCache(spark, config.batchSize, newGids)
   }
@@ -160,16 +159,13 @@ object Spark {
   def getCache: SparkCache = Spark.cache
   def getViewProvider: DataFrameReader = Spark.relations
   def getSparkStorage: SparkStorage = Spark.sparkStorage
-  def getBroadcastedSourceTransformationCache: Broadcast[Array[ValueFunction]] = Spark.broadcastedSTC
-
-  def isDataSetSmall(rows: RDD[_]): Boolean = {
-    rows.partitions.length <= parallelism
-  }
+  def getBroadcastedTimeSeriesTransformationCache: Broadcast[Array[ValueFunction]] = Spark.broadcastedTimeSeriesTransformationCache
+  def isDataSetSmall(rows: RDD[_]): Boolean = rows.partitions.length <= parallelism
 
   /** Instance Variables **/
   private var parallelism: Int = _
   private var cache: SparkCache = _
   private var relations: DataFrameReader = _
   private var sparkStorage: SparkStorage = _
-  private var broadcastedSTC: Broadcast[Array[ValueFunction]] = _
+  private var broadcastedTimeSeriesTransformationCache: Broadcast[Array[ValueFunction]] = _
 }

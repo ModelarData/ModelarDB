@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,10 +26,6 @@ class FacebookGorillaModelType extends ModelType {
     /** Constructors **/
     FacebookGorillaModelType(int mtid, float errorBound, int lengthBound) {
         super(mtid, errorBound, lengthBound);
-        this.currentSize = 0;
-        this.compressed = null;
-        this.storedLeadingZeros = Integer.MAX_VALUE;
-        this.storedTrailingZeros = 0;
     }
 
     /** Public Methods **/

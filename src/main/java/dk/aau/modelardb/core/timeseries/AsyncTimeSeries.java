@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2021 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,10 @@
  */
 package dk.aau.modelardb.core.timeseries;
 
+import dk.aau.modelardb.core.SegmentGenerator;
+
 import java.io.IOException;
 import java.nio.channels.Selector;
-
-import dk.aau.modelardb.core.SegmentGenerator;
 
 public interface AsyncTimeSeries {
     void attachToSelector(Selector s, SegmentGenerator mg) throws IOException;

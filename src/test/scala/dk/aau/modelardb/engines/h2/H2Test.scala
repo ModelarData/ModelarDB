@@ -1,9 +1,24 @@
+/* Copyright 2021 The ModelarDB Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package dk.aau.modelardb.engines.h2
 
 import dk.aau.modelardb.core.models.ModelTypeFactory
 import dk.aau.modelardb.H2Provider
 import dk.aau.modelardb.config.{Config, ModelarConfig}
 import dk.aau.modelardb.core.{Configuration, Dimensions, SegmentGroup}
+import dk.aau.modelardb.engines.EngineUtilities
 import dk.aau.modelardb.storage.JDBCStorage
 import org.h2.expression.condition.{Comparison, ConditionAndOr}
 import org.h2.jdbc.JdbcSQLDataException
@@ -43,16 +58,19 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory with H2Provider 
       val endTime = Instant.ofEpochMilli(110L)
       val sg = new SegmentGroup(gid, startTime.toEpochMilli, endTime.toEpochMilli, mtid, Array(0x42.toByte), Array(0x42.toByte))
       val model = ModelTypeFactory.getFallbackModelType(5.0f, 300)
+      val dimensions = new Dimensions(Array())
+      EngineUtilities.initialize(dimensions)
 
       val storage = mock[JDBCStorageNoArgs]
       (storage.getSegmentGroups(_: TableFilter))
         .expects(*)
         .returns(Iterator(sg))
 
+      storage.timeSeriesGroupCache = Array(0, 1)
       storage.groupMetadataCache = Array(Array(), Array(samplingInterval, 1, 1), Array(samplingInterval, 1, 1))
       storage.groupDerivedCache = new java.util.HashMap[Integer, Array[Int]]()
       storage.modelTypeCache = Array(model, model)
-      storage.dimensionsCache = Array(null, Array())
+      storage.timeSeriesMembersCache = Array(null, Array())
 
       import ModelarConfig.timezoneReader // needed to read config
       val config = ConfigSource.resources("application-test.conf").loadOrThrow[Config]
@@ -60,7 +78,7 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory with H2Provider 
       val h2 = new H2(modelarConfig, storage)
       H2.initialize(h2, storage)
 
-      statement.execute(H2.getCreateSegmentViewSQL(new Dimensions(Array())))
+      statement.execute(H2.getCreateSegmentViewSQL(dimensions))
       val rs = statement.executeQuery("SELECT * FROM Segment")
       var count = 0
       while (rs.next()) {
@@ -71,8 +89,8 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory with H2Provider 
         rs.getTimestamp("start_time").toInstant should equal(startTime)
         rs.getTimestamp(3).toInstant should equal(endTime)
         rs.getTimestamp("end_time").toInstant should equal(endTime)
-        rs.getInt(4) should equal (samplingInterval)
-        rs.getInt("sampling_interval") should equal (samplingInterval)
+        rs.getInt(1) should equal (mtid)
+        rs.getInt("mtid") should equal (mtid)
 
         an [JdbcSQLDataException] should be thrownBy rs.getInt(2)
         an [JdbcSQLDataException] should be thrownBy rs.getInt(3)

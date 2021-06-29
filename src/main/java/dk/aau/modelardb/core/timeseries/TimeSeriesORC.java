@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2021 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
  */
 package dk.aau.modelardb.core.timeseries;
 
+import dk.aau.modelardb.core.DataPoint;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.ql.exec.vector.DoubleColumnVector;
@@ -23,7 +24,6 @@ import org.apache.orc.OrcFile;
 import org.apache.orc.Reader;
 import org.apache.orc.RecordReader;
 
-import dk.aau.modelardb.core.DataPoint;
 import java.io.IOException;
 
 public class TimeSeriesORC extends TimeSeries {

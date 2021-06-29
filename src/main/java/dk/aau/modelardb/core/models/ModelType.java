@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,7 +41,7 @@ public abstract class ModelType implements Serializable {
     public boolean withinErrorBound(float errorBound, Iterator<DataPoint> tsA, Iterator<DataPoint> tsB) {
         boolean allWithinErrorBound = true;
         while (allWithinErrorBound && tsA.hasNext() && tsB.hasNext()){
-            allWithinErrorBound &= Static.percentageError(tsA.next().value, tsB.next().value) < errorBound;
+            allWithinErrorBound = Static.percentageError(tsA.next().value, tsB.next().value) < errorBound;
         }
         return allWithinErrorBound;
     }

@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,11 +25,9 @@ class PMC_MeanModelType extends ModelType {
     /** Constructors **/
     PMC_MeanModelType(int mtid, float errorBound, int lengthBound) {
         super(mtid, errorBound, lengthBound);
-        this.currentSize = 0;
-        this.min = Float.MAX_VALUE;
-        this.max = -Float.MAX_VALUE;
-        this.sum = 0.0;
-        this.withinErrorBound = true;
+        if (errorBound < 0.0 || 100.0 < errorBound) {
+            throw new IllegalArgumentException("CORE: for PMC_MeanModelType modelardb.error_bound must be a percentage");
+        }
     }
 
     /** Public Methods **/

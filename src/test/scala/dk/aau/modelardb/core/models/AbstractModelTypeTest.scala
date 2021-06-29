@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,10 @@
  */
 package dk.aau.modelardb.core.models
 
-import java.util
-
+import dk.aau.modelardb.core.DataPoint
 import org.scalatest.wordspec.AnyWordSpec
 
-import dk.aau.modelardb.core.DataPoint
+import java.util
 
 abstract class AbstractModelTypeTest extends AnyWordSpec {
 

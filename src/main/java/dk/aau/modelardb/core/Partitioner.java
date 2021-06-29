@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -83,7 +83,7 @@ public class Partitioner {
             });
         } catch (NumberFormatException nfe) {
             String valueBeingParsed = nfe.getMessage().substring(18);
-            throw new IllegalArgumentException("CORE: error parsing " + valueBeingParsed  + " specified in " + derivedKey);
+            throw new IllegalArgumentException("CORE: error parsing " + valueBeingParsed  + " specified in " + derivedKey, nfe);
         }
 
         int dtsc = derivedTimeSeries.values().stream().mapToInt(pairs -> pairs.length).sum();

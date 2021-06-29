@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ package dk.aau.modelardb.core
 import dk.aau.modelardb.core.timeseries.{TimeSeries, TimeSeriesCSV}
 import org.scalatest.wordspec.AnyWordSpec
 
-//TODO: split this into tests for Dimension, Correlation, and Partitioner instead of testing all three here
 class DimensionsTest extends AnyWordSpec {
 
   "initialized with two dimensions containing two levels each" should {
@@ -49,7 +48,6 @@ class DimensionsTest extends AnyWordSpec {
       assert(dimensions.getSources.length == 10)
     }
 
-    //TODO: Create a proper test time series that can generate N data points based on a function, .e.g, a sine curve
     val timeSeries: Array[TimeSeries] = dimensions.getSources.map(source => new TimeSeriesCSV(source, 1, 1000, " ", false,
       0, "unix", "UTC", 1, "en"))
 
@@ -69,12 +67,8 @@ class DimensionsTest extends AnyWordSpec {
     }
 
     "create five time series groups based on correlation by distance" in {
-      val configuration = new Configuration()
-      configuration.add("modelardb.batch_size", 500)
-      configuration.add("modelardb.dimensions", dimensions)
       val correlation = new Correlation()
       correlation.setDistance(0.25F)
-      configuration.add("modelardb.correlations", Array(correlation))
       val groups = Partitioner.groupTimeSeries(Array(correlation), dimensions, timeSeries, 0)
       assert(groups.length == 5)
     }

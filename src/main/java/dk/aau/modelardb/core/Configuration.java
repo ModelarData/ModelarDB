@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,11 @@ package dk.aau.modelardb.core;
 import dk.aau.modelardb.core.utility.Pair;
 import dk.aau.modelardb.core.utility.ValueFunction;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.TimeZone;
+import java.util.concurrent.ExecutorService;
 
 public class Configuration {
 
@@ -136,6 +140,10 @@ public class Configuration {
         return getFloat("modelardb.error_bound", 0);
     }
 
+    public ExecutorService getExecutorService() {
+        return (ExecutorService) getObject("modelardb.executor_service");
+    }
+
     public int getIngestors() {
         return getInteger("modelardb.ingestors", 0);
     }
@@ -149,7 +157,7 @@ public class Configuration {
     }
 
     public int getMaximumLatency() {
-        return getInteger("modelardb.latency", 0);
+        return getInteger("modelardb.maximum_latency", 0);
     }
 
     public int getSamplingInterval() {
@@ -203,9 +211,8 @@ public class Configuration {
                 }
                 break;
             case "modelardb.error_bound":
-                if (( ! (value instanceof Float) || (float) value < 0.0 || 100.0 < (float) value) &&
-                        ( ! (value instanceof Integer) || (int) value < 0.0 || 100.0 < (int) value)) {
-                    throw new IllegalArgumentException("CORE: modelardb.error_bound must be a percentage from 0.0 to 100.0");
+                if ( ! (value instanceof Float) && ! (value instanceof Integer)) {
+                    throw new IllegalArgumentException("CORE: modelardb.error_bound must be an integer or a float");
                 }
                 break;
             case "modelardb.maximum_latency":

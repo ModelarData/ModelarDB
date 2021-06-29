@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,13 @@
  */
 package dk.aau.modelardb.engines.spark
 
-import java.sql.Timestamp
-
 import dk.aau.modelardb.core.WorkingSet
 import dk.aau.modelardb.core.utility.SegmentFunction
 import org.apache.spark.sql.Row
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.receiver.Receiver
+
+import java.sql.Timestamp
 
 class WorkingSetReceiver(workingSet: WorkingSet)
   extends Receiver[Row](StorageLevel.MEMORY_AND_DISK) {

@@ -2,6 +2,7 @@ package dk.aau.modelardb.config
 
 import dk.aau.modelardb.core.{Correlation, Dimensions}
 import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
+import dk.aau.modelardb.engines.CodeGenerator
 import dk.aau.modelardb.engines.spark.SparkProjector
 import pureconfig.ConfigReader
 
@@ -114,7 +115,7 @@ case class ModelarConfig(
       val sourceName = derived(0)
       val derivedName = derived(1)
       val functionName = derived(2)
-      val transformation = SparkProjector.getValueFunction(functionName) //HACK: reuses the engines dynamic codegen
+      val transformation = CodeGenerator.getValueFunction(functionName) //HACK: reuses the engines dynamic codegen
       if(!derivedSources.containsKey(sourceName)) {
         derivedSources.put(derived(0), ArrayBuffer[Pair[String, ValueFunction]]())
       }

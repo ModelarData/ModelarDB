@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,18 @@
  */
 package dk.aau.modelardb.storage
 
-import java.sql.{Array => _, _}
-import java.util
-import scala.collection.JavaConverters._
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
 import dk.aau.modelardb.engines.h2.{H2, H2Storage}
-import org.h2.table.TableFilter
+import dk.aau.modelardb.engines.spark.SparkStorage
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{Row, SparkSession}
-import dk.aau.modelardb.engines.spark.SparkStorage
+import org.h2.table.TableFilter
+
+import java.sql.{Array => _, _}
+import java.util
+import scala.collection.JavaConverters._
 
 class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Storage with SparkStorage {
 
@@ -35,7 +36,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     this.connection = DriverManager.getConnection(connectionString)
     this.connection.setAutoCommit(false)
 
-    //Checks if the tables exist and create them if necessary
+    //Checks if the tables and indexes exist and create them if necessary
     val metadata = this.connection.getMetaData
     val tableType = Array("TABLE")
     val tables = metadata.getTables(null, null, "SEGMENT", tableType)
@@ -44,7 +45,11 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
       val stmt = this.connection.createStatement()
       stmt.executeUpdate(s"CREATE TABLE model_type(mtid INTEGER, name ${this.textType})")
       stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mtid INTEGER, model ${this.blobType}, gaps ${this.blobType})")
-      stmt.executeUpdate(s"CREATE TABLE time_series(tid INTEGER, scaling_factor REAL, sampling_interval INTEGER, gid INTEGER${dimensions.getSchema(this.textType)})")
+      stmt.executeUpdate(s"CREATE TABLE time_series(tid INTEGER, scaling_factor REAL, sampling_interval INTEGER, gid INTEGER${getDimensionsSQL(dimensions, this.textType)})")
+
+      stmt.executeUpdate("CREATE INDEX segment_gid ON segment(gid)")
+      stmt.executeUpdate("CREATE INDEX segment_start_time ON segment(start_time)")
+      stmt.executeUpdate("CREATE INDEX segment_end_time ON segment(end_time)")
     }
 
     //Prepares the necessary statements
@@ -53,7 +58,6 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     this.getMaxGidStmt = this.connection.prepareStatement("SELECT MAX(gid) FROM time_series")
   }
 
-  /* Does not insert the actual time series data from the sensor but just creates a table describing each timeseries (data source) */
   override def initialize(timeSeriesGroups: Array[TimeSeriesGroup],
                           derivedTimeSeries: util.HashMap[Integer, Array[Pair[String, ValueFunction]]],
                           dimensions: Dimensions, modelNames: Array[String]): Unit = {
@@ -61,6 +65,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     val columnsInNormalizedDimensions = dimensions.getColumns.length
     val columns = "?, " * (columnsInNormalizedDimensions + 3) + "?"
     val insertSourceStmt = connection.prepareStatement("INSERT INTO time_series VALUES(" + columns + ")")
+    val dimensionTypes = dimensions.getTypes
     for (tsg <- timeSeriesGroups) {
       for (ts <- tsg.getTimeSeries) {
         insertSourceStmt.clearParameters()
@@ -71,8 +76,13 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
 
         var column = 5
         for (dim <- dimensions.get(ts.source)) {
-          //TODO: Support none string members
-          insertSourceStmt.setString(column, dim.toString)
+          dimensionTypes(column - 5) match {
+            case Dimensions.Types.TEXT => insertSourceStmt.setString(column, dim.asInstanceOf[String])
+            case Dimensions.Types.INT => insertSourceStmt.setInt(column, dim.asInstanceOf[Int])
+            case Dimensions.Types.LONG => insertSourceStmt.setLong(column, dim.asInstanceOf[Long])
+            case Dimensions.Types.FLOAT => insertSourceStmt.setFloat(column, dim.asInstanceOf[Float])
+            case Dimensions.Types.DOUBLE => insertSourceStmt.setDouble(column, dim.asInstanceOf[Double])
+          }
           column += 1
         }
         insertSourceStmt.executeUpdate()
@@ -94,8 +104,13 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
       //Dimensions
       var column = 5
       while(column <= columnsInNormalizedDimensions + 4) {
-        //TODO: Support none string members
-        metadata.add(results.getString(column))
+        dimensionTypes(column - 5) match {
+          case Dimensions.Types.TEXT => metadata.add(results.getString(column).asInstanceOf[Object])
+          case Dimensions.Types.INT => metadata.add(results.getInt(column).asInstanceOf[Object])
+          case Dimensions.Types.LONG => metadata.add(results.getLong(column).asInstanceOf[Object])
+          case Dimensions.Types.FLOAT => metadata.add(results.getFloat(column).asInstanceOf[Object])
+          case Dimensions.Types.DOUBLE => metadata.add(results.getDouble(column).asInstanceOf[Object])
+        }
         column += 1
       }
       timeSeriesInStorage.put(tid, metadata.toArray)
@@ -123,11 +138,11 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     }
   }
 
-  override def getMaxTid(): Int = {
+  override def getMaxTid: Int = {
     getFirstInteger(this.getMaxTidStmt)
   }
 
-  override def getMaxGid(): Int = {
+  override def getMaxGid: Int = {
     getFirstInteger(this.getMaxGidStmt)
   }
 
@@ -164,8 +179,8 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
   }
 
   override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
-    getSegmentGroups(H2.expressionToSQLPredicates(filter.getSelect.getCondition(),
-      this.timeSeriesGroupCache, this.inverseDimensionsCache, true).strip())
+    getSegmentGroups(H2.expressionToSQLPredicates(filter.getSelect.getCondition,
+      this.timeSeriesGroupCache, this.memberTimeSeriesCache, supportsOr = true))
   }
 
   //SparkStorage
@@ -253,7 +268,6 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
   }
 
   /** Instance Variables **/
-  private var isMqttEnabled: Boolean = false
   private var connection: Connection = _
   private var insertStmt: PreparedStatement = _
   private var getMaxTidStmt: PreparedStatement = _
