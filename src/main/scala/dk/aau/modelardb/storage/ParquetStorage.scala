@@ -15,7 +15,7 @@
 package dk.aau.modelardb.storage
 
 import dk.aau.modelardb.core.utility.Static
-import dk.aau.modelardb.core.{Dimensions, SegmentGroup}
+import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
 import dk.aau.modelardb.engines.spark.Spark
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -52,7 +52,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
 
   /** Public Methods **/
   //Storage
-  def storeTimeSeries(timeSeriesGroups: Array[dk.aau.modelardb.core.TimeSeriesGroup]): Unit = {
+  def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
     val columns = new util.ArrayList[Type]()
     columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "tid"))
     columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.FLOAT, "scaling_factor"))
@@ -137,7 +137,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     timeSeriesInStorage
   }
 
-  override def storeModelTypes(modelsToInsert: java.util.HashMap[String,Integer]): Unit = {
+  override def storeModelTypes(modelsToInsert: util.HashMap[String,Integer]): Unit = {
     val schema = new MessageType("model_type",
       new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "mid"),
       new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "name"))
@@ -179,7 +179,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   //H2Storage
-  override def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
+  override def writeSegmentGroupFiles(segmentGroups: Array[SegmentGroup], size: Int, segmentFolder: Path): Unit = {
     val writer = getWriter(new Path(getSegmentPartPath(".parquet")), this.segmentSchema)
     for (segmentGroup <- segmentGroups.take(size)) {
       val group = new SimpleGroup(this.segmentSchema)
@@ -192,17 +192,13 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
       writer.write(group)
     }
     writer.close()
-
-    if (shouldMerge()) {
-      merge(new Path(this.segmentFolder + "/segment.parquet"), listFiles(this.segmentFolderPath))
-    }
   }
 
-  override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
+  override def readSegmentGroupsFiles(filter: TableFilter, segmentFolder: Path): Iterator[SegmentGroup] = {
     Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
     new Iterator[SegmentGroup] {
       /** Instance Variables **/
-      private val segmentFiles = listFiles(segmentFolderPath).iterator()
+      private val segmentFiles = listFiles(segmentFolder).iterator()
       private var segmentFile: ParquetFileReader = _
       private var columnIO: MessageColumnIO = _
       private var pages: PageReadStore = _
@@ -263,30 +259,23 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   //SparkStorage
-  override def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit = {
-    if ( ! shouldMerge) {
-      //Add new Parquet files for this batch to the existing folder
-      df.write.mode(SaveMode.Append).parquet(this.segmentFolder)
-    } else {
-      //Writes new Parquet files with the segment on disk and from this batch
-      val mergedDF = df.union(sparkSession.read.schema(Spark.getStorageSegmentGroupsSchema).parquet(this.segmentFolder))
-      val newSegmentFolder = new Path(this.rootFolder + "/segment_new")
-      mergedDF.write.parquet(newSegmentFolder.toString)
-
-      //Overwrite the old segment files with the new segment file
-      this.fileSystem.delete(this.segmentFolderPath, true)
-      this.fileSystem.rename(newSegmentFolder, this.segmentFolderPath)
-    }
+  override def writeSegmentGroupsFiles(sparkSession: SparkSession, df: DataFrame, segmentFolder: String): Unit = {
+    df.write.mode(SaveMode.Append).parquet(segmentFolder)
   }
 
-  override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame = {
-    Spark.applyFiltersToDataFrame(sparkSession.read.parquet(this.rootFolder + "/segment"), filters)
+  override def readSegmentGroupsFiles(sparkSession: SparkSession, filters: Array[Filter], segmentFolder: String): DataFrame = {
+    Spark.applyFiltersToDataFrame(sparkSession.read.parquet(segmentFolder), filters)
       .withColumn("start_time", (col("start_time") / 1000L).cast("timestamp"))
       .withColumn("end_time", (col("end_time") / 1000L).cast("timestamp"))
   }
 
   /** Protected Methods **/
-  protected override def getMaxID(fieldIndex: Int): Int = {
+  protected override def getMaxID(columnName: String): Int = {
+    val fieldIndex = columnName match {
+      case "tid" => 0
+      case "gid" => 3
+      case _ => throw new IllegalArgumentException("ModelarDB: unable to get maximum the id from column " + columnName)
+    }
     val reader = try {
       getReader(new Path(this.rootFolder + "/time_series.parquet"))
     } catch {
@@ -308,16 +297,15 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     id
   }
 
-  protected override def merge(outputFilePath: Path, inputPaths: util.ArrayList[Path]): Unit = {
-    //NOTE: merge assumes all inputs share the same schema
+  protected override def mergeSegmentGroupFiles(outputFilePath: Path, inputPaths: util.ArrayList[Path]): Unit = {
+    //NOTE: mergeSegmentGroupFiles assumes all inputs share the same schema
     val inputPathsScala = inputPaths.asScala
     val segmentFile = getReader(inputPaths.get(0))
     val schema = segmentFile.getFooter.getFileMetaData.getSchema
     segmentFile.close()
 
     //Write the new file
-    val outputMerge  = new Path(outputFilePath + "_merge")
-    val writer = getWriter(outputMerge, schema)
+    val writer = getWriter(outputFilePath, schema)
     for (inputPath <- inputPathsScala) {
       val segmentFile = getReader(inputPath)
       val columnIO = new ColumnIOFactory().getColumnIO(schema)
@@ -333,13 +321,6 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
       segmentFile.close()
     }
     writer.close()
-
-    //Delete the old files
-    for (inputPath <- inputPathsScala) {
-      this.fileSystem.delete(inputPath, false)
-    }
-    this.fileSystem.rename(outputMerge, outputFilePath)
-    this.batchesSinceLastMerge = 0
   }
 
   /** Private Methods **/

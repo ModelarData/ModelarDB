@@ -163,7 +163,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   //H2Storage
-  override def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
+  override def writeSegmentGroupFiles(segmentGroups: Array[SegmentGroup], size: Int, segmentFolderPath: Path): Unit = {
     val segments = getWriter(getSegmentPartPath(".orc"), this.segmentSchema)
     val batch = segments.getSchema.createRowBatch()
 
@@ -179,13 +179,9 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     }
     flush(segments, batch)
     segments.close()
-
-    if (shouldMerge()) {
-      merge(new Path(this.segmentFolder + "/segment.orc"), listFiles(this.segmentFolderPath))
-    }
   }
 
-  override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
+  override def readSegmentGroupsFiles(filter: TableFilter, segmentFolderPath: Path): Iterator[SegmentGroup] = {
     Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
     new Iterator[SegmentGroup] {
       /** Instance Variables **/
@@ -247,28 +243,21 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   //SparkStorage
-  override def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit = {
-    if ( ! shouldMerge) {
-      //Add new ORC files for this batch to the existing folder
-      df.write.mode(SaveMode.Append).orc(this.segmentFolder)
-    } else {
-      //Writes new ORC files with the segment on disk and from this batch
-      val mergedDF = df.union(sparkSession.read.schema(Spark.getStorageSegmentGroupsSchema).orc(this.segmentFolder))
-      val newSegmentFolder = new Path(this.rootFolder + "/segment_new")
-      mergedDF.write.orc(newSegmentFolder.toString)
-
-      //Overwrite the old segment files with the new segment file
-      this.fileSystem.delete(this.segmentFolderPath, true)
-      this.fileSystem.rename(newSegmentFolder, this.segmentFolderPath)
-    }
+  override def writeSegmentGroupsFiles(sparkSession: SparkSession, df: DataFrame, segmentFolder: String): Unit = {
+    df.write.mode(SaveMode.Append).orc(segmentFolder)
   }
 
-  override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame = {
-    Spark.applyFiltersToDataFrame(sparkSession.read.orc(this.rootFolder + "/segment"), filters)
+    override def readSegmentGroupsFiles(sparkSession: SparkSession, filters: Array[Filter], segmentFolder: String): DataFrame = {
+    Spark.applyFiltersToDataFrame(sparkSession.read.orc(segmentFolder), filters)
   }
 
   /** Protected Methods **/
-  protected override def getMaxID(index: Int): Int = {
+  protected override def getMaxID(columnName: String): Int = {
+    val fieldIndex = columnName match {
+      case "tid" => 0
+      case "gid" => 3
+      case _ => throw new IllegalArgumentException("ModelarDB: unable to get maximum the id from column " + columnName)
+    }
     val sources = try {
       getReader(new Path(this.rootFolder + "/time_series.orc"))
     } catch {
@@ -279,7 +268,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
 
     var id = 0L
     while (rows.nextBatch(batch)) {
-      val column = batch.cols(index).asInstanceOf[LongColumnVector].vector
+      val column = batch.cols(fieldIndex).asInstanceOf[LongColumnVector].vector
       for (i <- 0 until column.length) {
         id = math.max(column(i), id)
       }
@@ -288,18 +277,9 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     id.toInt
   }
 
-  protected override def merge(outputFilePath: Path, inputPaths: util.ArrayList[Path]): Unit = {
-    //NOTE: merge assumes all inputs share the same schema
-    val outputMerge = new Path(outputFilePath + "_merge")
-    val configuration = OrcFile.writerOptions(new Configuration())
-    OrcFile.mergeFiles(outputMerge, configuration, inputPaths)
-
-    val inputPathsIter = inputPaths.iterator()
-    while (inputPathsIter.hasNext) {
-      this.fileSystem.delete(inputPathsIter.next(), false)
-    }
-    this.fileSystem.rename(outputMerge, outputFilePath)
-    this.batchesSinceLastMerge = 0
+  protected override def mergeSegmentGroupFiles(outputFilePath: Path, inputPaths: util.ArrayList[Path]): Unit = {
+    //NOTE: mergeSegmentGroupFiles and OrCFile.mergeFiles assumes all inputs share the same schema
+    OrcFile.mergeFiles(outputFilePath, OrcFile.writerOptions(new Configuration()), inputPaths)
   }
 
   /** Private Methods **/
