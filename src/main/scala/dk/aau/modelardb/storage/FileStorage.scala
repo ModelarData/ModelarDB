@@ -19,8 +19,8 @@ import dk.aau.modelardb.engines.h2.H2Storage
 import dk.aau.modelardb.engines.spark.SparkStorage
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.h2.table.TableFilter
 
 import java.util

@@ -14,19 +14,20 @@
  */
 package dk.aau.modelardb.engines.spark
 
-import java.sql.Timestamp
-import scala.collection.mutable
 import dk.aau.modelardb.Interface
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Static, ValueFunction}
 import dk.aau.modelardb.engines.EngineUtilities
 import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.sql.sources.Filter
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, DataFrameReader, SparkSession, sources}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
+
+import java.sql.Timestamp
+import scala.collection.mutable
 
 class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
 
