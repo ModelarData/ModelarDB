@@ -57,8 +57,8 @@ Download: [arXiv](https://arxiv.org/abs/1903.10269)
 
 ## Configuration
 ModelarDB requires that a configuration file is available at
-*$HOME/Programs/modelardb.conf* or as the first command-line argument. This file
-must specify the query processing engine and storage system to use. An example
+*$HOME/.modelardb.conf* or as the first command-line argument. This file must
+specify the query processing engine and storage system to use. An example
 configuration is included as part of this repository.
 
 ## License
