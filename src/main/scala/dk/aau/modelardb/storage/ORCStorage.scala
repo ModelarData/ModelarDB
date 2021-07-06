@@ -59,7 +59,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
         case Dimensions.Types.DOUBLE => schema.addField(dimi._1, TypeDescription.createDouble())
       }
     }
-    val source = getWriter(this.rootFolder + "/time_series.orc_new", schema)
+    val source = getWriter(this.rootFolder + "time_series.orc_new", schema)
     val batch = source.getSchema.createRowBatch()
 
     for (tsg <- timeSeriesGroups) {
@@ -83,13 +83,13 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     }
     flush(source, batch)
     source.close()
-    merge("time_series.orc", "time_series.orc", "time_series.orc_new")
+    mergeAndDeleteInputFiles("time_series.orc", "time_series.orc", "time_series.orc_new")
   }
 
   override def getTimeSeries: util.HashMap[Integer, Array[Object]] = {
     val columnsInNormalizedDimensions = dimensions.getColumns.length
     val timeSeriesInStorage = new util.HashMap[Integer, Array[Object]]()
-    val timeSeries = getReader(new Path(this.rootFolder + "/time_series.orc"))
+    val timeSeries = getReader(new Path(this.rootFolder + "time_series.orc"))
 
     val rows = timeSeries.rows()
     val batch = timeSeries.getSchema.createRowBatch()
@@ -128,7 +128,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     val schema = TypeDescription.createStruct()
       .addField("mid", TypeDescription.createInt())
       .addField("name", TypeDescription.createString())
-    val modelTypes = getWriter(this.rootFolder + "/model_type.orc_new", schema)
+    val modelTypes = getWriter(this.rootFolder + "model_type.orc_new", schema)
     val batch = modelTypes.getSchema.createRowBatch()
 
     for ((k, v) <- modelsToInsert.asScala) {
@@ -139,13 +139,13 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     }
     flush(modelTypes, batch)
     modelTypes.close()
-    merge("model_type.orc", "model_type.orc", "model_type.orc_new")
+    mergeAndDeleteInputFiles("model_type.orc", "model_type.orc", "model_type.orc_new")
   }
 
   override def getModelTypes: util.HashMap[String, Integer] = {
     val modelsInStorage = new util.HashMap[String, Integer]()
     val modelTypes = try {
-      getReader(new Path(this.rootFolder + "/model_type.orc"))
+      getReader(new Path(this.rootFolder + "model_type.orc"))
     } catch {
       case _: FileNotFoundException => return modelsInStorage
     }
@@ -163,8 +163,8 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   //H2Storage
-  override def writeSegmentGroupFiles(segmentGroups: Array[SegmentGroup], size: Int, segmentFolderPath: Path): Unit = {
-    val segments = getWriter(getSegmentPartPath(".orc"), this.segmentSchema)
+  override def writeSegmentGroupFile(segmentGroups: Array[SegmentGroup], size: Int, segmentGroupFile: String): Unit = {
+    val segments = getWriter(segmentGroupFile + ".orc", this.segmentSchema)
     val batch = segments.getSchema.createRowBatch()
 
     for (segmentGroup <- segmentGroups.take(size)) {
@@ -181,11 +181,11 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     segments.close()
   }
 
-  override def readSegmentGroupsFiles(filter: TableFilter, segmentFolderPath: Path): Iterator[SegmentGroup] = {
+  override def readSegmentGroupsFiles(filter: TableFilter, segmentGroupFiles: util.ArrayList[Path]): Iterator[SegmentGroup] = {
     Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
     new Iterator[SegmentGroup] {
       /** Instance Variables **/
-      private val segmentFiles = listFiles(segmentFolderPath).iterator()
+      private val segmentFiles = segmentGroupFiles.iterator()
       private var segmentFile: Reader = _
       private var rows: RecordReader = _
       private var batch: VectorizedRowBatch = _
@@ -243,12 +243,15 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   //SparkStorage
-  override def writeSegmentGroupsFiles(sparkSession: SparkSession, df: DataFrame, segmentFolder: String): Unit = {
-    df.write.mode(SaveMode.Append).orc(segmentFolder)
+  override def writeSegmentGroupsFile(sparkSession: SparkSession, df: DataFrame, segmentGroupFolder: String): Unit = {
+    df.write.mode(SaveMode.Append).orc(segmentGroupFolder)
   }
 
-    override def readSegmentGroupsFiles(sparkSession: SparkSession, filters: Array[Filter], segmentFolder: String): DataFrame = {
-    Spark.applyFiltersToDataFrame(sparkSession.read.orc(segmentFolder), filters)
+  override def readSegmentGroupsFiles(sparkSession: SparkSession, filters: Array[Filter],
+                                      segmentGroupFolders: util.ArrayList[Path]): DataFrame = {
+    var df = sparkSession.emptyDataFrame
+    segmentGroupFolders.forEach(sgf => df = df.union(sparkSession.read.orc(sgf.toString)))
+    Spark.applyFiltersToDataFrame(df, filters)
   }
 
   /** Protected Methods **/
@@ -259,7 +262,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
       case _ => throw new IllegalArgumentException("ModelarDB: unable to get maximum the id from column " + columnName)
     }
     val sources = try {
-      getReader(new Path(this.rootFolder + "/time_series.orc"))
+      getReader(new Path(this.rootFolder + "time_series.orc"))
     } catch {
       case _: FileNotFoundException => return 0
     }
@@ -277,21 +280,24 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     id.toInt
   }
 
-  protected override def mergeSegmentGroupFiles(outputFilePath: Path, inputPaths: util.ArrayList[Path]): Unit = {
-    //NOTE: mergeSegmentGroupFiles and OrCFile.mergeFiles assumes all inputs share the same schema
-    OrcFile.mergeFiles(outputFilePath, OrcFile.writerOptions(new Configuration()), inputPaths)
+  protected override def mergeFiles(outputFileRelativePath: Path, inputFilesRelativePaths: util.ArrayList[Path]): Unit = {
+    OrcFile.mergeFiles(outputFileRelativePath, OrcFile.writerOptions(new Configuration()), inputFilesRelativePaths)
   }
 
   /** Private Methods **/
-  private def getReader(path: Path): Reader = {
-    OrcFile.createReader(path, OrcFile.readerOptions(new Configuration))
+  private def getReader(orcFilePath: Path): Reader = {
+    OrcFile.createReader(orcFilePath, OrcFile.readerOptions(new Configuration))
   }
 
-  private def getWriter(orcFile: String, schema: TypeDescription): Writer = {
+  private def getWriter(orcFilePath: String, schema: TypeDescription): Writer = {
+    getWriter(new Path(orcFilePath), schema)
+  }
+
+  private def getWriter(orcFilePath: Path, schema: TypeDescription): Writer = {
     val writerOptions = OrcFile.writerOptions(new Configuration())
     writerOptions.setSchema(schema)
     writerOptions.compress(CompressionKind.SNAPPY)
-    OrcFile.createWriter(new Path(orcFile), writerOptions)
+    OrcFile.createWriter(orcFilePath, writerOptions)
   }
 
   private def flushIfNecessary(writer: Writer, batch: VectorizedRowBatch): Unit = {

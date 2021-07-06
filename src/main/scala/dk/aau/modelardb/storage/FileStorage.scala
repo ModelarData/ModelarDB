@@ -34,65 +34,68 @@ import scala.collection.JavaConverters._
 //TODO: Ensure that FileStorage can never lose data if sub-type expose read and write methods for each table:
 //      - Add mergelog listing files that have been merged but not deleted yet because a query is using it.
 //      - Store list of currently active files that new queries can use and list of files to delete when not used.
+//TODO: Maybe split segment into a hot and cold folder, so new files are stored in hot and later merged into cold.
+//TODO: Ensure H2 and Spark can use FileStorage created by the other system, move Spark output to Folder+PartName?
+//TODO: Ensure the minimum number of file listing and constructions of new Path objects.
 abstract class FileStorage(rootFolder: String) extends Storage with H2Storage with SparkStorage {
   /** Instance Variables **/
   private var batchesSinceLastMerge: Int = 0
-  private val segmentFolder: String = rootFolder + "/segment"
+  private val segmentFolder = this.rootFolder + "segment/"
   private val segmentFolderPath: Path = new Path(segmentFolder)
-  private val fileSystem: FileSystem = new Path(rootFolder).getFileSystem(new Configuration())
+  private val fileSystem: FileSystem = new Path(this.rootFolder).getFileSystem(new Configuration())
 
   /** Public Methods **/
   override def open(dimensions: Dimensions): Unit = {
-    //Purposely empty as file descriptors are created as necessary
+    if ( ! this.fileSystem.exists(this.segmentFolderPath)) {
+      this.fileSystem.mkdirs(this.segmentFolderPath)
+    }
   }
 
   override def open(ssb: SparkSession.Builder, dimensions: Dimensions): SparkSession = {
-    //The segment folder must exist as it is joined with each new batch
-    val segment = new Path(this.rootFolder + "/segment")
-    val fs = segment.getFileSystem(new Configuration())
-    if ( ! fs.exists(segment)) {
-      fs.mkdirs(segment)
-    }
+    this.open(dimensions)
 
-    //TODO: Figure out why this have to be set when writing an ORC file
+    //TODO: Determine why this have to be set when writing an ORC file
     ssb.config("spark.sql.orc.impl", "native").getOrCreate()
   }
 
   //H2Storage
   override def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
-    writeSegmentGroupFiles(segmentGroups, size, this.segmentFolderPath)
-    if (shouldMerge()) { //TODO: can merging be done as part of the file writing process?
-      mergeSegmentGroupFiles(new Path(this.segmentFolder + "/segment"), listFiles(this.segmentFolderPath))
+    writeSegmentGroupFile(segmentGroups, size, this.getSegmentPartPath)
+    if (shouldMerge()) {
+      //TODO: register files to be merged before starting the merge so rollback is possible
+      val inputFiles = listFiles(this.segmentFolderPath)
+      mergeFiles(new Path(getSegmentPartPath), inputFiles)
+      inputFiles.forEach(ifp => this.fileSystem.delete(ifp, false))
     }
   }
 
   override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
-    //TODO: How to mark files as in use until a query has finished using them? Pass a destructor function?
-    readSegmentGroupsFiles(filter, this.segmentFolderPath)
+    //TODO: How to mark files as in use until a query has finished using them? Pass a destructor function? Weak references? deleteOnExit?
+    readSegmentGroupsFiles(filter, listFiles(this.segmentFolderPath))
   }
 
   //SparkStorage
   override def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit = {
     if ( ! shouldMerge) {
       //Add new files for this batch to the existing folder
-      writeSegmentGroupsFiles(sparkSession, df, this.segmentFolder)
+      writeSegmentGroupsFile(sparkSession, df, this.segmentFolder)
     } else {
-      //Writes new files with the segment groups on disk and from this batch
-      val mergeSegmentsFolder = this.rootFolder + "/segment_merge"
-      val mergeDF = df.union(readSegmentGroupsFiles(sparkSession, Array(), this.segmentFolder))
-      writeSegmentGroupsFiles(sparkSession, mergeDF, mergeSegmentsFolder)
+      //Create a new segment folder with the segment groups on disk and from this batch
+      val mergeSegmentsFolder = this.rootFolder + "segment_merge"
+      val mergeDF = df.union(readSegmentGroupsFiles(sparkSession, Array(),
+        this.listFiles(new Path(this.segmentFolder))))
+      writeSegmentGroupsFile(sparkSession, mergeDF, mergeSegmentsFolder)
 
-      //Overwrite the old segment files with the new segment file
+      //Overwrite the old segment folder with the new segment folder
       this.fileSystem.delete(this.segmentFolderPath, true)
       this.fileSystem.rename(new Path(mergeSegmentsFolder), this.segmentFolderPath)
     }
   }
 
   override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame = {
-    readSegmentGroupsFiles(sparkSession, filters, this.segmentFolder)
+    readSegmentGroupsFiles(sparkSession, filters, listFiles(this.segmentFolderPath))
   }
 
-  //TODO: Are the get methods still required?
   override def getMaxTid: Int = {
     getMaxID("tid")
   }
@@ -106,33 +109,32 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   }
 
   /** Protected Methods **/
-  protected def getMaxID(columnName: String): Int //TODO: Write files that FileStorage know how to index instead of just files in a folder
-  protected def writeSegmentGroupFiles(segmentGroups: Array[SegmentGroup], size: Int, segmentFolder: Path): Unit
-  protected def readSegmentGroupsFiles(filter: TableFilter, segmentFolder: Path): Iterator[SegmentGroup]
-  protected def mergeSegmentGroupFiles(outputFilePath: Path, inputPaths: util.ArrayList[Path]): Unit
-  protected def writeSegmentGroupsFiles(sparkSession: SparkSession, df: DataFrame, segmentFolder: String): Unit
-  protected def readSegmentGroupsFiles(sparkSession: SparkSession, filters: Array[Filter], segmentFolder: String): DataFrame
+  protected def getMaxID(columnName: String): Int
+  protected def writeSegmentGroupFile(segmentGroups: Array[SegmentGroup], size: Int, segmentGroupFile: String): Unit
+  protected def readSegmentGroupsFiles(filter: TableFilter, segmentGroupFiles: util.ArrayList[Path]): Iterator[SegmentGroup]
+  protected def mergeFiles(outputFileRelativePath: Path, inputFilesRelativePaths: util.ArrayList[Path]): Unit
+  protected def writeSegmentGroupsFile(sparkSession: SparkSession, df: DataFrame, segmentGroupFile: String): Unit
+  protected def readSegmentGroupsFiles(sparkSession: SparkSession, filters: Array[Filter], segmentFolders: util.ArrayList[Path]): DataFrame
 
-  protected def merge(outputFileName: String, inputNames: String*): Unit = {
-    val slashedRootFolder = this.rootFolder + "/"
+  protected def mergeAndDeleteInputFiles(outputFileRelativePath: String, inputFilesRelativePaths: String*): Unit = {
     val inputPaths = new util.ArrayList[Path]()
-    inputNames.foreach(inputFile => {
-      val path = new Path(slashedRootFolder + inputFile)
+    inputFilesRelativePaths.foreach(inputFileRelativePath => {
+      val path = new Path(this.rootFolder + inputFileRelativePath)
+      println(path)
       if (this.fileSystem.exists(path)) {
         inputPaths.add(path)
       }
     })
-    val outputFilePath = new Path(slashedRootFolder + outputFileName)
-    mergeSegmentGroupFiles(outputFilePath, inputPaths)
+    val outputFilePath = new Path(this.rootFolder + outputFileRelativePath)
+    val outputFileMerge = new Path(outputFilePath + "_merge")
+    mergeFiles(outputFileMerge, inputPaths)
 
     //Delete the old files
     val inputPathsScala = inputPaths.asScala
     for (inputPath <- inputPathsScala) {
       this.fileSystem.delete(inputPath, false)
     }
-    val outputMerge  = new Path(outputFilePath + "_merge")
-    this.fileSystem.rename(outputMerge, outputFilePath)
-    this.batchesSinceLastMerge = 0
+    this.fileSystem.rename(outputFileMerge, outputFilePath)
   }
 
   protected def shouldMerge(): Boolean = {
@@ -147,9 +149,9 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
     true //TODO: Test merging through unit tests and one HDFS
   }
 
-  protected def getSegmentPartPath(suffix: String): String = {
-    //The filenames purposely use the same structure as used by Apache Spark to make listing them simpler
-    this.segmentFolder + "/part-" +  UUID.randomUUID().toString + "-" + System.currentTimeMillis() + suffix
+  private def getSegmentPartPath: String = {
+    //The filenames purposely use the same structure as used by Apache Spark to make listing the files simpler
+    this.segmentFolder + "part-" +  UUID.randomUUID().toString + "-" + System.currentTimeMillis()
   }
 
   protected def listFiles(folder: Path): util.ArrayList[Path] = {
