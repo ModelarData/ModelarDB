@@ -7,7 +7,7 @@ systems and tested on Linux and macOS.
 
 ModelarDB intentionally does not gather usage data. So, all users are highly
 encouraged to post comments, suggestions, and bugs as GitHub issues, especially
-if a limitation of ModelarDB prevents it from used in a particular domain.
+if a limitation of ModelarDB prevents it from being used in a particular domain.
 
 ## Installation
 1. Install the Java Development Kit\*

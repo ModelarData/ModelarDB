@@ -7,12 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - A query engine for single-node deployments based on the RDBMS H2.
-- Support executing queries from multiple users in parallel when using the
+- Support for executing queries from multiple users in parallel when using the
   socket and HTTP interface.
 - All UDFs and UDAFs in the Segment View now support the # operator, in
   contrast to * it selects only the columns required for a UDAF or UDF.
-- Support creating queryable derived time series as a source time series and a
-  function defined as `transform(value: Float, scalingFactor: Float): Float`.
+- Support for creating queryable derived time series as a source time series and
+  a function defined as `transform(value: Float, scalingFactor: Float): Float`.
 - Support for ingesting time series from Apache Parquet and Apache ORC.
 
 ### Changed
