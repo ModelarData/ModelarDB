@@ -1,5 +1,4 @@
 name := "ModelarDB"
-version := "1.0"
 scalaVersion := "2.12.14"
 scalacOptions ++= Seq("-opt:l:inline", "-opt-inline-from:<sources>", "-feature", "-deprecation", "-Xlint:_")
 
@@ -42,8 +41,8 @@ Test / logBuffered := false
 jacocoReportSettings := JacocoReportSettings(formats = Seq(JacocoReportFormats.ScalaHTML))
 
 /* Github Package Repository */
-val owner = "modelardata"
-val repo = "modelardb"
+val owner = "ModelarData"
+val repo = "ModelarDB"
 publishMavenStyle := true
 publishTo := Some("GitHub Package Registry" at s"https://maven.pkg.github.com/$owner/$repo")
 

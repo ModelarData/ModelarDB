@@ -22,8 +22,9 @@ if a limitation of ModelarDB prevents it from being used in a particular domain.
 
 \* OpenJDK 11 and Oracle's Java SE Development Kit 11 have been tested.
 
-\* To execute ModelarDB on an existing Apache Spark cluster, an uber jar must be
-created to ensure the necessary dependencies are all included in a single jar.
+\* To execute ModelarDB on an existing Apache Spark cluster, an uber Jar must be
+created to ensure the necessary dependencies are all included in a single Jar
+file.
 
 \*\* If `sbt run` is executed directly from the command-line, then the run
 command and the arguments must be surrounded by quotes to pass the arguments to
@@ -42,11 +43,11 @@ The repository is organized using three set branches:
 - Multiple unstable feature branches with features currently in development.
 These are named `dev/name-of-the-feature`.
 
-The develop-branch should always compile without any errors but it is only
+The `develop` branch should always compile without any errors but it is only
 intended to be used for testing new features and bugfixes. A Docker image with a
 recent known-good build from the `develop` branch and the [REDD data
 set](http://redd.csail.mit.edu/) is
-[available](https://github.com/orgs/modelardata/packages?repo_name=ModelarDB)
+[available](https://github.com/orgs/ModelarData/packages?repo_name=ModelarDB)
 for testing.
 
 All changed are tracked in [CHANGELOG.md](CHANGELOG.md) and its unreleased
