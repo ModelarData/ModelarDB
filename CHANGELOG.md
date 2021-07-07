@@ -1,10 +1,10 @@
 # Changelog
-All notable changes to this project will be documented in this file.
+All notable changes to ModelarDB will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0] - 2021-07-07
 ### Added
 - A query engine for single-node deployments based on the RDBMS H2.
 - Support for executing queries from multiple users in parallel when using the
@@ -22,14 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed the column names in the views to match internal terminology.
 - The UDF INTERVAL in the Segment View has been renamed to START_END.
 
-### Deprecated
 ### Removed
 - SQLite is no longer included as it is replaced by H2.
 - The _SS UDAFs have been removed as they are not needed for H2 and can be
   replaced with INLINE and a sub-query for Apache Spark.
-
-### Fixed
-### Security
+- The Spark Cassandra Connector is no longer included in the uber Jar.
 
 ## [0.0.0] - 2020-12-10
 ### Added
