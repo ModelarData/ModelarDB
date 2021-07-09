@@ -40,9 +40,40 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     .addField("model", TypeDescription.createBinary())
     .addField("gaps", TypeDescription.createBinary())
 
-  /** Public Methods **/
+  /** Protected Methods **/
   //FileStorage
-  override def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path): Unit = {
+  protected override def getFileSuffix: String = ".orc"
+
+  protected override def getMaxID(columnName: String): Int = {
+    val fieldIndex = columnName match {
+      case "tid" => 0
+      case "gid" => 3
+      case _ => throw new IllegalArgumentException("ModelarDB: unable to get the maximum id for column " + columnName)
+    }
+    val sources = try {
+      getReader(new Path(this.rootFolder + "time_series.orc"))
+    } catch {
+      case _: FileNotFoundException => return 0
+    }
+    val rows = sources.rows()
+    val batch = sources.getSchema.createRowBatch()
+
+    var id = 0L
+    while (rows.nextBatch(batch)) {
+      val column = batch.cols(fieldIndex).asInstanceOf[LongColumnVector].vector
+      for (i <- 0 until column.length) {
+        id = math.max(column(i), id)
+      }
+    }
+    rows.close()
+    id.toInt
+  }
+
+  protected override def mergeFiles(outputFilePath: Path, inputFilesPaths: util.ArrayList[Path]): Unit = {
+    OrcFile.mergeFiles(outputFilePath, OrcFile.writerOptions(new Configuration()), inputFilesPaths)
+  }
+
+  override protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path): Unit = {
     val schema = TypeDescription.createStruct()
       .addField("tid", TypeDescription.createInt())
       .addField("scaling_factor", TypeDescription.createFloat())
@@ -85,7 +116,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     source.close()
   }
 
-  override def readTimeSeriesFile(timeSeriesFilePath: Path): util.HashMap[Integer, Array[Object]] = {
+  override protected def readTimeSeriesFile(timeSeriesFilePath: Path): util.HashMap[Integer, Array[Object]] = {
     val columnsInNormalizedDimensions = dimensions.getColumns.length
     val timeSeriesInStorage = new util.HashMap[Integer, Array[Object]]()
     val timeSeries = getReader(timeSeriesFilePath)
@@ -123,7 +154,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     timeSeriesInStorage
   }
 
-  override def writeModelTypeFile(modelsToInsert: util.HashMap[String,Integer], modelTypeFilePath: Path): Unit = {
+  override protected def writeModelTypeFile(modelsToInsert: util.HashMap[String,Integer], modelTypeFilePath: Path): Unit = {
     val schema = TypeDescription.createStruct()
       .addField("mid", TypeDescription.createInt())
       .addField("name", TypeDescription.createString())
@@ -140,7 +171,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     modelTypes.close()
   }
 
-  override def readModelTypeFile(modelTypeFilePath: Path): util.HashMap[String, Integer] = {
+  override protected def readModelTypeFile(modelTypeFilePath: Path): util.HashMap[String, Integer] = {
     val modelsInStorage = new util.HashMap[String, Integer]()
     val modelTypes = try {
       getReader(modelTypeFilePath)
@@ -161,7 +192,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   //FileStorage - H2Storage
-  override def writeSegmentGroupFile(segmentGroups: Array[SegmentGroup], size: Int, segmentGroupFilePath: Path): Unit = {
+  override protected def writeSegmentGroupFile(segmentGroups: Array[SegmentGroup], size: Int, segmentGroupFilePath: Path): Unit = {
     val segments = getWriter(segmentGroupFilePath, this.segmentGroupSchema)
     val batch = segments.getSchema.createRowBatch()
 
@@ -179,7 +210,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     segments.close()
   }
 
-  override def readSegmentGroupsFiles(filter: TableFilter, segmentGroupFiles: util.ArrayList[Path]): Iterator[SegmentGroup] = {
+  override protected def readSegmentGroupsFiles(filter: TableFilter, segmentGroupFiles: util.ArrayList[Path]): Iterator[SegmentGroup] = {
     Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
     new Iterator[SegmentGroup] {
       /** Instance Variables **/
@@ -241,50 +272,18 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   //FileStorage - SparkStorage
-  override def writeSegmentGroupsFolder(sparkSession: SparkSession, df: DataFrame, segmentGroupFolder: String): Unit = {
+  override protected def writeSegmentGroupsFolder(sparkSession: SparkSession, df: DataFrame, segmentGroupFolder: String): Unit = {
     df.write.mode(SaveMode.Append).orc(segmentGroupFolder)
   }
 
-  override def readSegmentGroupsFolders(sparkSession: SparkSession, filters: Array[Filter],
-                                        segmentGroupFolders: util.ArrayList[String]): DataFrame = {
+  override protected def readSegmentGroupsFolders(sparkSession: SparkSession, filters: Array[Filter],
+                                                  segmentGroupFolders: util.ArrayList[String]): DataFrame = {
     val segmentGroupFoldersIterator = segmentGroupFolders.iterator()
     var df = sparkSession.read.orc(segmentGroupFoldersIterator.next())
     while (segmentGroupFoldersIterator.hasNext) {
       df = df.union(sparkSession.read.orc(segmentGroupFoldersIterator.next()))
     }
     Spark.applyFiltersToDataFrame(df, filters)
-  }
-
-  /** Protected Methods **/
-  protected override def getFileSuffix: String = ".orc"
-
-  protected override def getMaxID(columnName: String): Int = {
-    val fieldIndex = columnName match {
-      case "tid" => 0
-      case "gid" => 3
-      case _ => throw new IllegalArgumentException("ModelarDB: unable to get the maximum id for column " + columnName)
-    }
-    val sources = try {
-      getReader(new Path(this.rootFolder + "time_series.orc"))
-    } catch {
-      case _: FileNotFoundException => return 0
-    }
-    val rows = sources.rows()
-    val batch = sources.getSchema.createRowBatch()
-
-    var id = 0L
-    while (rows.nextBatch(batch)) {
-      val column = batch.cols(fieldIndex).asInstanceOf[LongColumnVector].vector
-      for (i <- 0 until column.length) {
-        id = math.max(column(i), id)
-      }
-    }
-    rows.close()
-    id.toInt
-  }
-
-  protected override def mergeFiles(outputFilePath: Path, inputFilesPaths: util.ArrayList[Path]): Unit = {
-    OrcFile.mergeFiles(outputFilePath, OrcFile.writerOptions(new Configuration()), inputFilesPaths)
   }
 
   /** Private Methods **/

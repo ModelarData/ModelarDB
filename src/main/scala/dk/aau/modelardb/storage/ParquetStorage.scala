@@ -49,9 +49,64 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "model"),
     new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "gaps"))
 
-  /** Public Methods **/
+  /** Protected Methods **/
   //FileStorage
-  override def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path): Unit = {
+  override protected def getFileSuffix: String = ".parquet"
+
+  override protected def getMaxID(columnName: String): Int = {
+    val fieldIndex = columnName match {
+      case "tid" => 0
+      case "gid" => 3
+      case _ => throw new IllegalArgumentException("ModelarDB: unable to get the maximum id for column " + columnName)
+    }
+    val reader = try {
+      getReader(new Path(this.rootFolder + "time_series.parquet"))
+    } catch {
+      case _: FileNotFoundException => return 0
+    }
+    var id = 0
+    val schema = reader.getFooter.getFileMetaData.getSchema
+    val columnIO = new ColumnIOFactory().getColumnIO(schema)
+    var pages = reader.readNextRowGroup()
+    while (pages != null) {
+      val recordReader = columnIO.getRecordReader(pages, new GroupRecordConverter(schema))
+      for (_ <- 0 until pages.getRowCount.toInt) {
+        val simpleGroup = recordReader.read.asInstanceOf[SimpleGroup]
+        id = Math.max(id, simpleGroup.getInteger(fieldIndex, 0))
+      }
+      pages = reader.readNextRowGroup()
+    }
+    reader.close()
+    id
+  }
+
+  override protected def mergeFiles(outputFilePath: Path, inputFilesPaths: util.ArrayList[Path]): Unit = {
+    //NOTE: merge assumes all inputs share the same schema
+    val inputPathsScala = inputFilesPaths.asScala
+    val segmentFile = getReader(inputFilesPaths.get(0))
+    val schema = segmentFile.getFooter.getFileMetaData.getSchema
+    segmentFile.close()
+
+    //Write the new file
+    val writer = getWriter(outputFilePath, schema)
+    for (inputPath <- inputPathsScala) {
+      val segmentFile = getReader(inputPath)
+      val columnIO = new ColumnIOFactory().getColumnIO(schema)
+      var pages = segmentFile.readNextRowGroup()
+
+      while (pages != null) {
+        val recordReader = columnIO.getRecordReader(pages, new GroupRecordConverter(schema))
+        for (_ <- 0L until pages.getRowCount) {
+          writer.write(recordReader.read)
+        }
+        pages = segmentFile.readNextRowGroup()
+      }
+      segmentFile.close()
+    }
+    writer.close()
+  }
+
+  override protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path): Unit = {
     val columns = new util.ArrayList[Type]()
     columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "tid"))
     columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.FLOAT, "scaling_factor"))
@@ -92,7 +147,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     writer.close()
   }
 
-  override def readTimeSeriesFile(timeSeriesFilePath: Path): util.HashMap[Integer, Array[Object]] = {
+  override protected def readTimeSeriesFile(timeSeriesFilePath: Path): util.HashMap[Integer, Array[Object]] = {
     val columnsInNormalizedDimensions = dimensions.getColumns.length
     val timeSeriesInStorage = new util.HashMap[Integer, Array[Object]]()
     val timeSeries = getReader(timeSeriesFilePath)
@@ -130,7 +185,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     timeSeriesInStorage
   }
 
-  override def writeModelTypeFile(modelsToInsert: util.HashMap[String,Integer], modelTypeFilePath: Path): Unit = {
+  override protected def writeModelTypeFile(modelsToInsert: util.HashMap[String,Integer], modelTypeFilePath: Path): Unit = {
     val schema = new MessageType("model_type",
       new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "mid"),
       new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "name"))
@@ -145,7 +200,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     writer.close()
   }
 
-  override def readModelTypeFile(modelTypeFilePath: Path): util.HashMap[String, Integer] = {
+  override protected def readModelTypeFile(modelTypeFilePath: Path): util.HashMap[String, Integer] = {
     val modelsInStorage = new util.HashMap[String, Integer]()
     val modelTypes = getReader(modelTypeFilePath)
     var pages = modelTypes.readNextRowGroup()
@@ -166,7 +221,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   //FileStorage - H2Storage
-  override def writeSegmentGroupFile(segmentGroups: Array[SegmentGroup], size: Int, segmentGroupFile: Path): Unit = {
+  override protected def writeSegmentGroupFile(segmentGroups: Array[SegmentGroup], size: Int, segmentGroupFile: Path): Unit = {
     val writer = getWriter(segmentGroupFile, this.segmentGroupSchema)
     for (segmentGroup <- segmentGroups.take(size)) {
       val group = new SimpleGroup(this.segmentGroupSchema)
@@ -181,7 +236,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     writer.close()
   }
 
-  override def readSegmentGroupsFiles(filter: TableFilter, segmentGroupFiles: util.ArrayList[Path]): Iterator[SegmentGroup] = {
+  override protected def readSegmentGroupsFiles(filter: TableFilter, segmentGroupFiles: util.ArrayList[Path]): Iterator[SegmentGroup] = {
     Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
     new Iterator[SegmentGroup] {
       /** Instance Variables **/
@@ -246,11 +301,11 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   //FileStorage - SparkStorage
-  override def writeSegmentGroupsFolder(sparkSession: SparkSession, df: DataFrame, segmentGroupFolder: String): Unit = {
+  override protected def writeSegmentGroupsFolder(sparkSession: SparkSession, df: DataFrame, segmentGroupFolder: String): Unit = {
     df.write.mode(SaveMode.Append).parquet(segmentGroupFolder)
   }
-  override def readSegmentGroupsFolders(sparkSession: SparkSession, filters: Array[Filter],
-                                        segmentGroupFolders: util.ArrayList[String]): DataFrame = {
+  override protected def readSegmentGroupsFolders(sparkSession: SparkSession, filters: Array[Filter],
+                                                  segmentGroupFolders: util.ArrayList[String]): DataFrame = {
     val segmentGroupFoldersIterator = segmentGroupFolders.iterator()
     var df = sparkSession.read.parquet(segmentGroupFoldersIterator.next())
     while (segmentGroupFoldersIterator.hasNext) {
@@ -259,65 +314,9 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     Spark.applyFiltersToDataFrame(df, filters)
   }
 
-  /** Protected Methods **/
-  protected override def getFileSuffix: String = ".parquet"
-
-  protected override def getMaxID(columnName: String): Int = {
-    val fieldIndex = columnName match {
-      case "tid" => 0
-      case "gid" => 3
-      case _ => throw new IllegalArgumentException("ModelarDB: unable to get the maximum id for column " + columnName)
-    }
-    val reader = try {
-      getReader(new Path(this.rootFolder + "time_series.parquet"))
-    } catch {
-      case _: FileNotFoundException => return 0
-    }
-    var id = 0
-    val schema = reader.getFooter.getFileMetaData.getSchema
-    val columnIO = new ColumnIOFactory().getColumnIO(schema)
-    var pages = reader.readNextRowGroup()
-    while (pages != null) {
-      val recordReader = columnIO.getRecordReader(pages, new GroupRecordConverter(schema))
-      for (_ <- 0 until pages.getRowCount.toInt) {
-        val simpleGroup = recordReader.read.asInstanceOf[SimpleGroup]
-        id = Math.max(id, simpleGroup.getInteger(fieldIndex, 0))
-      }
-      pages = reader.readNextRowGroup()
-    }
-    reader.close()
-    id
-  }
-
-  protected override def mergeFiles(outputFilePath: Path, inputFilesPaths: util.ArrayList[Path]): Unit = {
-    //NOTE: merge assumes all inputs share the same schema
-    val inputPathsScala = inputFilesPaths.asScala
-    val segmentFile = getReader(inputFilesPaths.get(0))
-    val schema = segmentFile.getFooter.getFileMetaData.getSchema
-    segmentFile.close()
-
-    //Write the new file
-    val writer = getWriter(outputFilePath, schema)
-    for (inputPath <- inputPathsScala) {
-      val segmentFile = getReader(inputPath)
-      val columnIO = new ColumnIOFactory().getColumnIO(schema)
-      var pages = segmentFile.readNextRowGroup()
-
-      while (pages != null) {
-        val recordReader = columnIO.getRecordReader(pages, new GroupRecordConverter(schema))
-        for (_ <- 0L until pages.getRowCount) {
-          writer.write(recordReader.read)
-        }
-        pages = segmentFile.readNextRowGroup()
-      }
-      segmentFile.close()
-    }
-    writer.close()
-  }
-
   /** Private Methods **/
-  private def getReader(path: Path) = {
-    ParquetFileReader.open(HadoopInputFile.fromPath(path, new Configuration()))
+  private def getReader(parquetFilePath: Path) = {
+    ParquetFileReader.open(HadoopInputFile.fromPath(parquetFilePath, new Configuration()))
   }
 
   private def getWriter(parquetFilePath: Path, schema: MessageType): ParquetWriter[Group] = {
@@ -326,7 +325,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 }
 
-private class ParquetWriterBuilder(path: Path) extends ParquetWriter.Builder[Group, ParquetWriterBuilder](path) {
+private class ParquetWriterBuilder(parquetFilePath: Path) extends ParquetWriter.Builder[Group, ParquetWriterBuilder](parquetFilePath) {
   /** Instance Variables * */
   private var messageType: MessageType = _
 
