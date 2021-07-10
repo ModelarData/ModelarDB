@@ -129,11 +129,11 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   }
 
   override final def getMaxTid: Int = {
-    getMaxID("tid")
+    getMaxID("tid", new Path(this.rootFolder + "time_series" + this.getFileSuffix))
   }
 
   override final def getMaxGid: Int = {
-    getMaxID("gid")
+    getMaxID("gid", new Path(this.rootFolder + "time_series" + this.getFileSuffix))
   }
 
   override final def close(): Unit = {
@@ -142,7 +142,7 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
 
   /** Protected Methods **/
   protected def getFileSuffix: String
-  protected def getMaxID(columnName: String): Int
+  protected def getMaxID(columnName: String, timeSeriesFilePath: Path): Int
   protected def mergeFiles(outputFilePath: Path, inputFilesPaths: util.ArrayList[Path]): Unit
   protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path): Unit
   protected def readTimeSeriesFile(timeSeriesFilePath: Path): util.HashMap[Integer, Array[Object]]

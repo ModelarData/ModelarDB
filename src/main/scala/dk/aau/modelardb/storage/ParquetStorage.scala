@@ -53,14 +53,14 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   //FileStorage
   override protected def getFileSuffix: String = ".parquet"
 
-  override protected def getMaxID(columnName: String): Int = {
+  override protected def getMaxID(columnName: String, timeSeriesFilePath: Path): Int = {
     val fieldIndex = columnName match {
       case "tid" => 0
       case "gid" => 3
       case _ => throw new IllegalArgumentException("ModelarDB: unable to get the maximum id for column " + columnName)
     }
     val reader = try {
-      getReader(new Path(this.rootFolder + "time_series.parquet"))
+      getReader(timeSeriesFilePath)
     } catch {
       case _: FileNotFoundException => return 0
     }

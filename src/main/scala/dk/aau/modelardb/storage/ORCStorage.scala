@@ -44,14 +44,14 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
   //FileStorage
   protected override def getFileSuffix: String = ".orc"
 
-  protected override def getMaxID(columnName: String): Int = {
+  protected override def getMaxID(columnName: String, timeSeriesFilePath: Path): Int = {
     val fieldIndex = columnName match {
       case "tid" => 0
       case "gid" => 3
       case _ => throw new IllegalArgumentException("ModelarDB: unable to get the maximum id for column " + columnName)
     }
     val sources = try {
-      getReader(new Path(this.rootFolder + "time_series.orc"))
+      getReader(timeSeriesFilePath)
     } catch {
       case _: FileNotFoundException => return 0
     }
