@@ -14,6 +14,7 @@
  */
 package dk.aau.modelardb.storage
 
+import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{Dimensions, SegmentGroup, Storage, TimeSeriesGroup}
 import dk.aau.modelardb.engines.h2.H2Storage
 import dk.aau.modelardb.engines.spark.SparkStorage
@@ -25,47 +26,44 @@ import org.h2.table.TableFilter
 
 import java.util
 import java.util.UUID
-import scala.collection.JavaConverters._
 
-//TODO: Evaluate the best compression and encoding methods for the segments.
-//TODO: Determine if ORC and Parquet files are read and written in the simplest way.
-//TODO: Determine if long or timestamp is more efficient for Apache Parquet and Apache ORC.
-//TODO: Add a get dimension schema of currently stored data in storage so dimensions are not needed or can be checked.
 //TODO: Ensure that FileStorage can never lose data if sub-type expose read and write methods for each table:
 //      - Add mergelog listing files that have been merged but not deleted yet because a query is using it.
 //      - Store list of currently active files that new queries can use and list of files to delete when not used.
-//TODO: Maybe split segment into a hot and cold folder, so new files are stored in hot and later merged into cold.
 //TODO: Ensure H2 and Spark can use FileStorage created by the other system, move Spark output to Folder+PartName?
-//TODO: Ensure the minimum number of file listing and constructions of new Path objects.
 //TODO: Ensure files are not merge twice if they are kept alive by a query across multiple merges.
+//TODO: Test everything thoroughly on both local filesystem and HDFS, and using unittest
 abstract class FileStorage(rootFolder: String) extends Storage with H2Storage with SparkStorage {
+  //Warn users that FileStorage storage layers should be considered experimental
+  Static.warn("ModelarDB: using experimental storage layer " + this.getClass)
+
   /** Instance Variables **/
-  private var batchesSinceLastMerge: Int = 0
   private val segmentFolder = this.rootFolder + "segment/"
   private val segmentFolderPath: Path = new Path(segmentFolder)
   private val fileSystem: FileSystem = new Path(this.rootFolder).getFileSystem(new Configuration())
+  private val batchesBetweenMerges: Int = 500
+  private var batchesSinceLastMerge: Int = 0
 
   /** Public Methods **/
   override final def open(dimensions: Dimensions): Unit = {
     if ( ! this.fileSystem.exists(this.segmentFolderPath)) {
       this.fileSystem.mkdirs(this.segmentFolderPath)
+    } else {
+      this.recover() //Nothing to recover if the system was terminated before the segment folder was created
+      val files = this.fileSystem.listFiles(segmentFolderPath, false)
+      while (files.hasNext) {
+        this.batchesSinceLastMerge += 1
+        files.next()
+      }
+      this.batchesSinceLastMerge -= 1 //The main file is not a batch
     }
   }
 
-  override final def open(ssb: SparkSession.Builder, dimensions: Dimensions): SparkSession = {
-    this.open(dimensions)
-
-    //TODO: Determine why this have to be set when writing an ORC file
-    ssb.config("spark.sql.orc.impl", "native").getOrCreate()
-  }
-
   override final def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
-    val finalFilePath = new Path(this.rootFolder + "time_series" + this.getFileSuffix)
-    val mergeFilePath = new Path(this.rootFolder + "time_series_new" + this.getFileSuffix)
-    //An unmerged file might be leftover if the system did not terminate cleanly
-    this.fileSystem.delete(mergeFilePath, false)
-    this.writeTimeSeriesFile(timeSeriesGroups, mergeFilePath)
-    mergeAndDeleteInputFiles(finalFilePath, finalFilePath, mergeFilePath)
+    val outputFilePath = new Path(this.rootFolder + "time_series" + this.getFileSuffix)
+    val newFilePath = new Path(this.rootFolder + "time_series" + this.getFileSuffix + "_new")
+    this.writeTimeSeriesFile(timeSeriesGroups, newFilePath)
+    this.mergeAndDeleteInputFiles(outputFilePath, outputFilePath, newFilePath)
   }
 
   override final def getTimeSeries: util.HashMap[Integer, Array[Object]] = {
@@ -78,12 +76,10 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   }
 
   override final def storeModelTypes(modelsToInsert: util.HashMap[String,Integer]): Unit = {
-    val finalFilePath = new Path(this.rootFolder + "model_type" + this.getFileSuffix)
-    val mergeFilePath = new Path(this.rootFolder + "model_type_new" + this.getFileSuffix)
-    //An unmerged file might be leftover if the system did not terminate cleanly
-    this.fileSystem.delete(mergeFilePath, false)
-    this.writeModelTypeFile(modelsToInsert, mergeFilePath)
-    mergeAndDeleteInputFiles(finalFilePath, finalFilePath, mergeFilePath)
+    val outputFilePath = new Path(this.rootFolder + "model_type" + this.getFileSuffix)
+    val newFilePath = new Path(this.rootFolder + "model_type" + this.getFileSuffix  + "_new")
+    this.writeModelTypeFile(modelsToInsert, newFilePath)
+    this.mergeAndDeleteInputFiles(outputFilePath, outputFilePath, newFilePath)
   }
 
   override final def getModelTypes: util.HashMap[String, Integer] = {
@@ -112,6 +108,13 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   }
 
   //SparkStorage
+  override final def open(ssb: SparkSession.Builder, dimensions: Dimensions): SparkSession = {
+    this.open(dimensions)
+
+    //TODO: Determine why this have to be set when writing an ORC file
+    ssb.config("spark.sql.orc.impl", "native").getOrCreate()
+  }
+
   override final def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit = {
     if ( ! shouldMerge) {
       writeSegmentGroupsFolder(sparkSession, df, this.getSegmentGroupPath)
@@ -124,7 +127,7 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   }
 
   override final def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame = {
-    //TODO: Determine why spark sometimes require that a schema be provided, is it corrupted files?
+    //TODO: Determine why Spark sometimes require that a schema be provided, is it corrupted files?
     readSegmentGroupsFolders(sparkSession, filters, listFilesAndFolders(this.segmentFolderPath))
   }
 
@@ -154,33 +157,53 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   protected def readSegmentGroupsFolders(sparkSession: SparkSession, filters: Array[Filter], segmentFolders: util.ArrayList[String]): DataFrame
 
   /** Private Methods **/
+  private def recover(): Unit = {
+    //Deletes files leftover if the system terminates abnormally before ingestion begins
+    this.deleteNewMergeAndBackup("time_series")
+    this.deleteNewMergeAndBackup("model_type")
+
+    //Recover the original files if the system terminates abnormally while merging segment files
+    //TODO: if merge done use merged files and delete old, if not done delete metadata and use fold files
+  }
+
+  private def deleteNewMergeAndBackup(fileNameWithoutSuffix: String): Unit = {
+    this.fileSystem.delete( //Terminated before merging the old and new time series
+      new Path(this.rootFolder + fileNameWithoutSuffix + this.getFileSuffix + "_new"), true)
+    this.fileSystem.delete( //Terminated before renaming the merged file
+      new Path(this.rootFolder + fileNameWithoutSuffix + this.getFileSuffix + "_merge"), true)
+    this.fileSystem.delete( //Terminated before deleting the backup file
+      new Path(this.rootFolder + fileNameWithoutSuffix + this.getFileSuffix + "_backup"), true)
+  }
+
   private def mergeAndDeleteInputFiles(outputFilePath: Path, inputFilesPaths: Path*): Unit = {
-    //TODO: Backup original output before merging to protect against abnormal termination
-    //Check the input files exists
+    //Check the input files exists and merge them
     val inputFilePathsThatExists = new util.ArrayList[Path]()
     inputFilesPaths.foreach(inputFilePath => {
       if (this.fileSystem.exists(inputFilePath)) {
         inputFilePathsThatExists.add(inputFilePath)
       }
     })
+    val outputFilePathMerge = new Path(outputFilePath + "_merge")
+    mergeFiles(outputFilePathMerge, inputFilePathsThatExists)
 
-    //Merge the input files
-    val outputFileMerge = new Path(outputFilePath + "_merge")
-    mergeFiles(outputFileMerge, inputFilePathsThatExists)
+    //Backup the original output file if it exists, and write the new file
+    if (this.fileSystem.exists(outputFilePath)) {
+      val outputFilePathBackup = new Path(outputFilePath + "_backup")
+      this.fileSystem.rename(outputFilePath, outputFilePathBackup)
+      this.fileSystem.rename(outputFilePathMerge, outputFilePath)
+      this.fileSystem.delete(outputFilePathBackup, true)
+      inputFilePathsThatExists.remove(outputFilePath) //Do not delete merged file
+    } else {
+      this.fileSystem.rename(outputFilePathMerge, outputFilePath)
+    }
 
     //Delete the input files
-    val inputPathsScala = inputFilePathsThatExists.asScala
-    for (inputPath <- inputPathsScala) {
-      this.fileSystem.delete(inputPath, false)
-    }
-    this.fileSystem.rename(outputFileMerge, outputFilePath)
+    inputFilePathsThatExists.forEach(inputFilePath => this.fileSystem.delete(inputFilePath, false))
   }
 
   private def shouldMerge(): Boolean = {
-    //TODO: Test merging through unit tests and one HDFS
-    //TODO: How often should a merged be performed? And should it be async in a different thread?
     this.batchesSinceLastMerge += 1
-    if (this.batchesSinceLastMerge == 10) { //TODO: What is the correct size, or should it be time?
+    if (this.batchesSinceLastMerge == this.batchesBetweenMerges) {
       this.batchesSinceLastMerge = 0
       true
     } else {
