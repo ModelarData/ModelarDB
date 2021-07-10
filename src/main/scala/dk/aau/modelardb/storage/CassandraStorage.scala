@@ -19,7 +19,7 @@ import com.datastax.oss.driver.api.core.cql._
 import com.datastax.spark.connector._
 import com.datastax.spark.connector.cql.CassandraConnector
 import dk.aau.modelardb.core.utility.Static
-import dk.aau.modelardb.core.{Dimensions, SegmentGroup, Storage, TimeSeriesGroup}
+import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
 import dk.aau.modelardb.engines.h2.{H2, H2Storage}
 import dk.aau.modelardb.engines.spark.{Spark, SparkStorage}
 import org.apache.spark.SparkConf
@@ -30,7 +30,7 @@ import org.h2.table.TableFilter
 import java.nio.ByteBuffer
 import java.time.Instant
 import java.util
-import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 class CassandraStorage(connectionString: String) extends Storage with H2Storage with SparkStorage {
   /** Instance Variables **/
@@ -74,24 +74,24 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     session.close()
   }
 
-  def getTimeSeries: util.HashMap[Integer, Array[Object]] = {
+  def getTimeSeries: mutable.HashMap[Integer, Array[Object]] = {
     val session = this.connector.openSession()
     val stmt = SimpleStatement.newInstance(s"SELECT * FROM ${this.keyspace}.time_series")
     val results = session.execute(stmt)
-    val timeSeriesInStorage = new util.HashMap[Integer, Array[Object]]()
+    val timeSeriesInStorage = mutable.HashMap[Integer, Array[Object]]()
     val rows = results.iterator()
     while (rows.hasNext) {
       //The metadata is stored as (Tid => Scaling, Sampling Interval, Gid, Dimensions)
       val row = rows.next
       val tid = row.getInt("tid")
-      val metadata = new util.ArrayList[Object]()
-      metadata.add(row.getFloat("scaling_factor").asInstanceOf[Object])
-      metadata.add(row.getInt("sampling_interval").asInstanceOf[Object])
-      metadata.add(row.getInt("gid").asInstanceOf[Object])
+      val metadata = mutable.ArrayBuffer[Object]()
+      metadata += row.getFloat("scaling_factor").asInstanceOf[Object]
+      metadata += row.getInt("sampling_interval").asInstanceOf[Object]
+      metadata += row.getInt("gid").asInstanceOf[Object]
 
       //Dimensions
       for (column <- dimensions.getColumns) {
-        metadata.add(row.getObject(column))
+        metadata += row.getObject(column)
       }
       timeSeriesInStorage.put(tid, metadata.toArray)
     }
@@ -99,20 +99,20 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     timeSeriesInStorage
   }
 
-  def storeModelTypes(modelsToInsert: util.HashMap[String, Integer]): Unit = {
+  def storeModelTypes(modelsToInsert: mutable.HashMap[String, Integer]): Unit = {
     val session = this.connector.openSession()
     val insertStmt = session.prepare(s"INSERT INTO ${this.keyspace}.model_type(mtid, name) VALUES(?, ?)")
-    for ((k, v) <- modelsToInsert.asScala) {
+    for ((k, v) <- modelsToInsert) {
       session.execute(insertStmt.bind().setInt(0, v).setString(1, k))
     }
     session.close()
   }
 
-  def getModelTypes: util.HashMap[String, Integer] = {
+  def getModelTypes: mutable.HashMap[String, Integer] = {
     val session = this.connector.openSession()
     val stmt = SimpleStatement.newInstance(s"SELECT * FROM ${this.keyspace}.model_type")
     val results = session.execute(stmt)
-    val modelsInStorage = new util.HashMap[String, Integer]()
+    val modelsInStorage = mutable.HashMap[String, Integer]()
 
     val rows = results.iterator()
     while (rows.hasNext) {
@@ -140,7 +140,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
   //H2Storage
   override def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
     val session = this.connector.openSession()
-    val batch = new util.ArrayList[BoundStatement](size)
+    val batch = new util.ArrayList[BoundStatement](size min 65535)
     for (segmentGroup <- segmentGroups.take(size)) {
       batch.add(insertStmt.bind()
         .setInt(0, segmentGroup.gid)

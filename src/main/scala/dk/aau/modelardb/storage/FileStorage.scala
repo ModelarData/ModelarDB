@@ -15,7 +15,7 @@
 package dk.aau.modelardb.storage
 
 import dk.aau.modelardb.core.utility.Static
-import dk.aau.modelardb.core.{Dimensions, SegmentGroup, Storage, TimeSeriesGroup}
+import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
 import dk.aau.modelardb.engines.h2.H2Storage
 import dk.aau.modelardb.engines.spark.SparkStorage
 import org.apache.hadoop.conf.Configuration
@@ -24,8 +24,8 @@ import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.h2.table.TableFilter
 
-import java.util
 import java.util.UUID
+import scala.collection.mutable
 
 //TODO: Ensure that FileStorage can never lose data if sub-type expose read and write methods for each table:
 //      - Add mergelog listing files that have been merged but not deleted yet because a query is using it.
@@ -66,28 +66,28 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
     this.mergeAndDeleteInputFiles(outputFilePath, outputFilePath, newFilePath)
   }
 
-  override final def getTimeSeries: util.HashMap[Integer, Array[Object]] = {
+  override final def getTimeSeries: mutable.HashMap[Integer, Array[Object]] = {
     val timeSeriesFile = new Path(this.rootFolder + "time_series" + this.getFileSuffix)
     if (this.fileSystem.exists(timeSeriesFile)) {
       this.readTimeSeriesFile(timeSeriesFile)
     } else {
-      new util.HashMap[Integer, Array[Object]]()
+      mutable.HashMap[Integer, Array[Object]]()
     }
   }
 
-  override final def storeModelTypes(modelsToInsert: util.HashMap[String,Integer]): Unit = {
+  override final def storeModelTypes(modelsToInsert: mutable.HashMap[String,Integer]): Unit = {
     val outputFilePath = new Path(this.rootFolder + "model_type" + this.getFileSuffix)
     val newFilePath = new Path(this.rootFolder + "model_type" + this.getFileSuffix  + "_new")
     this.writeModelTypeFile(modelsToInsert, newFilePath)
     this.mergeAndDeleteInputFiles(outputFilePath, outputFilePath, newFilePath)
   }
 
-  override final def getModelTypes: util.HashMap[String, Integer] = {
+  override final def getModelTypes: mutable.HashMap[String, Integer] = {
     val modelTypeFile = new Path(this.rootFolder + "model_type" + this.getFileSuffix)
     if (this.fileSystem.exists(modelTypeFile)) {
       this.readModelTypeFile(modelTypeFile)
     } else {
-      new util.HashMap[String, Integer]()
+      mutable.HashMap[String, Integer]()
     }
   }
 
@@ -98,7 +98,7 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
       //TODO: register files to be merged before starting the merge so rollback is possible
       val inputFiles = listFiles(this.segmentFolderPath)
       mergeFiles(new Path(this.getSegmentGroupPath), inputFiles)
-      inputFiles.forEach(ifp => this.fileSystem.delete(ifp, false))
+      inputFiles.foreach(ifp => this.fileSystem.delete(ifp, false))
     }
   }
 
@@ -122,7 +122,7 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
       val inputFolders = listFilesAndFolders(this.segmentFolderPath)
       val mergedDF = df.union(readSegmentGroupsFolders(sparkSession, Array(), inputFolders))
       writeSegmentGroupsFolder(sparkSession, mergedDF, this.getSegmentGroupPath)
-      inputFolders.forEach(ifp => this.fileSystem.delete(new Path(ifp), true))
+      inputFolders.foreach(ifp => this.fileSystem.delete(new Path(ifp), true))
     }
   }
 
@@ -146,15 +146,15 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   /** Protected Methods **/
   protected def getFileSuffix: String
   protected def getMaxID(columnName: String, timeSeriesFilePath: Path): Int
-  protected def mergeFiles(outputFilePath: Path, inputFilesPaths: util.ArrayList[Path]): Unit
+  protected def mergeFiles(outputFilePath: Path, inputFilesPaths: mutable.ArrayBuffer[Path]): Unit
   protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path): Unit
-  protected def readTimeSeriesFile(timeSeriesFilePath: Path): util.HashMap[Integer, Array[Object]]
-  protected def writeModelTypeFile(modelsToInsert: util.HashMap[String,Integer], modelTypeFilePath: Path): Unit
-  protected def readModelTypeFile(modelTypeFilePath: Path): util.HashMap[String, Integer]
+  protected def readTimeSeriesFile(timeSeriesFilePath: Path): mutable.HashMap[Integer, Array[Object]]
+  protected def writeModelTypeFile(modelsToInsert: mutable.HashMap[String,Integer], modelTypeFilePath: Path): Unit
+  protected def readModelTypeFile(modelTypeFilePath: Path): mutable.HashMap[String, Integer]
   protected def writeSegmentGroupFile(segmentGroups: Array[SegmentGroup], size: Int, segmentGroupFilePath: Path): Unit
-  protected def readSegmentGroupsFiles(filter: TableFilter, segmentGroupFiles: util.ArrayList[Path]): Iterator[SegmentGroup]
+  protected def readSegmentGroupsFiles(filter: TableFilter, segmentGroupFiles: mutable.ArrayBuffer[Path]): Iterator[SegmentGroup]
   protected def writeSegmentGroupsFolder(sparkSession: SparkSession, df: DataFrame, segmentGroupFilePath: String): Unit
-  protected def readSegmentGroupsFolders(sparkSession: SparkSession, filters: Array[Filter], segmentFolders: util.ArrayList[String]): DataFrame
+  protected def readSegmentGroupsFolders(sparkSession: SparkSession, filters: Array[Filter], segmentFolders: mutable.ArrayBuffer[String]): DataFrame
 
   /** Private Methods **/
   private def recover(): Unit = {
@@ -177,10 +177,10 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
 
   private def mergeAndDeleteInputFiles(outputFilePath: Path, inputFilesPaths: Path*): Unit = {
     //Check the input files exists and merge them
-    val inputFilePathsThatExists = new util.ArrayList[Path]()
+    val inputFilePathsThatExists = mutable.ArrayBuffer[Path]()
     inputFilesPaths.foreach(inputFilePath => {
       if (this.fileSystem.exists(inputFilePath)) {
-        inputFilePathsThatExists.add(inputFilePath)
+        inputFilePathsThatExists += inputFilePath
       }
     })
     val outputFilePathMerge = new Path(outputFilePath + "_merge")
@@ -192,13 +192,13 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
       this.fileSystem.rename(outputFilePath, outputFilePathBackup)
       this.fileSystem.rename(outputFilePathMerge, outputFilePath)
       this.fileSystem.delete(outputFilePathBackup, true)
-      inputFilePathsThatExists.remove(outputFilePath) //Do not delete merged file
+      inputFilePathsThatExists -= outputFilePath //Do not delete merged file
     } else {
       this.fileSystem.rename(outputFilePathMerge, outputFilePath)
     }
 
     //Delete the input files
-    inputFilePathsThatExists.forEach(inputFilePath => this.fileSystem.delete(inputFilePath, false))
+    inputFilePathsThatExists.foreach(inputFilePath => this.fileSystem.delete(inputFilePath, false))
   }
 
   private def shouldMerge(): Boolean = {
@@ -215,21 +215,21 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
     this.segmentFolder + System.currentTimeMillis() + '_' + UUID.randomUUID().toString + this.getFileSuffix
   }
 
-  private def listFiles(folder: Path): util.ArrayList[Path] = {
+  private def listFiles(folder: Path): mutable.ArrayBuffer[Path] = {
     val files = this.fileSystem.listFiles(folder, false)
-    val fileLists = new util.ArrayList[Path]()
+    val fileLists = mutable.ArrayBuffer[Path]()
     while (files.hasNext) {
-      fileLists.add(files.next().getPath)
+      fileLists += files.next().getPath
     }
     fileLists
   }
 
-  private def listFilesAndFolders(folder: Path): util.ArrayList[String] = {
+  private def listFilesAndFolders(folder: Path): mutable.ArrayBuffer[String] = {
     val filesAndFolders = this.fileSystem.listStatusIterator(folder)
-    val fileAndFolderList = new util.ArrayList[String]()
+    val fileAndFolderList = mutable.ArrayBuffer[String]()
     while (filesAndFolders.hasNext) {
       val fileOrFolder = filesAndFolders.next().getPath.toString
-      fileAndFolderList.add(fileOrFolder)
+      fileAndFolderList += fileOrFolder
     }
     fileAndFolderList
   }

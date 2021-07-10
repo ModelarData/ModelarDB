@@ -28,6 +28,7 @@ import org.apache.spark.streaming.{Seconds, StreamingContext}
 
 import java.sql.Timestamp
 import scala.collection.mutable
+import collection.JavaConverters._
 
 class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
 
@@ -98,7 +99,7 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
   private def setupStream(spark: SparkSession, timeSeriesGroups: Array[TimeSeriesGroup]): StreamingContext = {
     //Creates a receiver per ingestor with each receiving a working set created by Partitioner.partitionTimeSeries
     val ssc = new StreamingContext(spark.sparkContext, Seconds(configuration.getInteger("modelardb.spark.streaming")))
-    val mtidCache = Spark.getSparkStorage.mtidCache
+    val mtidCache = Spark.getSparkStorage.mtidCache.asJava
     val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, mtidCache,
       configuration.getInteger("modelardb.ingestors"))
     if (workingSets.length != configuration.getInteger("modelardb.ingestors")) {

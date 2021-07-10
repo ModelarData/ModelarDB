@@ -23,8 +23,7 @@ import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.h2.table.TableFilter
 
 import java.sql.{Array => _, _}
-import java.util
-import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Storage with SparkStorage {
   /** Instance Variables **/
@@ -92,29 +91,29 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     }
   }
 
-  def getTimeSeries: util.HashMap[Integer, Array[Object]] = {
+  def getTimeSeries: mutable.HashMap[Integer, Array[Object]] = {
     val columnsInNormalizedDimensions = dimensions.getColumns.length
     val stmt = this.connection.createStatement()
     val results = stmt.executeQuery("SELECT * FROM time_series")
-    val timeSeriesInStorage = new util.HashMap[Integer, Array[Object]]()
+    val timeSeriesInStorage = mutable.HashMap[Integer, Array[Object]]()
     while (results.next) {
       //The metadata is stored as (Tid => Scaling Factor, Sampling Interval, Gid, Dimensions)
       val tid = results.getInt(1) //Tid
-      val metadata = new util.ArrayList[Object]()
-      metadata.add(results.getFloat(2).asInstanceOf[Object]) //Scaling Factor
-      metadata.add(results.getInt(3).asInstanceOf[Object]) //Sampling Interval
-      metadata.add(results.getInt(4).asInstanceOf[Object]) //Gid
+      val metadata = mutable.ArrayBuffer[Object]()
+      metadata += results.getFloat(2).asInstanceOf[Object] //Scaling Factor
+      metadata += results.getInt(3).asInstanceOf[Object] //Sampling Interval
+      metadata += results.getInt(4).asInstanceOf[Object] //Gid
 
       //Dimensions
       var column = 5
       val dimensionTypes = dimensions.getTypes
       while(column <= columnsInNormalizedDimensions + 4) {
         dimensionTypes(column - 5) match {
-          case Dimensions.Types.TEXT => metadata.add(results.getString(column).asInstanceOf[Object])
-          case Dimensions.Types.INT => metadata.add(results.getInt(column).asInstanceOf[Object])
-          case Dimensions.Types.LONG => metadata.add(results.getLong(column).asInstanceOf[Object])
-          case Dimensions.Types.FLOAT => metadata.add(results.getFloat(column).asInstanceOf[Object])
-          case Dimensions.Types.DOUBLE => metadata.add(results.getDouble(column).asInstanceOf[Object])
+          case Dimensions.Types.TEXT => metadata += results.getString(column).asInstanceOf[Object]
+          case Dimensions.Types.INT => metadata += results.getInt(column).asInstanceOf[Object]
+          case Dimensions.Types.LONG => metadata += results.getLong(column).asInstanceOf[Object]
+          case Dimensions.Types.FLOAT => metadata += results.getFloat(column).asInstanceOf[Object]
+          case Dimensions.Types.DOUBLE => metadata += results.getDouble(column).asInstanceOf[Object]
         }
         column += 1
       }
@@ -123,9 +122,9 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     timeSeriesInStorage
   }
 
-  def storeModelTypes(modelsToInsert: util.HashMap[String, Integer]): Unit = {
+  def storeModelTypes(modelsToInsert: mutable.HashMap[String, Integer]): Unit = {
     val insertModelStmt = connection.prepareStatement("INSERT INTO model_type VALUES(?, ?)")
-    for ((k, v) <- modelsToInsert.asScala) {
+    for ((k, v) <- modelsToInsert) {
       insertModelStmt.clearParameters()
       insertModelStmt.setInt(1, v)
       insertModelStmt.setString(2, k)
@@ -133,10 +132,10 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     }
   }
 
-  def getModelTypes: util.HashMap[String, Integer] = {
+  def getModelTypes: mutable.HashMap[String, Integer] = {
     val stmt = this.connection.createStatement()
     val results = stmt.executeQuery("SELECT * FROM model_type")
-    val modelsInStorage = new util.HashMap[String, Integer]()
+    val modelsInStorage = mutable.HashMap[String, Integer]()
     while (results.next) {
       modelsInStorage.put(results.getString(2), results.getInt(1))
     }

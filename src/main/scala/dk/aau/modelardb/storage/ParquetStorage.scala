@@ -37,7 +37,7 @@ import org.h2.table.TableFilter
 
 import java.io.FileNotFoundException
 import java.util
-import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   /** Instance Variables **/
@@ -80,10 +80,10 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     id
   }
 
-  override protected def mergeFiles(outputFilePath: Path, inputFilesPaths: util.ArrayList[Path]): Unit = {
+  override protected def mergeFiles(outputFilePath: Path, inputFilesPaths: mutable.ArrayBuffer[Path]): Unit = {
     //NOTE: merge assumes all inputs share the same schema
-    val inputPathsScala = inputFilesPaths.asScala
-    val segmentFile = getReader(inputFilesPaths.get(0))
+    val inputPathsScala = inputFilesPaths
+    val segmentFile = getReader(inputFilesPaths(0))
     val schema = segmentFile.getFooter.getFileMetaData.getSchema
     segmentFile.close()
 
@@ -147,9 +147,9 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     writer.close()
   }
 
-  override protected def readTimeSeriesFile(timeSeriesFilePath: Path): util.HashMap[Integer, Array[Object]] = {
+  override protected def readTimeSeriesFile(timeSeriesFilePath: Path): mutable.HashMap[Integer, Array[Object]] = {
     val columnsInNormalizedDimensions = dimensions.getColumns.length
-    val timeSeriesInStorage = new util.HashMap[Integer, Array[Object]]()
+    val timeSeriesInStorage = mutable.HashMap[Integer, Array[Object]]()
     val timeSeries = getReader(timeSeriesFilePath)
     var pages = timeSeries.readNextRowGroup()
     val schema = timeSeries.getFooter.getFileMetaData.getSchema
@@ -159,21 +159,21 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
       for (_ <- 0 until pages.getRowCount.toInt) {
         //The metadata is stored as (Sid => Scaling, Resolution, Gid, Dimensions)
         val group = recordReader.read()
-        val metadata = new util.ArrayList[Object]()
-        metadata.add(group.getFloat(1, 0).asInstanceOf[Object])
-        metadata.add(group.getInteger(2, 0).asInstanceOf[Object])
-        metadata.add(group.getInteger(3, 0).asInstanceOf[Object])
+        val metadata = mutable.ArrayBuffer[Object]()
+        metadata += group.getFloat(1, 0).asInstanceOf[Object]
+        metadata += group.getInteger(2, 0).asInstanceOf[Object]
+        metadata += group.getInteger(3, 0).asInstanceOf[Object]
 
         //Dimensions
         var column = 4
         val dimensionTypes = dimensions.getTypes
         while (column < columnsInNormalizedDimensions + 4) {
           dimensionTypes(column - 4) match {
-            case Dimensions.Types.TEXT => metadata.add(group.getString(column, 0))
-            case Dimensions.Types.INT => metadata.add(group.getInteger(column, 0).asInstanceOf[Object])
-            case Dimensions.Types.LONG => metadata.add(group.getLong(column, 0).asInstanceOf[Object])
-            case Dimensions.Types.FLOAT => metadata.add(group.getFloat(column, 0).asInstanceOf[Object])
-            case Dimensions.Types.DOUBLE => metadata.add(group.getDouble(column, 0).asInstanceOf[Object])
+            case Dimensions.Types.TEXT => metadata += group.getString(column, 0)
+            case Dimensions.Types.INT => metadata += group.getInteger(column, 0).asInstanceOf[Object]
+            case Dimensions.Types.LONG => metadata += group.getLong(column, 0).asInstanceOf[Object]
+            case Dimensions.Types.FLOAT => metadata += group.getFloat(column, 0).asInstanceOf[Object]
+            case Dimensions.Types.DOUBLE => metadata += group.getDouble(column, 0).asInstanceOf[Object]
           }
           column += 1
         }
@@ -185,13 +185,14 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     timeSeriesInStorage
   }
 
-  override protected def writeModelTypeFile(modelsToInsert: util.HashMap[String,Integer], modelTypeFilePath: Path): Unit = {
+  override protected def writeModelTypeFile(modelsToInsert: mutable.HashMap[String,Integer],
+                                            modelTypeFilePath: Path): Unit = {
     val schema = new MessageType("model_type",
       new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "mid"),
       new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "name"))
 
     val writer = getWriter(modelTypeFilePath, schema)
-    for ((k, v) <- modelsToInsert.asScala) {
+    for ((k, v) <- modelsToInsert) {
       val group = new SimpleGroup(schema)
       group.add(0, v.intValue())
       group.add(1, k)
@@ -200,8 +201,8 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     writer.close()
   }
 
-  override protected def readModelTypeFile(modelTypeFilePath: Path): util.HashMap[String, Integer] = {
-    val modelsInStorage = new util.HashMap[String, Integer]()
+  override protected def readModelTypeFile(modelTypeFilePath: Path): mutable.HashMap[String, Integer] = {
+    val modelsInStorage = new mutable.HashMap[String, Integer]()
     val modelTypes = getReader(modelTypeFilePath)
     var pages = modelTypes.readNextRowGroup()
     val schema = modelTypes.getFooter.getFileMetaData.getSchema
@@ -236,11 +237,12 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     writer.close()
   }
 
-  override protected def readSegmentGroupsFiles(filter: TableFilter, segmentGroupFiles: util.ArrayList[Path]): Iterator[SegmentGroup] = {
+  override protected def readSegmentGroupsFiles(filter: TableFilter,
+                                                segmentGroupFiles: mutable.ArrayBuffer[Path]): Iterator[SegmentGroup] = {
     Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
     new Iterator[SegmentGroup] {
       /** Instance Variables **/
-      private val segmentFiles = segmentGroupFiles.iterator()
+      private val segmentFiles = segmentGroupFiles.iterator
       private var segmentFile: ParquetFileReader = _
       private var columnIO: MessageColumnIO = _
       private var pages: PageReadStore = _
@@ -305,8 +307,8 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     df.write.mode(SaveMode.Append).parquet(segmentGroupFolder)
   }
   override protected def readSegmentGroupsFolders(sparkSession: SparkSession, filters: Array[Filter],
-                                                  segmentGroupFolders: util.ArrayList[String]): DataFrame = {
-    val segmentGroupFoldersIterator = segmentGroupFolders.iterator()
+                                                  segmentGroupFolders: mutable.ArrayBuffer[String]): DataFrame = {
+    val segmentGroupFoldersIterator = segmentGroupFolders.iterator
     var df = sparkSession.read.parquet(segmentGroupFoldersIterator.next())
     while (segmentGroupFoldersIterator.hasNext) {
       df = df.union(sparkSession.read.parquet(segmentGroupFoldersIterator.next()))

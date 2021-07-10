@@ -124,7 +124,7 @@ public class Partitioner {
     }
 
     public static WorkingSet[] partitionTimeSeries(Configuration configuration, TimeSeriesGroup[] timeSeriesGroups,
-                                                   HashMap<String, Integer> mtidCache, int partitions) {
+                                                   Map<String, Integer> mtidCache, int partitions) {
         TimeSeriesGroup[][] pts = Partitioner.partitionTimeSeriesByRate(timeSeriesGroups, partitions);
         int[] mtids = Arrays.stream(configuration.getModelTypeNames()).mapToInt(mtidCache::get).toArray();
         WorkingSet[] workingSets = Arrays.stream(pts).map(tss -> new WorkingSet(tss, configuration.getFloat(

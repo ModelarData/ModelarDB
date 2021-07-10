@@ -14,8 +14,6 @@
  */
 package dk.aau.modelardb.storage
 
-import dk.aau.modelardb.core.Storage
-
 object StorageFactory {
 
   /** Public Methods **/

@@ -14,7 +14,8 @@
  */
 package dk.aau.modelardb.engines.spark
 
-import dk.aau.modelardb.core.{Dimensions, Storage}
+import dk.aau.modelardb.core.Dimensions
+import dk.aau.modelardb.storage.Storage
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{DataFrame, SparkSession}
 

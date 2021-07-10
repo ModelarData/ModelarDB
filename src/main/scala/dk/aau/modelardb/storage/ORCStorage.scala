@@ -27,8 +27,8 @@ import org.h2.table.TableFilter
 
 import java.io.FileNotFoundException
 import java.sql.Timestamp
-import java.util
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
   /** Instance Variables **/
@@ -69,8 +69,8 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     id.toInt
   }
 
-  protected override def mergeFiles(outputFilePath: Path, inputFilesPaths: util.ArrayList[Path]): Unit = {
-    OrcFile.mergeFiles(outputFilePath, OrcFile.writerOptions(new Configuration()), inputFilesPaths)
+  protected override def mergeFiles(outputFilePath: Path, inputFilesPaths: mutable.ArrayBuffer[Path]): Unit = {
+    OrcFile.mergeFiles(outputFilePath, OrcFile.writerOptions(new Configuration()), inputFilesPaths.asJava)
   }
 
   override protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path): Unit = {
@@ -116,9 +116,9 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     source.close()
   }
 
-  override protected def readTimeSeriesFile(timeSeriesFilePath: Path): util.HashMap[Integer, Array[Object]] = {
+  override protected def readTimeSeriesFile(timeSeriesFilePath: Path): mutable.HashMap[Integer, Array[Object]] = {
     val columnsInNormalizedDimensions = dimensions.getColumns.length
-    val timeSeriesInStorage = new util.HashMap[Integer, Array[Object]]()
+    val timeSeriesInStorage = mutable.HashMap[Integer, Array[Object]]()
     val timeSeries = getReader(timeSeriesFilePath)
 
     val rows = timeSeries.rows()
@@ -127,22 +127,22 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     while (rows.nextBatch(batch)) {
       for (row <- 0 until batch.size) {
         //The metadata is stored as (Sid => Scaling, Resolution, Gid, Dimensions)
-        val metadata = new util.ArrayList[Object]()
+        val metadata = mutable.ArrayBuffer[Object]()
         val sid = batch.cols(0).asInstanceOf[LongColumnVector].vector(row)
-        metadata.add(batch.cols(1).asInstanceOf[DoubleColumnVector].vector(row).toFloat.asInstanceOf[Object])
-        metadata.add(batch.cols(2).asInstanceOf[LongColumnVector].vector(row).toInt.asInstanceOf[Object])
-        metadata.add(batch.cols(3).asInstanceOf[LongColumnVector].vector(row).toInt.asInstanceOf[Object])
+        metadata += batch.cols(1).asInstanceOf[DoubleColumnVector].vector(row).toFloat.asInstanceOf[Object]
+        metadata += batch.cols(2).asInstanceOf[LongColumnVector].vector(row).toInt.asInstanceOf[Object]
+        metadata += batch.cols(3).asInstanceOf[LongColumnVector].vector(row).toInt.asInstanceOf[Object]
 
         //Dimensions
         var column = 4
         val dimensionTypes = dimensions.getTypes
         while(column < columnsInNormalizedDimensions + 4) {
           dimensionTypes(column - 4) match {
-            case Dimensions.Types.TEXT => metadata.add(batch.cols(column).asInstanceOf[BytesColumnVector].vector(row))
-            case Dimensions.Types.INT => metadata.add(batch.cols(column).asInstanceOf[LongColumnVector].vector(row).toInt.asInstanceOf[Object])
-            case Dimensions.Types.LONG => metadata.add(batch.cols(column).asInstanceOf[LongColumnVector].vector(row).asInstanceOf[Object])
-            case Dimensions.Types.FLOAT => metadata.add(batch.cols(column).asInstanceOf[DoubleColumnVector].vector(row).toFloat.asInstanceOf[Object])
-            case Dimensions.Types.DOUBLE => metadata.add(batch.cols(column).asInstanceOf[DoubleColumnVector].vector(row).asInstanceOf[Object])
+            case Dimensions.Types.TEXT => metadata += batch.cols(column).asInstanceOf[BytesColumnVector].vector(row)
+            case Dimensions.Types.INT => metadata += batch.cols(column).asInstanceOf[LongColumnVector].vector(row).toInt.asInstanceOf[Object]
+            case Dimensions.Types.LONG => metadata += batch.cols(column).asInstanceOf[LongColumnVector].vector(row).asInstanceOf[Object]
+            case Dimensions.Types.FLOAT => metadata += batch.cols(column).asInstanceOf[DoubleColumnVector].vector(row).toFloat.asInstanceOf[Object]
+            case Dimensions.Types.DOUBLE => metadata += batch.cols(column).asInstanceOf[DoubleColumnVector].vector(row).asInstanceOf[Object]
           }
           column += 1
         }
@@ -154,14 +154,14 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     timeSeriesInStorage
   }
 
-  override protected def writeModelTypeFile(modelsToInsert: util.HashMap[String,Integer], modelTypeFilePath: Path): Unit = {
+  override protected def writeModelTypeFile(modelsToInsert: mutable.HashMap[String,Integer], modelTypeFilePath: Path): Unit = {
     val schema = TypeDescription.createStruct()
       .addField("mid", TypeDescription.createInt())
       .addField("name", TypeDescription.createString())
     val modelTypes = getWriter(modelTypeFilePath, schema)
     val batch = modelTypes.getSchema.createRowBatch()
 
-    for ((k, v) <- modelsToInsert.asScala) {
+    for ((k, v) <- modelsToInsert) {
       val row = { batch.size += 1; batch.size - 1 } //batch++
       batch.cols(0).asInstanceOf[LongColumnVector].vector(row) = v.intValue()
       batch.cols(1).asInstanceOf[BytesColumnVector].setVal(row, k.getBytes)
@@ -171,8 +171,8 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     modelTypes.close()
   }
 
-  override protected def readModelTypeFile(modelTypeFilePath: Path): util.HashMap[String, Integer] = {
-    val modelsInStorage = new util.HashMap[String, Integer]()
+  override protected def readModelTypeFile(modelTypeFilePath: Path): mutable.HashMap[String, Integer] = {
+    val modelsInStorage = mutable.HashMap[String, Integer]()
     val modelTypes = try {
       getReader(modelTypeFilePath)
     } catch {
@@ -210,11 +210,11 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     segments.close()
   }
 
-  override protected def readSegmentGroupsFiles(filter: TableFilter, segmentGroupFiles: util.ArrayList[Path]): Iterator[SegmentGroup] = {
+  override protected def readSegmentGroupsFiles(filter: TableFilter, segmentGroupFiles: mutable.ArrayBuffer[Path]): Iterator[SegmentGroup] = {
     Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
     new Iterator[SegmentGroup] {
       /** Instance Variables **/
-      private val segmentFiles = segmentGroupFiles.iterator()
+      private val segmentFiles = segmentGroupFiles.iterator
       private var segmentFile: Reader = _
       private var rows: RecordReader = _
       private var batch: VectorizedRowBatch = _
@@ -277,8 +277,8 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   override protected def readSegmentGroupsFolders(sparkSession: SparkSession, filters: Array[Filter],
-                                                  segmentGroupFolders: util.ArrayList[String]): DataFrame = {
-    val segmentGroupFoldersIterator = segmentGroupFolders.iterator()
+                                                  segmentGroupFolders: mutable.ArrayBuffer[String]): DataFrame = {
+    val segmentGroupFoldersIterator = segmentGroupFolders.iterator
     var df = sparkSession.read.orc(segmentGroupFoldersIterator.next())
     while (segmentGroupFoldersIterator.hasNext) {
       df = df.union(sparkSession.read.orc(segmentGroupFoldersIterator.next()))
