@@ -25,7 +25,9 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.h2.table.TableFilter
 
 import java.util.UUID
+import java.util.concurrent.locks.ReentrantReadWriteLock
 import scala.collection.mutable
+import java.lang.ref.{PhantomReference, ReferenceQueue}
 
 //TODO: Ensure that FileStorage can never lose data if sub-type expose read and write methods for each table:
 //      - Add mergelog listing files that have been merged but not deleted yet because a query is using it.
@@ -41,8 +43,14 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   private val segmentFolder = this.rootFolder + "segment/"
   private val segmentFolderPath: Path = new Path(segmentFolder)
   private val fileSystem: FileSystem = new Path(this.rootFolder).getFileSystem(new Configuration())
+
+  //Variables for tracking when to merge and which files can be included in a merge
   private val batchesBetweenMerges: Int = 500
   private var batchesSinceLastMerge: Int = 0
+  private val segmentGroupFilesInQuery = mutable.HashMap[Object, Integer]().withDefaultValue(0)
+  private val segmentGroupFilesIterators = mutable.HashMap[Object, mutable.ArrayBuffer[Object]]()
+  private val phantomReferenceQueue = new ReferenceQueue[Object]()
+  private val fileStorageLock = new ReentrantReadWriteLock()
 
   /** Public Methods **/
   override final def open(dimensions: Dimensions): Unit = {
@@ -95,16 +103,20 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   override final def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
     writeSegmentGroupFile(segmentGroups, size, new Path(this.getSegmentGroupPath))
     if (shouldMerge()) {
-      //TODO: register files to be merged before starting the merge so rollback is possible
-      val inputFiles = listFiles(this.segmentFolderPath)
-      mergeFiles(new Path(this.getSegmentGroupPath), inputFiles)
-      inputFiles.foreach(ifp => this.fileSystem.delete(ifp, false))
+      //TODO: register files to be merged before starting the merge so rollback is possible, and put get files to merge into method
+      this.unlockSegmentGroupFilesFolders()
+      val allFiles = this.listFiles(this.segmentFolderPath)
+      val filesToMerge = allFiles.filter(ff => ! this.segmentGroupFilesInQuery.contains(ff))
+      this.mergeFiles(new Path(this.getSegmentGroupPath), filesToMerge)
+      filesToMerge.foreach(ifp => this.fileSystem.delete(ifp, false))
     }
   }
 
   override final def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
-    //TODO: How to mark files as in use until a query has finished using them? Pass a destructor function? Weak references? deleteOnExit?
-    readSegmentGroupsFiles(filter, listFiles(this.segmentFolderPath))
+    val segmentGroupFiles = listFiles(this.segmentFolderPath)
+    val iterator = this.readSegmentGroupsFiles(filter, segmentGroupFiles)
+    this.lockSegmentGroupFilesAndFolders(segmentGroupFiles.asInstanceOf[mutable.ArrayBuffer[Object]], iterator)
+    iterator
   }
 
   //SparkStorage
@@ -119,16 +131,22 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
     if ( ! shouldMerge) {
       writeSegmentGroupsFolder(sparkSession, df, this.getSegmentGroupPath)
     } else {
-      val inputFolders = listFilesAndFolders(this.segmentFolderPath)
-      val mergedDF = df.union(readSegmentGroupsFolders(sparkSession, Array(), inputFolders))
-      writeSegmentGroupsFolder(sparkSession, mergedDF, this.getSegmentGroupPath)
-      inputFolders.foreach(ifp => this.fileSystem.delete(new Path(ifp), true))
+      //TODO: register files to be merged before starting the merge so rollback is possible, and put get files to merge into method
+      this.unlockSegmentGroupFilesFolders()
+      val allFilesAndFolders = this.listFilesAndFolders(this.segmentFolderPath)
+      val filesAndFoldersToMerge = allFilesAndFolders.filter(ff => ! this.segmentGroupFilesInQuery.contains(ff))
+      val mergedDF = df.union(readSegmentGroupsFolders(sparkSession, Array(), filesAndFoldersToMerge))
+      this.writeSegmentGroupsFolder(sparkSession, mergedDF, this.getSegmentGroupPath)
+      filesAndFoldersToMerge.foreach(ifp => this.fileSystem.delete(new Path(ifp), true))
     }
   }
 
   override final def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame = {
     //TODO: Determine why Spark sometimes require that a schema be provided, is it corrupted files?
-    readSegmentGroupsFolders(sparkSession, filters, listFilesAndFolders(this.segmentFolderPath))
+    val segmentGroupFilesAndFolders = this.listFilesAndFolders(this.segmentFolderPath)
+    val df = readSegmentGroupsFolders(sparkSession, filters, segmentGroupFilesAndFolders)
+    this.lockSegmentGroupFilesAndFolders(segmentGroupFilesAndFolders.asInstanceOf[mutable.ArrayBuffer[Object]], df)
+    df
   }
 
   override final def getMaxTid: Int = {
@@ -155,6 +173,31 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   protected def readSegmentGroupsFiles(filter: TableFilter, segmentGroupFiles: mutable.ArrayBuffer[Path]): Iterator[SegmentGroup]
   protected def writeSegmentGroupsFolder(sparkSession: SparkSession, df: DataFrame, segmentGroupFilePath: String): Unit
   protected def readSegmentGroupsFolders(sparkSession: SparkSession, filters: Array[Filter], segmentFolders: mutable.ArrayBuffer[String]): DataFrame
+
+  protected final def lockSegmentGroupFilesAndFolders(segmentGroupFiles: mutable.ArrayBuffer[Object], iterator: Object): Unit = {
+    this.fileStorageLock.writeLock().lock()
+    segmentGroupFiles.foreach(sgf => this.segmentGroupFilesInQuery(sgf) += 1)
+    val phantomReferenceToIterator = new PhantomReference(iterator, this.phantomReferenceQueue)
+    this.segmentGroupFilesIterators.put(phantomReferenceToIterator, segmentGroupFiles)
+    this.fileStorageLock.writeLock().unlock()
+  }
+
+  protected final def unlockSegmentGroupFilesFolders(): Unit = {
+    this.fileStorageLock.writeLock().lock()
+    var phantomReferenceToIterator = this.phantomReferenceQueue.poll
+    while (phantomReferenceToIterator != null) {
+      val segmentGroupFiles = this.segmentGroupFilesIterators(phantomReferenceToIterator)
+      segmentGroupFiles.foreach(sgf => {
+        this.segmentGroupFilesInQuery(sgf) -= 1
+        if (this.segmentGroupFilesInQuery(sgf) == 0) {
+          this.segmentGroupFilesInQuery.remove(sgf)
+        }
+      })
+      phantomReferenceToIterator.clear()
+      phantomReferenceToIterator = this.phantomReferenceQueue.poll
+    }
+    this.fileStorageLock.writeLock().unlock()
+  }
 
   /** Private Methods **/
   private def recover(): Unit = {
