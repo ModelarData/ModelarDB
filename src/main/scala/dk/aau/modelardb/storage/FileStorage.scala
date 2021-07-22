@@ -112,10 +112,14 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   }
 
   override final def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
-    val segmentGroupFiles = listFiles(this.segmentFolderPath)
-    val iterator = this.readSegmentGroupsFiles(filter, segmentGroupFiles)
-    this.lockSegmentGroupFilesAndFolders(segmentGroupFiles.asInstanceOf[mutable.ArrayBuffer[Object]], iterator)
-    iterator
+    val segmentGroupFiles = this.listFiles(this.segmentFolderPath)
+    if (segmentGroupFiles.isEmpty) {
+      Array[SegmentGroup]().iterator
+    } else {
+      val iterator = this.readSegmentGroupsFiles(filter, segmentGroupFiles)
+      this.lockSegmentGroupFilesAndFolders(segmentGroupFiles.asInstanceOf[mutable.ArrayBuffer[Object]], iterator)
+      iterator
+    }
   }
 
   //SparkStorage
