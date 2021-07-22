@@ -52,10 +52,12 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   /** Public Methods **/
   override final def open(dimensions: Dimensions): Unit = {
     //H2Storage does not support reading a segment folder created by SparkStorage
-    val filesAndFolders = this.fileSystem.listStatusIterator(this.segmentFolderPath)
-    while (filesAndFolders.hasNext) {
-      if (filesAndFolders.next().isDirectory) {
-        throw new UnsupportedOperationException("ModelarDB: Apache Spark segment folders cannot be read by H2")
+    if (this.fileSystem.exists(this.segmentFolderPath)) {
+      val filesAndFolders = this.fileSystem.listStatusIterator(this.segmentFolderPath)
+      while (filesAndFolders.hasNext) {
+        if (filesAndFolders.next().isDirectory) {
+          throw new UnsupportedOperationException("ModelarDB: Apache Spark segment folders cannot be read by H2")
+        }
       }
     }
     this.initialize()
@@ -122,9 +124,7 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   //SparkStorage
   override final def open(ssb: SparkSession.Builder, dimensions: Dimensions): SparkSession = {
     this.initialize()
-
-    //TODO: Determine why this have to be set when writing an ORC file
-    ssb.config("spark.sql.orc.impl", "native").getOrCreate()
+    ssb.getOrCreate()
   }
 
   override final def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit = {
@@ -143,7 +143,6 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   }
 
   override final def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame = {
-    //TODO: Determine why Spark sometimes require that a schema be provided, is it corrupted files?
     val segmentGroupFilesAndFolders = this.listFilesAndFolders(this.segmentFolderPath)
     val df = readSegmentGroupsFolders(sparkSession, filters, segmentGroupFilesAndFolders)
     this.lockSegmentGroupFilesAndFolders(segmentGroupFilesAndFolders.asInstanceOf[mutable.ArrayBuffer[Object]], df)
