@@ -27,7 +27,6 @@ import org.h2.table.TableFilter
 
 import java.io.FileNotFoundException
 import java.sql.Timestamp
-import scala.collection.JavaConverters._
 import scala.collection.mutable
 
 class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
@@ -70,7 +69,25 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
   }
 
   protected override def mergeFiles(outputFilePath: Path, inputFilesPaths: mutable.ArrayBuffer[Path]): Unit = {
-    OrcFile.mergeFiles(outputFilePath, OrcFile.writerOptions(new Configuration()), inputFilesPaths.asJava)
+    //NOTE: merge assumes all inputs share the same schema
+    val inputPathsScala = inputFilesPaths
+    val segmentFile = getReader(inputFilesPaths(0))
+    val schema = segmentFile.getSchema
+    segmentFile.close()
+
+    //Write the new file
+    val writer = getWriter(outputFilePath, schema)
+    for (inputPath <- inputPathsScala) {
+      val segmentFile = getReader(inputPath)
+      val rows = segmentFile.rows()
+      val batch = segmentFile.getSchema.createRowBatch()
+      while (rows.nextBatch(batch)) {
+        writer.addRowBatch(batch)
+      }
+      rows.close()
+      segmentFile.close()
+    }
+    writer.close()
   }
 
   override protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path): Unit = {
@@ -123,7 +140,6 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
 
     val rows = timeSeries.rows()
     val batch = timeSeries.getSchema.createRowBatch()
-    //TODO Fix dead past end of RLE integer from compressed stream Stream for column 1 kind DATA position: 7 length: 7 range: 1 offset: 0 limit: 0
     while (rows.nextBatch(batch)) {
       for (row <- 0 until batch.size) {
         //The metadata is stored as (Sid => Scaling, Resolution, Gid, Dimensions)
