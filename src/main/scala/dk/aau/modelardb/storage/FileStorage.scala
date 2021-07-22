@@ -36,8 +36,9 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   /** Instance Variables **/
   private val segmentFolder = this.rootFolder + "segment/"
   private val segmentFolderPath: Path = new Path(segmentFolder)
-  private val segmentMergePath = new Path(this.rootFolder + "segment_merge" + this.getFileSuffix)
-  private val segmentMergeLogPath = new Path(this.rootFolder + "segment_merge_log")
+  private val segmentNew = this.rootFolder + "segment_new" + this.getFileSuffix
+  private val segmentNewPath = new Path(segmentNew)
+  private val segmentLogPath = new Path(this.rootFolder + "segment_new_log")
   private val fileSystem: FileSystem = new Path(this.rootFolder).getFileSystem(new Configuration())
 
   //Variables for tracking when to merge and which files can be included in a merge
@@ -97,13 +98,16 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
 
   //H2Storage
   override final def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
-    writeSegmentGroupFile(segmentGroups, size, new Path(this.getSegmentGroupPath))
+    //The file is written to the segmentNewPath and rename so the operation can be made atomic
+    this.writeSegmentGroupFile(segmentGroups, size, this.segmentNewPath)
+    this.renameSegmentFileOrFolder(new Path(this.getSegmentGroupPath))
+
     if (shouldMerge()) {
       this.unlockSegmentGroupFilesFolders()
       val allFiles = this.listFiles(this.segmentFolderPath)
       val filesToMerge = allFiles.filter(ff => ! this.segmentGroupFilesInQuery.contains(ff))
-      this.mergeFiles(this.segmentMergePath, filesToMerge)
-      this.replaceMergedFiles(filesToMerge)
+      this.mergeFiles(this.segmentNewPath, filesToMerge)
+      this.replaceSegmentFilesAndFolders(filesToMerge)
     }
   }
 
@@ -124,14 +128,16 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
 
   override final def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit = {
     if ( ! shouldMerge) {
-      writeSegmentGroupsFolder(sparkSession, df, this.getSegmentGroupPath)
+      //The file is written to the segmentNewPath and rename so the operation can be made atomic
+      this.writeSegmentGroupsFolder(sparkSession, df, this.segmentNew)
+      this.renameSegmentFileOrFolder(new Path(this.getSegmentGroupPath))
     } else {
       this.unlockSegmentGroupFilesFolders()
       val allFilesAndFolders = this.listFilesAndFolders(this.segmentFolderPath)
       val filesAndFoldersToMerge = allFilesAndFolders.filter(ff => ! this.segmentGroupFilesInQuery.contains(ff))
       val mergedDF = df.union(readSegmentGroupsFolders(sparkSession, Array(), filesAndFoldersToMerge))
-      this.writeSegmentGroupsFolder(sparkSession, mergedDF, this.segmentMergePath.toString)
-      this.replaceMergedFiles(filesAndFoldersToMerge.map(new Path(_)))
+      this.writeSegmentGroupsFolder(sparkSession, mergedDF, this.segmentNew)
+      this.replaceSegmentFilesAndFolders(filesAndFoldersToMerge.map(new Path(_)))
     }
   }
 
@@ -199,18 +205,23 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
     this.deleteNewMergeAndBackup("time_series")
     this.deleteNewMergeAndBackup("model_type")
 
-    //Recover from system terminating abnormally while merging segment files together
-    if (this.fileSystem.exists(this.segmentMergeLogPath)) {
-      val segmentMergeLogFilesOption = this.readSegmentMergeLogFile()
-      if (segmentMergeLogFilesOption.nonEmpty) {
-        //The merged file and the merge log was fully written
-        val segmentMergeLogFiles = segmentMergeLogFilesOption.get
-        segmentMergeLogFiles.foreach(smlf => this.fileSystem.delete(smlf, true))
-        this.fileSystem.rename(this.segmentMergePath, new Path(this.getSegmentGroupPath))
+    //Recover from system terminating abnormally while writing or merging segment files
+    if (this.fileSystem.exists(this.segmentLogPath)) {
+      val segmentMergeLogFilesOption = this.readSegmentLogFile()
+      if (segmentMergeLogFilesOption.nonEmpty) { //The segment file or folder and the log file were written
+        val segmentLogFiles = segmentMergeLogFilesOption.get
+        val segmentOutputFileOrFolder = segmentLogFiles(0)
+        val segmentInputFilesOrFolders = segmentLogFiles.drop(1)
+        if (this.fileSystem.exists(this.segmentNewPath)) { //The segment file or folder was not renamed
+          segmentInputFilesOrFolders.foreach(smlf => this.fileSystem.delete(smlf, true))
+          this.fileSystem.rename(this.segmentNewPath, segmentOutputFileOrFolder)
+        } else { //The renaming operation was started but might not have been fully completed
+          this.fileSystem.delete(segmentOutputFileOrFolder, true)
+        }
       }
     }
-    this.fileSystem.delete(this.segmentMergePath, true)
-    this.fileSystem.delete(this.segmentMergeLogPath, false)
+    this.fileSystem.delete(this.segmentNewPath, true)
+    this.fileSystem.delete(this.segmentLogPath, false)
   }
 
   private def deleteNewMergeAndBackup(fileNameWithoutSuffix: String): Unit = {
@@ -281,24 +292,39 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
     fileAndFolderList
   }
 
-  private def replaceMergedFiles(filesAndFoldersToMerge: mutable.ArrayBuffer[Path]): Unit = {
+  private def renameSegmentFileOrFolder(fileOrFolder: Path): Unit = {
+    //Write a log file with the file or folder to be renamed as the operation is not guaranteed to be
+    //atomic, this allow recovering from abnormal termination while the file or folder is being renamed
+    val segmentLogFile = this.fileSystem.create(this.segmentLogPath)
+    segmentLogFile.writeChars(fileOrFolder.toString + '\n')
+    segmentLogFile.writeChars("SUCCESS")
+    segmentLogFile.close()
+
+    //Rename the file or folder and delete the log to specify that the operations was completed
+    this.fileSystem.rename(this.segmentNewPath, fileOrFolder)
+    this.fileSystem.delete(this.segmentLogPath, false)
+  }
+
+  private def replaceSegmentFilesAndFolders(filesAndFoldersToMerge: mutable.ArrayBuffer[Path]): Unit = {
     //Write a log file with the files and/or folders that have been merged, this allow recovering from
     //abnormal termination while deleting the files that have been merged and renaming the merged file
-    val segmentLogFile = this.fileSystem.create(this.segmentMergeLogPath)
-    filesAndFoldersToMerge.foreach(sff => segmentLogFile.writeChars(sff.toString + '\n'))
-    segmentLogFile.writeChars("SUCCESS")
+    val segmentLogFile = this.fileSystem.create(this.segmentLogPath)
+    val segmentFileOrFolder = this.getSegmentGroupPath
+    segmentLogFile.writeChars(segmentFileOrFolder + '\n') //The first line is the output path
+    filesAndFoldersToMerge.foreach(ff => segmentLogFile.writeChars(ff.toString + '\n'))
+    segmentLogFile.writeChars("SUCCESS") //Allows the reader to check that the file is not malformed
     segmentLogFile.close()
 
     //Delete the merged files, rename the new file to make it available to queries, and delete the log
     filesAndFoldersToMerge.foreach(ifp => this.fileSystem.delete(ifp, true))
-    this.fileSystem.rename(this.segmentMergePath, new Path(this.getSegmentGroupPath))
-    this.fileSystem.delete(this.segmentMergeLogPath, false)
+    this.fileSystem.rename(this.segmentNewPath, new Path(segmentFileOrFolder))
+    this.fileSystem.delete(this.segmentLogPath, false)
   }
 
-  private def readSegmentMergeLogFile(): Option[Array[Path]] = {
+  private def readSegmentLogFile(): Option[Array[Path]] = {
     //Read the contents of the segment log file
     val segmentMergeLog = new StringBuilder()
-    val input = this.fileSystem.open(this.segmentMergeLogPath)
+    val input = this.fileSystem.open(this.segmentLogPath)
     try {
       while (true) {
         segmentMergeLog.append(input.readChar())
