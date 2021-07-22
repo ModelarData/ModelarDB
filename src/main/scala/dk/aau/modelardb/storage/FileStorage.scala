@@ -29,19 +29,15 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import scala.collection.mutable
 import java.lang.ref.{PhantomReference, ReferenceQueue}
 
-//TODO: Ensure that FileStorage can never lose data if sub-type expose read and write methods for each table:
-//      - Add mergelog listing files that have been merged but not deleted yet because a query is using it.
-//      - Store list of currently active files that new queries can use and list of files to delete when not used.
-//TODO: Ensure H2 and Spark can use FileStorage created by the other system, move Spark output to Folder+PartName?
-//TODO: Ensure files are not merge twice if they are kept alive by a query across multiple merges.
-//TODO: Test everything thoroughly on both local filesystem and HDFS, and using unittest
 abstract class FileStorage(rootFolder: String) extends Storage with H2Storage with SparkStorage {
-  //Warn users that FileStorage storage layers should be considered experimental
+  //Warn users that the FileStorage storage layers should be considered experimental
   Static.warn("ModelarDB: using experimental storage layer " + this.getClass)
 
   /** Instance Variables **/
   private val segmentFolder = this.rootFolder + "segment/"
   private val segmentFolderPath: Path = new Path(segmentFolder)
+  private val segmentMergePath = new Path(this.rootFolder + "segment_merge" + this.getFileSuffix)
+  private val segmentMergeLogPath = new Path(this.rootFolder + "segment_merge_log")
   private val fileSystem: FileSystem = new Path(this.rootFolder).getFileSystem(new Configuration())
 
   //Variables for tracking when to merge and which files can be included in a merge
@@ -103,12 +99,11 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   override final def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
     writeSegmentGroupFile(segmentGroups, size, new Path(this.getSegmentGroupPath))
     if (shouldMerge()) {
-      //TODO: register files to be merged before starting the merge so rollback is possible, and put get files to merge into method
       this.unlockSegmentGroupFilesFolders()
       val allFiles = this.listFiles(this.segmentFolderPath)
       val filesToMerge = allFiles.filter(ff => ! this.segmentGroupFilesInQuery.contains(ff))
-      this.mergeFiles(new Path(this.getSegmentGroupPath), filesToMerge)
-      filesToMerge.foreach(ifp => this.fileSystem.delete(ifp, false))
+      this.mergeFiles(this.segmentMergePath, filesToMerge)
+      this.replaceMergedFiles(filesToMerge)
     }
   }
 
@@ -131,13 +126,12 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
     if ( ! shouldMerge) {
       writeSegmentGroupsFolder(sparkSession, df, this.getSegmentGroupPath)
     } else {
-      //TODO: register files to be merged before starting the merge so rollback is possible, and put get files to merge into method
       this.unlockSegmentGroupFilesFolders()
       val allFilesAndFolders = this.listFilesAndFolders(this.segmentFolderPath)
       val filesAndFoldersToMerge = allFilesAndFolders.filter(ff => ! this.segmentGroupFilesInQuery.contains(ff))
       val mergedDF = df.union(readSegmentGroupsFolders(sparkSession, Array(), filesAndFoldersToMerge))
-      this.writeSegmentGroupsFolder(sparkSession, mergedDF, this.getSegmentGroupPath)
-      filesAndFoldersToMerge.foreach(ifp => this.fileSystem.delete(new Path(ifp), true))
+      this.writeSegmentGroupsFolder(sparkSession, mergedDF, this.segmentMergePath.toString)
+      this.replaceMergedFiles(filesAndFoldersToMerge.map(new Path(_)))
     }
   }
 
@@ -205,8 +199,18 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
     this.deleteNewMergeAndBackup("time_series")
     this.deleteNewMergeAndBackup("model_type")
 
-    //Recover the original files if the system terminates abnormally while merging segment files
-    //TODO: if merge done use merged files and delete old, if not done delete metadata and use fold files
+    //Recover from system terminating abnormally while merging segment files together
+    if (this.fileSystem.exists(this.segmentMergeLogPath)) {
+      val segmentMergeLogFilesOption = this.readSegmentMergeLogFile()
+      if (segmentMergeLogFilesOption.nonEmpty) {
+        //The merged file and the merge log was fully written
+        val segmentMergeLogFiles = segmentMergeLogFilesOption.get
+        segmentMergeLogFiles.foreach(smlf => this.fileSystem.delete(smlf, true))
+        this.fileSystem.rename(this.segmentMergePath, new Path(this.getSegmentGroupPath))
+      }
+    }
+    this.fileSystem.delete(this.segmentMergePath, true)
+    this.fileSystem.delete(this.segmentMergeLogPath, false)
   }
 
   private def deleteNewMergeAndBackup(fileNameWithoutSuffix: String): Unit = {
@@ -275,5 +279,40 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
       fileAndFolderList += fileOrFolder
     }
     fileAndFolderList
+  }
+
+  private def replaceMergedFiles(filesAndFoldersToMerge: mutable.ArrayBuffer[Path]): Unit = {
+    //Write a log file with the files and/or folders that have been merged, this allow recovering from
+    //abnormal termination while deleting the files that have been merged and renaming the merged file
+    val segmentLogFile = this.fileSystem.create(this.segmentMergeLogPath)
+    filesAndFoldersToMerge.foreach(sff => segmentLogFile.writeChars(sff.toString + '\n'))
+    segmentLogFile.writeChars("SUCCESS")
+    segmentLogFile.close()
+
+    //Delete the merged files, rename the new file to make it available to queries, and delete the log
+    filesAndFoldersToMerge.foreach(ifp => this.fileSystem.delete(ifp, true))
+    this.fileSystem.rename(this.segmentMergePath, new Path(this.getSegmentGroupPath))
+    this.fileSystem.delete(this.segmentMergeLogPath, false)
+  }
+
+  private def readSegmentMergeLogFile(): Option[Array[Path]] = {
+    //Read the contents of the segment log file
+    val segmentMergeLog = new StringBuilder()
+    val input = this.fileSystem.open(this.segmentMergeLogPath)
+    try {
+      while (true) {
+        segmentMergeLog.append(input.readChar())
+      }
+    } catch {
+      case _: Exception => //input is empty
+    }
+
+    //Ensure the log file was written successfully
+    if (segmentMergeLog.endsWith("SUCCESS")) {
+      Some(segmentMergeLog.dropRight(7).split('\n')
+        .map(fileOrFolderPath => new Path(fileOrFolderPath)))
+    } else {
+      None
+    }
   }
 }
