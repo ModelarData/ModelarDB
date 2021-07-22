@@ -51,17 +51,14 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
 
   /** Public Methods **/
   override final def open(dimensions: Dimensions): Unit = {
-    if ( ! this.fileSystem.exists(this.segmentFolderPath)) {
-      this.fileSystem.mkdirs(this.segmentFolderPath)
-    } else {
-      this.recover() //Nothing to recover if the system was terminated before the segment folder was created
-      val files = this.fileSystem.listFiles(segmentFolderPath, false)
-      while (files.hasNext) {
-        this.batchesSinceLastMerge += 1
-        files.next()
+    //H2Storage does not support reading a segment folder created by SparkStorage
+    val filesAndFolders = this.fileSystem.listStatusIterator(this.segmentFolderPath)
+    while (filesAndFolders.hasNext) {
+      if (filesAndFolders.next().isDirectory) {
+        throw new UnsupportedOperationException("ModelarDB: Apache Spark segment folders cannot be read by H2")
       }
-      this.batchesSinceLastMerge -= 1 //The main file is not a batch
     }
+    this.initialize()
   }
 
   override final def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
@@ -124,7 +121,7 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
 
   //SparkStorage
   override final def open(ssb: SparkSession.Builder, dimensions: Dimensions): SparkSession = {
-    this.open(dimensions)
+    this.initialize()
 
     //TODO: Determine why this have to be set when writing an ORC file
     ssb.config("spark.sql.orc.impl", "native").getOrCreate()
@@ -204,6 +201,21 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   }
 
   /** Private Methods **/
+  private def initialize(): Unit = {
+    //Initialization shared by H2Storage and SparkStorage
+    if ( ! this.fileSystem.exists(this.segmentFolderPath)) {
+      this.fileSystem.mkdirs(this.segmentFolderPath)
+    } else {
+      this.recover() //Nothing to recover if the system was terminated before the segment folder was created
+      val files = this.fileSystem.listFiles(segmentFolderPath, false)
+      while (files.hasNext) {
+        this.batchesSinceLastMerge += 1
+        files.next()
+      }
+      this.batchesSinceLastMerge -= 1 //The main file is not a batch
+    }
+  }
+
   private def recover(): Unit = {
     //Deletes files leftover if the system terminates abnormally before ingestion begins
     this.deleteNewMergeAndBackup("time_series")
