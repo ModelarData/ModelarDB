@@ -40,6 +40,7 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   private val segmentNewPath = new Path(segmentNew)
   private val segmentLogPath = new Path(this.rootFolder + "segment_new_log")
   private val fileSystem: FileSystem = new Path(this.rootFolder).getFileSystem(new Configuration())
+  this.fileSystem.setWriteChecksum(false)
 
   //Variables for tracking when to merge and which files can be included in a merge
   private val batchesBetweenMerges: Int = 10 //Chosen as a simple trade-off between ingestion and query time
