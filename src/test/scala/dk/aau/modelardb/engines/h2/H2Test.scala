@@ -27,6 +27,7 @@ import org.scalatest.matchers.should.Matchers
 
 import java.sql.{DriverManager, Statement}
 import java.time.Instant
+import scala.collection.mutable
 
 class H2Test extends AnyFlatSpec with Matchers with MockFactory {
 
@@ -73,7 +74,7 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
 
       storage.timeSeriesGroupCache = Array(0, 1)
       storage.groupMetadataCache = Array(Array(), Array(samplingInterval, 1, 1), Array(samplingInterval, 1, 1))
-      storage.groupDerivedCache = new java.util.HashMap[Integer, Array[Int]]()
+      storage.groupDerivedCache = mutable.HashMap[Integer, Array[Int]]()
       storage.modelTypeCache = Array(model, model)
       storage.timeSeriesMembersCache = Array(null, Array())
 
