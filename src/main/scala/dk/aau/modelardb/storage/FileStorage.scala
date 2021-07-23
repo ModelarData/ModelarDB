@@ -42,7 +42,7 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
   private val fileSystem: FileSystem = new Path(this.rootFolder).getFileSystem(new Configuration())
 
   //Variables for tracking when to merge and which files can be included in a merge
-  private val batchesBetweenMerges: Int = 500
+  private val batchesBetweenMerges: Int = 10 //Chosen as a simple trade-off between ingestion and query time
   private var batchesSinceLastMerge: Int = 0
   private val segmentGroupFilesInQuery = mutable.HashMap[Object, Integer]().withDefaultValue(0)
   private val segmentGroupFilesIterators = mutable.HashMap[Object, mutable.ArrayBuffer[Object]]()
