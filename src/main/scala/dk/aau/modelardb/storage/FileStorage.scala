@@ -98,9 +98,9 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
 
   //H2Storage
   override final def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
-    //The file is written to the segmentNewPath and rename so the operation can be made atomic
+    //The file is written to segmentNewPath and renamed to ensure that the final file is created atomically
     this.writeSegmentGroupFile(segmentGroups, size, this.segmentNewPath)
-    this.renameSegmentFileOrFolder(new Path(this.getSegmentGroupPath))
+    this.fileSystem.rename(this.segmentNewPath, new Path(this.getSegmentGroupPath))
 
     if (shouldMerge()) {
       this.unlockSegmentGroupFilesFolders()
@@ -130,9 +130,9 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
 
   override final def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit = {
     if ( ! shouldMerge) {
-      //The file is written to the segmentNewPath and rename so the operation can be made atomic
+      //The file is written to segmentNewPath and renamed to ensure that the final file is created atomically
       this.writeSegmentGroupsFolder(sparkSession, df, this.segmentNew)
-      this.renameSegmentFileOrFolder(new Path(this.getSegmentGroupPath))
+      this.fileSystem.rename(this.segmentNewPath, new Path(this.getSegmentGroupPath))
     } else {
       this.unlockSegmentGroupFilesFolders()
       val allFilesAndFolders = this.listFilesAndFolders(this.segmentFolderPath)
@@ -306,19 +306,6 @@ abstract class FileStorage(rootFolder: String) extends Storage with H2Storage wi
       fileAndFolderList += fileOrFolder
     }
     fileAndFolderList
-  }
-
-  private def renameSegmentFileOrFolder(fileOrFolder: Path): Unit = {
-    //Write a log file with the file or folder to be renamed as the operation is not guaranteed to be
-    //atomic, this allow recovering from abnormal termination while the file or folder is being renamed
-    val segmentLogFile = this.fileSystem.create(this.segmentLogPath)
-    segmentLogFile.writeChars(fileOrFolder.toString + '\n')
-    segmentLogFile.writeChars("SUCCESS")
-    segmentLogFile.close()
-
-    //Rename the file or folder and delete the log to specify that the operations was completed
-    this.fileSystem.rename(this.segmentNewPath, fileOrFolder)
-    this.fileSystem.delete(this.segmentLogPath, false)
   }
 
   private def replaceSegmentFilesAndFolders(filesAndFoldersToMerge: mutable.ArrayBuffer[Path]): Unit = {
