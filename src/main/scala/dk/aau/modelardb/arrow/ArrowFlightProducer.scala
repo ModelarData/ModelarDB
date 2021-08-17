@@ -27,10 +27,32 @@ class ArrowFlightProducer(queryEngine: QueryEngine, storage: Storage, mode: Stri
   }
 
   override def listFlights(context: CallContext, criteria: Criteria, listener: StreamListener[FlightInfo]): Unit = {
-    listener.onError(???)
+//    val filter = new String(criteria.getExpression, UTF_8)
+//    new FlightInfo()
+//    FlightDescriptor.path()
+//    val timeseriesIds: List[FlightInfo] = storage.getTimeseriesIds(filter)
+//    try {
+//      timeseriesIds.foreach(listener.onNext) // TODO: what if onNext() fails?
+//    } catch {
+//      case t: Throwable => listener.onError(t)
+//    } finally {
+//      listener.onCompleted()
+//    }
+    ???
   }
 
-  override def getFlightInfo(context: CallContext, descriptor: FlightDescriptor): FlightInfo = ???
+  override def getFlightInfo(context: CallContext, descriptor: FlightDescriptor): FlightInfo = {
+//    descriptor.isCommand match {
+//      case true =>
+//        val query = new String(descriptor.getCommand, UTF_8)
+//        queryEngine.execute(query)
+//      case false =>
+//        val path = descriptor.getPath.asScala.mkString("/")
+//        val query = pathToQuery(path)
+//        queryEngine.execute(query)
+//    }
+    ???
+  }
 
   override def acceptPut(context: CallContext, flightStream: FlightStream, ackStream: StreamListener[PutResult]): Runnable = {
         mode match {
