@@ -21,19 +21,28 @@ import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.ql.exec.vector.TimestampColumnVector
 import org.apache.orc.OrcFile
 import org.scalatest.Assertions
+import org.scalatest.Assertions.{cancel, pending}
+import org.scalatest.exceptions.TestCanceledException
 
 import java.io.File
 import scala.collection.mutable
 
-trait TimeSeriesGroupProvider  extends Assertions {
+trait TimeSeriesGroupProvider {
+
   /** Instance Variables **/
   private val orcTestDataKey: String = "MODELARDB_TEST_DATA_ORC"
   private val isOrcTestDataFolderSet = sys.env.contains(orcTestDataKey)
-  assume(isOrcTestDataFolderSet, ", so skipped test as MODELARDB_TEST_DATA_ORC is not set")
   var samplingInterval: Int = -1
 
+  def withTSGroup[A](fun: Array[TimeSeriesGroup] => A): A = {
+    if (!isOrcTestDataFolderSet) {
+      cancel(s"$orcTestDataKey environment variable not set!")
+    }
+    fun(newTimeSeriesGroups)
+  }
+
   /** Public Methods  **/
-  def newTimeSeriesGroups: Array[TimeSeriesGroup] = {
+  private def newTimeSeriesGroups: Array[TimeSeriesGroup] = {
     newTimeSeriesGroups(sys.env(orcTestDataKey))
   }
 

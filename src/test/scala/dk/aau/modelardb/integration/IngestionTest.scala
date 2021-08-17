@@ -27,30 +27,34 @@ import scala.collection.mutable
 import java.io.{OutputStream, PrintStream}
 
 //Integration Test
-class IngestionTest extends AnyFlatSpec with Matchers {
+class IngestionTest extends AnyFlatSpec with Matchers with TimeSeriesGroupProvider {
   //HACK: Disable stdout during testing as some of the tests are very noisy
   System.setOut(new PrintStream(OutputStream.nullOutputStream()))
   System.setErr(new PrintStream(OutputStream.nullOutputStream()))
 
   behavior of "ModelarDB"
-  it should "be able to ingest time series without any error" in new TimeSeriesGroupProvider {
+  it should "be able to ingest time series without any error" in {
     //newTimeSeriesGroups and samplingInterval are provided by TimeSeriesGroupProvider
-    val (ats, rts) = ingest(() => newTimeSeriesGroups,() => samplingInterval, 0.0F)
-    while (ats.hasNext && rts.hasNext) {
-      ats.next().value should equal(rts.next().value)
+    withTSGroup { tsGroups =>
+      val (ats, rts) = ingest(tsGroups, samplingInterval, 0.0F)
+      while (ats.hasNext && rts.hasNext) {
+        ats.next().value should equal(rts.next().value)
+      }
     }
   }
 
   it should "be able to ingest time series within an error bound" in new TimeSeriesGroupProvider {
     //newTimeSeriesGroups and samplingInterval are provided by TimeSeriesGroupProvider
-    val (ats, rts) = ingest(() => newTimeSeriesGroups,() => samplingInterval, 10.0F)
-    while (ats.hasNext && rts.hasNext) {
-      Static.percentageError(ats.next().value, rts.next().value) should be <= 10.0
+    withTSGroup { tsGroups =>
+      val (ats, rts) = ingest(tsGroups, samplingInterval, 10.0F)
+      while (ats.hasNext && rts.hasNext) {
+        Static.percentageError(ats.next().value, rts.next().value) should be <= 10.0
+      }
     }
   }
 
   /** Private Methods **/
-  def ingest(newTimeSeriesGroups: () => Array[TimeSeriesGroup], samplingInterval: () => Int, errorBound: Float):
+  def ingest(newTimeSeriesGroups: Array[TimeSeriesGroup], samplingInterval: Int, errorBound: Float):
   (Iterator[DataPoint], Iterator[DataPoint]) = {
     //Initialize
     val mtn = Array("dk.aau.modelardb.core.models.PMC_MeanModelType",
@@ -61,16 +65,16 @@ class IngestionTest extends AnyFlatSpec with Matchers {
 
     //Ingest
     val offset = ByteBuffer.allocate(12).putInt(1).putInt(1).putInt(0).array()
-    val workingSet = new WorkingSet(newTimeSeriesGroups(), 1 / 10, mtn,
+    val workingSet = new WorkingSet(newTimeSeriesGroups, 1 / 10, mtn,
       Range(1, mtn.length + 1).toArray, errorBound, 50, 0)
       workingSet.process((_: Int, _: Long, _: Long, _: Int, _: Array[Byte], _: Array[Byte]) => (),
         (gid: Int, startTime: Long, endTime: Long, mtid: Int, model: Array[Byte], gaps: Array[Byte]) => {
-          segments.append(modelTypes(mtid - 1).get(gid, startTime, endTime, samplingInterval(), model, offset)) //HACK: gid == tid
+          segments.append(modelTypes(mtid - 1).get(gid, startTime, endTime, samplingInterval, model, offset)) //HACK: gid == tid
         },
         () => false)
 
     //Verify
-    val realTimeSeriesGroups = newTimeSeriesGroups()
+    val realTimeSeriesGroups = newTimeSeriesGroups
     val rts = new Iterator[DataPoint] {
       private var currentTimeSeriesIndex = 0
       private var currentTimeSeries = realTimeSeriesGroups(currentTimeSeriesIndex).getTimeSeries()(0)
