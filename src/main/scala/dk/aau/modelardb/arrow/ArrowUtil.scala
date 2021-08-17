@@ -2,12 +2,13 @@ package dk.aau.modelardb.arrow
 
 import dk.aau.modelardb.core.{SegmentGroup, Storage}
 import dk.aau.modelardb.core.models.Segment
-import dk.aau.modelardb.engines.h2.H2Storage
-import dk.aau.modelardb.storage.{CassandraStorage, JDBCStorage}
 import org.apache.arrow.adapter.jdbc.JdbcToArrowUtils
 import org.apache.arrow.memory.RootAllocator
-import org.apache.arrow.vector.{BigIntVector, BitVector, FieldVector, IntVector, TimeStampVector, UInt4Vector, UInt8Vector, VarBinaryVector, VarCharVector, VectorSchemaRoot}
-import org.apache.spark.sql.DataFrame
+import org.apache.arrow.vector.{BigIntVector, IntVector, TimeStampVector, UInt4Vector, UInt8Vector, VarBinaryVector, VarCharVector, VectorSchemaRoot}
+import org.apache.spark.sql.{ArrowConverter, DataFrame}
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.execution.arrow.ArrowWriter
+import org.apache.spark.sql.functions.{col, from_utc_timestamp}
 
 import java.nio.charset.StandardCharsets
 import java.sql.ResultSet
@@ -25,14 +26,14 @@ object ArrowUtil {
     val gid = root.getVector("GID").asInstanceOf[IntVector].get(index)
     val start = root.getVector("START_TIME").asInstanceOf[BigIntVector].get(index)
     val end = root.getVector("END_TIME").asInstanceOf[BigIntVector].get(index)
-    val mid = root.getVector("MID").asInstanceOf[IntVector].get(index)
-    val params = root.getVector("PARAMETERS").asInstanceOf[VarBinaryVector].get(index)
+    val mtid = root.getVector("MTID").asInstanceOf[IntVector].get(index)
+    val model = root.getVector("MODEL").asInstanceOf[VarBinaryVector].get(index)
     val gaps = root.getVector("GAPS").asInstanceOf[VarBinaryVector].get(index)
-    new SegmentGroup(gid, start, end, mid, params, gaps)
+    new SegmentGroup(gid, start, end, mtid, model, gaps)
   }
 
   def jdbcToArrow: ResultSet => VectorSchemaRoot = { rs =>
-    val arrowJdbcConfig = SegmentSchema.jdbcToArrowConfig
+    val arrowJdbcConfig = TimeseriesSchema.jdbcToArrowConfig // config is the same for all Schemas
     val schema = JdbcToArrowUtils.jdbcToArrowSchema(rs.getMetaData, arrowJdbcConfig)
     val allocator = new RootAllocator(Long.MaxValue)
     val root = VectorSchemaRoot.create(schema, allocator)
@@ -42,18 +43,22 @@ object ArrowUtil {
 
   def dfToArrow: DataFrame => VectorSchemaRoot = { df =>
     val allocator = new RootAllocator(Long.MaxValue)
-    val schema = SegmentGroupSchema.arrowSchema
+//    val schema = SegmentSchema.arrowSchema
+    val schema = ArrowConverter.toArrow(df)
     val root = VectorSchemaRoot.create(schema, allocator)
     var index = 0
-    df.collect().foreach { row =>
-      root.getVector("GID").asInstanceOf[IntVector].setSafe(index, row.getInt(0))
-      root.getVector("START_TIME").asInstanceOf[BigIntVector].setSafe(index, row.getLong(1))
-      root.getVector("END_TIME").asInstanceOf[BigIntVector].setSafe(index, row.getLong(2))
-      root.getVector("MID").asInstanceOf[IntVector].setSafe(index, row.getInt(3))
-      root.getVector("PARAMETERS").asInstanceOf[VarBinaryVector].setSafe(index, row.getAs[Array[Byte]](4))
-      root.getVector("GAPS").asInstanceOf[VarBinaryVector].setSafe(index, row.getAs[Array[Byte]](5))
+    val writer = ArrowWriter.create(root)
+
+    val transformedDf = if (df.columns.contains("end_time")) {
+      df.withColumn("end_time", from_utc_timestamp(col("end_time"), "UTC"))
+    } else { df }
+
+    transformedDf.collect().foreach { row =>
+      val internalRow = InternalRow.fromSeq(row.toSeq)
+      writer.write(internalRow)
       index += 1
     }
+    writer.finish
     root
   }
 
@@ -61,8 +66,8 @@ object ArrowUtil {
     root.getVector("GID").asInstanceOf[IntVector].setSafe(index, sg.gid)
     root.getVector("START_TIME").asInstanceOf[BigIntVector].setSafe(index, sg.startTime)
     root.getVector("END_TIME").asInstanceOf[BigIntVector].setSafe(index, sg.endTime)
-    root.getVector("MID").asInstanceOf[IntVector].setSafe(index, sg.mtid)
-    root.getVector("PARAMETERS").asInstanceOf[VarBinaryVector].setSafe(index, sg.model)
+    root.getVector("MTID").asInstanceOf[IntVector].setSafe(index, sg.mtid)
+    root.getVector("MODEL").asInstanceOf[VarBinaryVector].setSafe(index, sg.model)
     root.getVector("GAPS").asInstanceOf[VarBinaryVector].setSafe(index, sg.offsets)
   }
 

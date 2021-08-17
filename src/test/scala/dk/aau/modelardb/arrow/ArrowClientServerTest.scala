@@ -59,7 +59,7 @@ class ArrowClientServerTest extends AnyFlatSpec with should.Matchers with MockFa
 
     val storage = mock[Storage]
     val queryEngine = mock[QueryEngine]
-    val testDataRoot = VectorSchemaRoot.create(SegmentGroupSchema.arrowSchema, new RootAllocator(Long.MaxValue))
+    val testDataRoot = VectorSchemaRoot.create(SegmentSchema.arrowSchema, new RootAllocator(Long.MaxValue))
 
     testData.zipWithIndex.foreach { case (sg, i) =>
       ArrowUtil.addToRoot(i, sg, testDataRoot)

@@ -70,7 +70,7 @@ object ArrowFlightServer {
     val conn = DriverManager.getConnection("jdbc:h2:mem:")
 
     val updateStmt = conn.createStatement()
-    updateStmt.executeUpdate(SegmentSchema.createTableSQL)
+    updateStmt.executeUpdate(TimeseriesSchema.createTableSQL)
     updateStmt.close()
 
     val insertStmt = conn.prepareStatement("INSERT INTO segment VALUES(?, ?, ?, ?, ?, ?, ?)")

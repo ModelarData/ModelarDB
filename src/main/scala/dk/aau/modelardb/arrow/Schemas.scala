@@ -1,12 +1,8 @@
 package dk.aau.modelardb.arrow
 
-import dk.aau.modelardb.core.models.Segment
 import org.apache.arrow.adapter.jdbc.{JdbcFieldInfo, JdbcToArrowConfig, JdbcToArrowConfigBuilder, JdbcToArrowUtils}
 import org.apache.arrow.memory.RootAllocator
-import org.apache.arrow.vector.types.Types.MinorType
-import org.apache.arrow.vector.{BigIntVector, FieldVector, ValueVector, VectorSchemaRoot}
-import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType, Schema}
-import org.apache.arrow.vector.types.{DateUnit, FloatingPointPrecision, TimeUnit, Types}
+import org.apache.arrow.vector.types.pojo.{Field, FieldType, Schema}
 
 import java.sql.JDBCType
 import scala.collection.JavaConverters._
@@ -33,14 +29,6 @@ sealed trait Schemas {
     }.asJava
   )
 
-//  val vectorTypes = byName(dbSchema).mapValues{ jdbcFieldInfo =>
-//    val converter = jdbcToArrowConfig.getJdbcToArrowTypeConverter
-//    val arrowType = converter(jdbcFieldInfo)
-//    val vectorType = Types.getMinorTypeForArrowType(arrowType)
-//    vectorType match {
-//      case MinorType.BIGINT =>
-//    }
-//  }
 
   /* Creates a Map from column name to Arrow Type.
    * This is used to look up what Arrow type a given database column should be converted to. */
@@ -68,14 +56,13 @@ sealed trait Schemas {
 
 }
 
-object SegmentGroupSchema extends Schemas {
-  // gid INTEGER, start_time BIGINT, end_time BIGINT, mid INTEGER, params ${this.blobType}, gaps ${this.blobType}
+object SegmentSchema extends Schemas {
   val dbSchema: DBSchema = Seq(
     ("GID", JDBCType.INTEGER),
     ("START_TIME", JDBCType.BIGINT),
     ("END_TIME", JDBCType.BIGINT),
-    ("MID", JDBCType.INTEGER),
-    ("PARAMETERS", JDBCType.BINARY),
+    ("MTID", JDBCType.INTEGER),
+    ("MODEL", JDBCType.BINARY),
     ("GAPS", JDBCType.BINARY),
   )
 
@@ -83,85 +70,14 @@ object SegmentGroupSchema extends Schemas {
 
 }
 
-object SegmentSchema extends Schemas {
-  // sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BINARY, gaps BINARY ${H2.getDimensionColumns(dimensions)}
+object TimeseriesSchema extends Schemas {
   val dbSchema: DBSchema = Seq(
-    ("SID", JDBCType.BIGINT),
-    ("START_TIME", JDBCType.TIMESTAMP),
-    ("END_TIME", JDBCType.TIMESTAMP),
-    ("RESOLUTION", JDBCType.INTEGER),
-    ("MID", JDBCType.BIGINT),
-    ("PARAMETERS", JDBCType.BINARY),
-    ("GAPS", JDBCType.BINARY),
+    ("TID", JDBCType.INTEGER),
+    ("SCALING_FACTOR", JDBCType.REAL),
+    ("SAMPLING_INTERVAL", JDBCType.INTEGER),
+    ("GID", JDBCType.INTEGER),
   )
 
-  lazy val createTableSQL = toSql("segment", dbSchema)
-
-}
-
-object TypeConverter {
-
-  /* Docs:
-  https://www.cis.upenn.edu/~bcpierce/courses/629/jdkdocs/guide/jdbc/getstart/mapping.doc.html
-  http://www.h2database.com/html/datatypes.html
-   */
-  def jdbcToArrow(jdbcType: JDBCType): FieldType = {
-    val arrowType = jdbcType match {
-      case JDBCType.BIT => new ArrowType.FixedSizeBinary(1)
-      case JDBCType.TINYINT =>
-        // TINYINT represents an 8-bit unsigned integer
-        new ArrowType.Int(8, false)
-      case JDBCType.SMALLINT =>
-        // SMALLINT represents a 16-bit signed integer
-        new ArrowType.Int(16, true)
-      case JDBCType.INTEGER =>
-        // INTEGER represents a 32-bit signed integer
-        new ArrowType.Int(32, true)
-      case JDBCType.BIGINT =>
-        // BIGINT represents a 64-bit signed integer
-        new ArrowType.Int(64, true)
-      case JDBCType.FLOAT | JDBCType.DOUBLE =>
-        // FLOAT or DOUBLE represents a "double precision" floating point number which supports 15 digits of mantissa.
-        new ArrowType.FloatingPoint(FloatingPointPrecision.DOUBLE)
-      case JDBCType.REAL =>
-        // REAL represents a "single precision" floating point number which supports 7 digits of mantissa
-        new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE)
-      case JDBCType.NUMERIC | JDBCType.DECIMAL =>
-//        new ArrowType.Decimal()
-      case JDBCType.CHAR | JDBCType.VARCHAR =>
-        new ArrowType.Utf8()
-      case JDBCType.LONGVARCHAR =>
-        new ArrowType.LargeUtf8()
-      case JDBCType.DATE =>
-        new ArrowType.Date(DateUnit.MILLISECOND)
-      case JDBCType.TIME =>
-        new ArrowType.Time(TimeUnit.MILLISECOND, 32)
-      case JDBCType.TIMESTAMP =>
-      case JDBCType.BINARY =>
-      case JDBCType.VARBINARY =>
-      case JDBCType.LONGVARBINARY =>
-      case JDBCType.NULL =>
-      case JDBCType.OTHER =>
-      case JDBCType.JAVA_OBJECT =>
-      case JDBCType.DISTINCT =>
-      case JDBCType.STRUCT =>
-      case JDBCType.ARRAY =>
-      case JDBCType.BLOB =>
-      case JDBCType.CLOB =>
-      case JDBCType.REF =>
-      case JDBCType.DATALINK =>
-      case JDBCType.BOOLEAN =>
-      case JDBCType.ROWID =>
-      case JDBCType.NCHAR =>
-      case JDBCType.NVARCHAR =>
-      case JDBCType.LONGNVARCHAR =>
-      case JDBCType.NCLOB =>
-      case JDBCType.SQLXML =>
-      case JDBCType.REF_CURSOR =>
-      case JDBCType.TIME_WITH_TIMEZONE =>
-      case JDBCType.TIMESTAMP_WITH_TIMEZONE =>
-    }
-    FieldType.nullable(new ArrowType.Bool())
-  }
+  lazy val createTableSQL = toSql("time_series", dbSchema)
 
 }

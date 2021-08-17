@@ -16,7 +16,7 @@ class ArrowFlightClient(config: ArrowConfig) {
 
   val allocator = new RootAllocator()
   val client = FlightGrpcUtils.createFlightClient(allocator, channel)
-  val root = VectorSchemaRoot.create(SegmentGroupSchema.arrowSchema, allocator)
+  val root = VectorSchemaRoot.create(SegmentSchema.arrowSchema, allocator)
   val flightDescriptor = FlightDescriptor.path(config.flightPath)
 
   val metadataListener = new AsyncPutListener {
@@ -59,7 +59,7 @@ object ArrowFlightClient {
 
     val desc = FlightDescriptor.path("sensor/1")
     val root = ArrowUtil.insertTestSGData(10,
-      VectorSchemaRoot.create(SegmentGroupSchema.arrowSchema, allocator)
+      VectorSchemaRoot.create(SegmentSchema.arrowSchema, allocator)
     )
 
     val metadataListener = new AsyncPutListener {

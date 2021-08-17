@@ -1,9 +1,9 @@
 package dk.aau.modelardb
 
-import dk.aau.modelardb.arrow.SegmentGroupSchema
+import dk.aau.modelardb.arrow.{SegmentSchema, TimeseriesSchema}
 
 import java.nio.charset.StandardCharsets
-import java.sql.{Connection, DriverManager, Statement}
+import java.sql.{Connection, DriverManager, Statement, Timestamp}
 import java.time.Instant
 
 trait H2Provider {
@@ -31,7 +31,7 @@ trait H2Provider {
 
   def insertTestData(conn: Connection) = {
     val updateStmt = conn.createStatement()
-    updateStmt.executeUpdate(SegmentGroupSchema.createTableSQL)
+    updateStmt.executeUpdate(SegmentSchema.createTableSQL)
     updateStmt.close()
 
     val insertStmt = conn.prepareStatement("INSERT INTO segment VALUES(?, ?, ?, ?, ?, ?)")
@@ -43,7 +43,7 @@ trait H2Provider {
       insertStmt.setLong(2, start.toEpochMilli)
       insertStmt.setLong(3, end.toEpochMilli)
       insertStmt.setInt(4, 123)
-      insertStmt.setBytes(5, "params".getBytes(StandardCharsets.UTF_8))
+      insertStmt.setBytes(5, "model".getBytes(StandardCharsets.UTF_8))
       insertStmt.setBytes(6, "gaps".getBytes(StandardCharsets.UTF_8))
       insertStmt.addBatch()
     }
