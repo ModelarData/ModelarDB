@@ -138,7 +138,6 @@ class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
         finalizedSegments(finalizedSegmentsIndex) = newFinalizedSegment
         finalizedSegmentsIndex += 1
         if (finalizedSegmentsIndex == config.batchSize) {
-//          h2storage.storeSegmentGroups(finalizedSegments, finalizedSegmentsIndex)
           finalizedSegments.foreach(queue.offer)
           finalizedSegmentsIndex = 0
         }
@@ -155,7 +154,7 @@ class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
 
     //Write remaining finalized segments
     cacheLock.writeLock().lock()
-    h2storage.storeSegmentGroups(finalizedSegments, finalizedSegmentsIndex)
+    finalizedSegments.foreach(queue.offer)
     finalizedSegmentsIndex = 0
 
     //The CountDownLatch is decremented in the lock to ensure countDown and getCount is atomic
