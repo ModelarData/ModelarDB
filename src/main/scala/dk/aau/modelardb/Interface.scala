@@ -96,7 +96,7 @@ object Interface {
 
   private def http(executor: Executor): Unit = {
     //Setup
-    val server = HttpServer.create(new java.net.InetSocketAddress(9999), 0)
+    val server = HttpServer.create(new java.net.InetSocketAddress(8888), 0)
 
     //Query
     class QueryHandler extends HttpHandler {
@@ -115,7 +115,7 @@ object Interface {
     server.createContext("/", new QueryHandler())
     server.setExecutor(executor)
     server.start()
-    Static.info("ModelarDB: HTTP end-point is ready (Port: 9999)")
+    Static.info("ModelarDB: HTTP end-point is ready (Port: 8888)")
     scala.io.StdIn.readLine() //Prevents the method from returning to keep the server running
 
     //Cleanup
