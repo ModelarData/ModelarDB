@@ -44,7 +44,7 @@ class AkkaSystem(config: Config, storage: Storage) {
 
   /* Akka Stream */
   private val batchSize = config.modelarDb.batchSize
-  private val numIngetors = config.modelarDb.ingestors
+  private val numIngetors = if (config.modelarDb.ingestors == 0) { 1 } else { config.modelarDb.ingestors }
 
   private val arrowFlightClient = ArrowFlightClient(config.arrow)
 

@@ -80,6 +80,7 @@ case class ModelarConfig(
   var correlations: Array[Correlation] = correlationSpec.fold(Array.empty[Correlation])(parseCorrelations)
 
   private def parseSource: Array[String] = {
+    if (source.isEmpty) { return Array.empty }
     // TODO: Replace with immutable collection
     val sources = ArrayBuffer.empty[String]
     val pathName = source
