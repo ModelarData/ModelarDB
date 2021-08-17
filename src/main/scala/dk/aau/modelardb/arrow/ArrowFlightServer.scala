@@ -16,12 +16,12 @@ import java.time.Instant
 import java.util.concurrent.TimeUnit
 import scala.util.{Failure, Success, Try}
 
-class ArrowFlightServer private(host: String, port: Int, queryEngine: QueryEngine, storage: Storage) {
+class ArrowFlightServer private(host: String, port: Int, queryEngine: QueryEngine, storage: Storage, mode: String) {
 
   val allocator = new RootAllocator(Long.MaxValue)
   val location = new Location(s"grpc+tcp://$host:$port")
 
-  val producer = new ArrowFlightProducer(queryEngine, storage)
+  val producer = new ArrowFlightProducer(queryEngine, storage, mode)
 
   val server = FlightServer
     .builder(allocator, location, producer)
@@ -49,12 +49,12 @@ object ArrowFlightServer {
 
   private var instance: ArrowFlightServer = null
 
-  def apply(config: ArrowConfig, sqlEngine: QueryEngine, storage: Storage): ArrowFlightServer = {
+  def apply(config: ArrowConfig, sqlEngine: QueryEngine, storage: Storage, mode: String = "edge"): ArrowFlightServer = {
 //    if (instance == null) {
 //      instance = new ArrowFlightServer(config.server.host, config.server.port, sqlEngine, storage)
 //    }
 //    instance
-    new ArrowFlightServer(config.server.host, config.server.port, sqlEngine, storage)
+    new ArrowFlightServer(config.server.host, config.server.port, sqlEngine, storage, mode)
   }
 
 
@@ -105,7 +105,7 @@ object ArrowFlightServer {
 
     }
 
-    ArrowFlightServer(config, testEngine, storage)
+    ArrowFlightServer(config, testEngine, storage, "edge")
 
   }
 }

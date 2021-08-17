@@ -34,7 +34,7 @@ class ArrowClientServerTest extends AnyFlatSpec with should.Matchers with MockFa
     (storage.storeSegmentGroups _)
       .expects(capture(c1), testData.length)
 
-    val arrowServer = ArrowFlightServer(testConfig, queryEngine, storage)
+    val arrowServer = ArrowFlightServer(testConfig, queryEngine, storage, "server")
     arrowServer.start()
     val arrowClient = ArrowFlightClient(testConfig)
     arrowClient.doPut(testData)

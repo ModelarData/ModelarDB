@@ -43,6 +43,7 @@ case class MqttConfig(
 )
 
 case class ModelarConfig(
+  mode: String,
   engine: String,
   interface: String,
   batchSize: Int,

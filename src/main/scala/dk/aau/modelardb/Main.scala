@@ -66,11 +66,16 @@ object Main {
     /* Engine */
     val engine = EngineFactory.getEngine(modelarConf, storage)
     val queue = akkaSystem.start
-    engine.start(queue)
+    val mode = config.modelarDb.mode
 
     /* Interfaces */
-    val arrowServer = ArrowFlightServer(config.arrow, engine, storage)
+    val arrowServer = ArrowFlightServer(config.arrow, engine, storage, mode)
     arrowServer.start()
+
+    mode match {
+      case "edge" => engine.start(queue)
+      case "server" => engine.start
+    }
 
     Interface.start(config, engine)
 
