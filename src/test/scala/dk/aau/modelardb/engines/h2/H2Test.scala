@@ -17,7 +17,7 @@ package dk.aau.modelardb.engines.h2
 import dk.aau.modelardb.core.models.ModelTypeFactory
 import dk.aau.modelardb.H2Provider
 import dk.aau.modelardb.config.{Config, ModelarConfig}
-import dk.aau.modelardb.core.{Configuration, Dimensions, SegmentGroup}
+import dk.aau.modelardb.core.{Dimensions, SegmentGroup}
 import dk.aau.modelardb.engines.EngineUtilities
 import dk.aau.modelardb.storage.JDBCStorage
 import org.h2.expression.condition.{Comparison, ConditionAndOr}
@@ -26,12 +26,10 @@ import org.h2.table.TableFilter
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
-import pureconfig.{ConfigReader, ConfigSource}
+import pureconfig.{ConfigSource}
 import pureconfig.generic.auto._
 
-import java.sql.{DriverManager, Statement}
 import java.time.Instant
-import java.util.TimeZone
 
 class H2Test extends AnyFlatSpec with Matchers with MockFactory with H2Provider {
 

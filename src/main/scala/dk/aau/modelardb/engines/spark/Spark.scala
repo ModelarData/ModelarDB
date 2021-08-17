@@ -15,25 +15,17 @@
 package dk.aau.modelardb.engines.spark
 
 import akka.stream.scaladsl.SourceQueueWithComplete
-import dk.aau.modelardb.Interface
 import dk.aau.modelardb.arrow.ArrowUtil
 import dk.aau.modelardb.config.ModelarConfig
-import dk.aau.modelardb.config.ModelarConfig
 import dk.aau.modelardb.core._
-import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
-import dk.aau.modelardb.engines.QueryEngine
-import org.apache.arrow.vector.VectorSchemaRoot
 import dk.aau.modelardb.core.utility.{Static, ValueFunction}
-import dk.aau.modelardb.engines.EngineUtilities
+import dk.aau.modelardb.engines.{EngineUtilities, QueryEngine}
+import org.apache.arrow.vector.VectorSchemaRoot
 import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.arrow.ArrowWriter
 import org.apache.spark.sql.{DataFrameReader, SparkSession}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
-
-import java.util
 
 class Spark(config: ModelarConfig, sparkStorage: SparkStorage) extends QueryEngine {
 
