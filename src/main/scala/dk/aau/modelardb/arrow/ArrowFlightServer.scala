@@ -3,9 +3,9 @@ package dk.aau.modelardb.arrow
 import akka.stream.scaladsl.SourceQueueWithComplete
 import dk.aau.modelardb.arrow.ArrowUtil.jdbcToArrow
 import dk.aau.modelardb.config.{ArrowConfig, ArrowServerConfig}
-import dk.aau.modelardb.core.{Dimensions, SegmentGroup, Storage}
+import dk.aau.modelardb.core.{Dimensions, SegmentGroup}
 import dk.aau.modelardb.engines.QueryEngine
-import dk.aau.modelardb.storage.{JDBCStorage, StorageFactory}
+import dk.aau.modelardb.storage.{JDBCStorage, Storage, StorageFactory}
 import org.apache.arrow.flight.{FlightServer, Location}
 import org.apache.arrow.memory.RootAllocator
 import org.apache.arrow.vector.VectorSchemaRoot

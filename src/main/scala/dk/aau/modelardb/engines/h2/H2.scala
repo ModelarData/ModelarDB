@@ -28,7 +28,6 @@ import org.h2.table.TableFilter
 import org.h2.value.{ValueInt, ValueTimestamp}
 
 import java.sql.DriverManager
-import java.util
 import java.util.concurrent.{CountDownLatch, Executors}
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.function.BooleanSupplier
@@ -93,14 +92,14 @@ class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
       if ( ! config.derivedTimeSeries.isEmpty) { //Initializes derived time series
         Partitioner.initializeTimeSeries(config, h2storage.getMaxTid)
       }
-      h2storage.storeMetadataAndInitializeCaches(Array(), config.derivedTimeSeries, dimensions, config.models)
+      h2storage.storeMetadataAndInitializeCaches(config, Array())
       return
     }
 
     //Initialize Ingestion
     val timeSeries = Partitioner.initializeTimeSeries(config, h2storage.getMaxTid)
     val timeSeriesGroups = Partitioner.groupTimeSeries(correlations, dimensions, timeSeries, h2storage.getMaxGid)
-    h2storage.storeMetadataAndInitializeCaches(timeSeriesGroups, config.derivedTimeSeries, dimensions, config.models)
+    h2storage.storeMetadataAndInitializeCaches(config, timeSeriesGroups)
 
     val mtidCache = h2storage.mtidCache.asJava
     val ingestors = config.ingestors

@@ -1,16 +1,12 @@
 package dk.aau.modelardb.arrow
 
 import com.typesafe.scalalogging.Logger
-import dk.aau.modelardb.core.Storage
 import dk.aau.modelardb.engines.QueryEngine
+import dk.aau.modelardb.storage.Storage
 import org.apache.arrow.flight.FlightProducer._
-import org.apache.arrow.flight.impl.Flight
 import org.apache.arrow.flight.{Action, ActionType, Criteria, FlightDescriptor, FlightInfo, FlightProducer, FlightStream, PutResult, Result, Ticket}
 
-import java.nio.charset.StandardCharsets
 import java.nio.charset.StandardCharsets.UTF_8
-import scala.collection.JavaConverters.iterableAsScalaIterableConverter
-import scala.util.Try
 
 class ArrowFlightProducer(queryEngine: QueryEngine, storage: Storage, mode: String) extends FlightProducer {
 

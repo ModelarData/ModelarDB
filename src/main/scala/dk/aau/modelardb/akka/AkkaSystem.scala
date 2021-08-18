@@ -10,7 +10,9 @@ import akka.util.ByteString
 import com.typesafe.scalalogging.Logger
 import dk.aau.modelardb.arrow.ArrowFlightClient
 import dk.aau.modelardb.config.Config
-import dk.aau.modelardb.core.{SegmentGroup, Storage}
+import dk.aau.modelardb.core.SegmentGroup
+import dk.aau.modelardb.engines.h2.H2Storage
+import dk.aau.modelardb.storage.Storage
 
 import java.util.UUID
 import scala.concurrent.Future
@@ -19,6 +21,10 @@ import scala.util.control.NonFatal
 class AkkaSystem(config: Config, storage: Storage) {
 
   private val log = Logger(AkkaSystem.getClass)
+  private val h2Storage: H2Storage = storage match {
+    case storage : H2Storage => storage
+    case _ => throw new Exception("AkkaSystem needs storage class of type H2Storage")
+  }
 
   /* Akka */
   private implicit val actorSystem = ActorSystem(Behaviors.empty, "akka-streams")
@@ -62,7 +68,7 @@ class AkkaSystem(config: Config, storage: Storage) {
     .run()
 
   private val arrowSink = Sink.foreach[Seq[SegmentGroup]](arrowFlightClient.doPut)
-  private val jdbcSink = Sink.foreach[Seq[SegmentGroup]](sgs => storage.storeSegmentGroups(sgs.toArray, batchSize))
+  private val jdbcSink = Sink.foreach[Seq[SegmentGroup]](sgs => h2Storage.storeSegmentGroups(sgs.toArray, batchSize))
   private val mqttSink = mqttOpt.map { case (mqttSession, _, mqttTopic) =>
     Sink.foreach[SegmentGroup] { sg =>
       val byteString = ByteString(sg.toString.getBytes) // TODO: what format should we use for deserialization

@@ -2,8 +2,9 @@ package dk.aau.modelardb.arrow
 
 import dk.aau.modelardb.TestUtil
 import dk.aau.modelardb.config.{ArrowClientConfig, ArrowConfig, ArrowServerConfig}
-import dk.aau.modelardb.core.{SegmentGroup, Storage}
+import dk.aau.modelardb.core.SegmentGroup
 import dk.aau.modelardb.engines.QueryEngine
+import dk.aau.modelardb.engines.h2.H2Storage
 import org.apache.arrow.flight.Ticket
 import org.apache.arrow.memory.RootAllocator
 import org.apache.arrow.vector.{VectorSchemaRoot, VectorUnloader}
@@ -30,7 +31,7 @@ class ArrowClientServerTest extends AnyFlatSpec with should.Matchers with MockFa
     val queryEngine = mock[QueryEngine]
 
     val c1 = CaptureOne[Array[SegmentGroup]]()
-    val storage = mock[Storage]
+    val storage = mock[H2Storage]
     (storage.storeSegmentGroups _)
       .expects(capture(c1), testData.length)
 
@@ -57,7 +58,7 @@ class ArrowClientServerTest extends AnyFlatSpec with should.Matchers with MockFa
 
     val sql = "select * from segment"
 
-    val storage = mock[Storage]
+    val storage = mock[H2Storage]
     val queryEngine = mock[QueryEngine]
     val testDataRoot = VectorSchemaRoot.create(SegmentSchema.arrowSchema, new RootAllocator(Long.MaxValue))
 

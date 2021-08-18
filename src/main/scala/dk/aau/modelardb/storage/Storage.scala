@@ -14,12 +14,10 @@
  */
 package dk.aau.modelardb.storage
 
-import dk.aau.modelardb.core.{Configuration, Dimensions, TimeSeriesGroup}
-import dk.aau.modelardb.core.models.ModelType
-import dk.aau.modelardb.core.models.ModelTypeFactory
-import dk.aau.modelardb.core.utility.Pair
-import dk.aau.modelardb.core.utility.Static
-import dk.aau.modelardb.core.utility.ValueFunction
+import dk.aau.modelardb.config.ModelarConfig
+import dk.aau.modelardb.core.models.{ModelType, ModelTypeFactory}
+import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
+import dk.aau.modelardb.core.{Dimensions, TimeSeriesGroup}
 
 import scala.collection.mutable
 import scala.math.Ordering.Implicits.infixOrderingOps
@@ -31,10 +29,10 @@ abstract class Storage {
   def getMaxGid: Int
   def close(): Unit
 
-  def storeMetadataAndInitializeCaches(configuration: Configuration, timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
+  def storeMetadataAndInitializeCaches(config: ModelarConfig, timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
 
     //The Dimensions object is stored so the schema can be retrieved later
-    this.dimensions = configuration.getDimensions
+    this.dimensions = config.dimensions
 
     //Inserts the metadata for the sources defined in the configuration file (Tid, Scaling Factor,
     // Sampling Interval, Gid, Dimensions) into the persistent storage defined by modelar.storage.
@@ -43,7 +41,7 @@ abstract class Storage {
     //Computes the set of model types that must be inserted for the system to
     // function, per definition the mtid of the fallback model type is one
     val modelTypesToBeInserted = mutable.HashMap[String, Integer]()
-    val modelsWithFallback = mutable.ArrayBuffer[String](configuration.getModelTypeNames: _*)
+    val modelsWithFallback = mutable.ArrayBuffer[String](config.models: _*)
     modelsWithFallback.prepend("dk.aau.modelardb.core.models.UncompressedModelType")
     val modelTypesInStorage = this.getModelTypes
     var mtid: Integer = modelTypesInStorage.values.reduceOption(_ max _).getOrElse(0)
@@ -68,7 +66,7 @@ abstract class Storage {
 
     //Creates the timeSeriesGroupCache, timeSeriesScalingFactorCache, and timeSeriesMembersCache
     var nextTid = getMaxTid + 1
-    val derivedTimeSeries = configuration.getDerivedTimeSeries
+    val derivedTimeSeries = config.derivedTimeSeries
     val totalNumberOfSources = nextTid + derivedTimeSeries.values.stream.mapToInt((v: Array[Pair[String, ValueFunction]]) => v.length).sum
     this.timeSeriesGroupCache = Array.fill[Int](totalNumberOfSources)(0)
     this.timeSeriesSamplingIntervalCache = Array.fill[Int](totalNumberOfSources)(0)

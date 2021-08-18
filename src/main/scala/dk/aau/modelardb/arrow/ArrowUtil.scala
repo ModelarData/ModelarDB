@@ -1,7 +1,9 @@
 package dk.aau.modelardb.arrow
 
-import dk.aau.modelardb.core.{SegmentGroup, Storage}
+import dk.aau.modelardb.core.SegmentGroup
 import dk.aau.modelardb.core.models.Segment
+import dk.aau.modelardb.engines.h2.H2Storage
+import dk.aau.modelardb.storage.{CassandraStorage, JDBCStorage, ORCStorage, Storage}
 import org.apache.arrow.adapter.jdbc.JdbcToArrowUtils
 import org.apache.arrow.memory.RootAllocator
 import org.apache.arrow.vector.{BigIntVector, IntVector, TimeStampVector, UInt4Vector, UInt8Vector, VarBinaryVector, VarCharVector, VectorSchemaRoot}
@@ -18,7 +20,10 @@ object ArrowUtil {
   def storeData(storage: Storage, root: VectorSchemaRoot): Int = {
     val rowCount = root.getRowCount
     val groups = (0 until rowCount).map(index => toSegmentGroup(index, root))
-    storage.storeSegmentGroups(groups.toArray, rowCount)
+    storage match {
+      case storage: H2Storage => storage.storeSegmentGroups(groups.toArray, rowCount)
+      case _ => throw new Exception("ArrowUtil got wrong storage type")
+    }
     rowCount
   }
 
