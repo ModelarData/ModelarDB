@@ -25,12 +25,12 @@ import org.h2.table.TableFilter
 import org.h2.value.{ValueInt, ValueTimestamp}
 
 import java.sql.DriverManager
-import java.util
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.function.BooleanSupplier
 import java.util.{Base64, TimeZone}
 import scala.collection.mutable
+import collection.JavaConverters._
 
 class H2(configuration: Configuration, h2storage: H2Storage) {
   /** Instance Variables **/
@@ -84,16 +84,16 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
       if ( ! configuration.getDerivedTimeSeries.isEmpty) { //Initializes derived time series
         Partitioner.initializeTimeSeries(configuration, h2storage.getMaxTid)
       }
-      h2storage.initialize(Array(), configuration.getDerivedTimeSeries, dimensions, configuration.getModelTypeNames)
+      h2storage.storeMetadataAndInitializeCaches(configuration, Array())
       return
     }
 
     //Initialize Ingestion
     val timeSeries = Partitioner.initializeTimeSeries(configuration, h2storage.getMaxTid)
     val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, h2storage.getMaxGid)
-    h2storage.initialize(timeSeriesGroups, configuration.getDerivedTimeSeries, dimensions, configuration.getModelTypeNames)
+    h2storage.storeMetadataAndInitializeCaches(configuration, timeSeriesGroups)
 
-    val mtidCache = h2storage.mtidCache
+    val mtidCache = h2storage.mtidCache.asJava
     val ingestors = configuration.getIngestors
     val executor = configuration.getExecutorService
     this.numberOfRunningIngestors = new CountDownLatch(ingestors)
@@ -302,7 +302,8 @@ object H2 {
        |""".stripMargin
   }
 
-  def expressionToSQLPredicates(expression: Expression, tsgc: Array[Int], idc: util.HashMap[String, util.HashMap[Object, Array[Integer]]],
+  def expressionToSQLPredicates(expression: Expression, tsgc: Array[Int],
+                                idc: mutable.HashMap[String, mutable.HashMap[Object, Array[Integer]]],
                                 supportsOr: Boolean): String = { //HACK: supportsOR ensures Cassandra does not receive an OR operator
     expression match {
       //NO PREDICATES
@@ -326,7 +327,7 @@ object H2 {
             "(START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime +
               " AND END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime + ")"
           //DIMENSIONS
-          case (columnName, "=") if idc.containsKey(columnName) =>
+          case (columnName, "=") if idc.contains(columnName) =>
             EngineUtilities.dimensionEqualToGidIn(columnName, ve.getValue(null).getObject, idc).mkString("GID IN (", ",", ")")
           case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
         }

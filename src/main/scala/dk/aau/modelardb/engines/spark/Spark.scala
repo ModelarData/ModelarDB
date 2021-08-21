@@ -21,8 +21,14 @@ import dk.aau.modelardb.engines.EngineUtilities
 import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{DataFrameReader, SparkSession}
+import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.{DataFrame, DataFrameReader, SparkSession, sources}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
+
+import java.sql.Timestamp
+import scala.collection.mutable
+import collection.JavaConverters._
 
 class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
 
@@ -64,7 +70,7 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
       if ( ! configuration.getDerivedTimeSeries.isEmpty) { //Initializes derived time series
         Partitioner.initializeTimeSeries(configuration, sparkStorage.getMaxTid)
       }
-      sparkStorage.initialize(Array(), configuration.getDerivedTimeSeries, dimensions, configuration.getModelTypeNames)
+      sparkStorage.storeMetadataAndInitializeCaches(configuration, Array())
       Spark.initialize(spark, configuration, sparkStorage, Range(0,0))
       null
     } else {
@@ -72,7 +78,7 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
       val newGid = sparkStorage.getMaxGid + 1
       val timeSeries = Partitioner.initializeTimeSeries(configuration, sparkStorage.getMaxTid)
       val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, sparkStorage.getMaxGid)
-      sparkStorage.initialize(timeSeriesGroups, configuration.getDerivedTimeSeries, dimensions, configuration.getModelTypeNames)
+      sparkStorage.storeMetadataAndInitializeCaches(configuration, timeSeriesGroups)
       Spark.initialize(spark, configuration, sparkStorage, Range(newGid, newGid + timeSeriesGroups.size))
       setupStream(spark, timeSeriesGroups)
     }
@@ -93,7 +99,7 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
   private def setupStream(spark: SparkSession, timeSeriesGroups: Array[TimeSeriesGroup]): StreamingContext = {
     //Creates a receiver per ingestor with each receiving a working set created by Partitioner.partitionTimeSeries
     val ssc = new StreamingContext(spark.sparkContext, Seconds(configuration.getInteger("modelardb.spark.streaming")))
-    val mtidCache = Spark.getSparkStorage.mtidCache
+    val mtidCache = Spark.getSparkStorage.mtidCache.asJava
     val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, mtidCache,
       configuration.getInteger("modelardb.ingestors"))
     if (workingSets.length != configuration.getInteger("modelardb.ingestors")) {
@@ -120,10 +126,24 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) {
 }
 
 object Spark {
+  /** Instance Variables **/
+  private var parallelism: Int = _
+  private var cache: SparkCache = _
+  private var viewProvider: DataFrameReader = _
+  private var sparkStorage: SparkStorage = _
+  private var broadcastedTimeSeriesTransformationCache: Broadcast[Array[ValueFunction]] = _
+  private val storageSegmentGroupsSchema: StructType = StructType(Seq(
+    StructField("gid", IntegerType, nullable = false),
+    StructField("start_time", TimestampType, nullable = false),
+    StructField("end_time", TimestampType, nullable = false),
+    StructField("mtid", IntegerType, nullable = false),
+    StructField("model", BinaryType, nullable = false),
+    StructField("gaps", BinaryType, nullable = false)))
+
   /** Constructors **/
   def initialize(spark: SparkSession, configuration: Configuration, sparkStorage: SparkStorage, newGids: Range): Unit = {
     this.parallelism = spark.sparkContext.defaultParallelism
-    this.relations = spark.read.format("dk.aau.modelardb.engines.spark.ViewProvider")
+    this.viewProvider = spark.read.format("dk.aau.modelardb.engines.spark.ViewProvider")
     this.sparkStorage = null
     this.broadcastedTimeSeriesTransformationCache = spark.sparkContext.broadcast(sparkStorage.timeSeriesTransformationCache)
     this.sparkStorage = sparkStorage
@@ -132,15 +152,46 @@ object Spark {
 
   /** Public Methods **/
   def getCache: SparkCache = Spark.cache
-  def getViewProvider: DataFrameReader = Spark.relations
+  def getViewProvider: DataFrameReader = Spark.viewProvider
   def getSparkStorage: SparkStorage = Spark.sparkStorage
   def getBroadcastedTimeSeriesTransformationCache: Broadcast[Array[ValueFunction]] = Spark.broadcastedTimeSeriesTransformationCache
+  def getStorageSegmentGroupsSchema: StructType = this.storageSegmentGroupsSchema
   def isDataSetSmall(rows: RDD[_]): Boolean = rows.partitions.length <= parallelism
 
-  /** Instance Variables **/
-  private var parallelism: Int = _
-  private var cache: SparkCache = _
-  private var relations: DataFrameReader = _
-  private var sparkStorage: SparkStorage = _
-  private var broadcastedTimeSeriesTransformationCache: Broadcast[Array[ValueFunction]] = _
+  def applyFiltersToDataFrame(df: DataFrame, filters: Array[Filter]): DataFrame = {
+    //All filters must be parsed as a set of conjunctions as Apache Spark SQL represents OR as a separate case class
+    val predicates = mutable.ArrayBuffer[String]()
+    for (filter: Filter <- filters) {
+      filter match {
+        //Predicate push-down for gid using SELECT * FROM segment with GID = ? and gid IN (..)
+        case sources.EqualTo("gid", value: Int) => predicates.append(s"gid = $value")
+        case sources.EqualNullSafe("gid", value: Int) => predicates.append(s"gid = $value")
+        case sources.In("gid", values: Array[Any]) => values.map(_.asInstanceOf[Int]).mkString("GID IN (", ",", ")")
+
+        //Predicate push-down for start_time using SELECT * FROM segment WHERE et <=> ?
+        case sources.GreaterThan("start_time", value: Timestamp) => predicates.append(s"start_time > '$value'")
+        case sources.GreaterThanOrEqual("start_time", value: Timestamp) => predicates.append(s"start_time >= '$value'")
+        case sources.LessThan("start_time", value: Timestamp) => predicates.append(s"start_time < '$value'")
+        case sources.LessThanOrEqual("start_time", value: Timestamp) => predicates.append(s"start_time <= '$value'")
+        case sources.EqualTo("start_time", value: Timestamp) => predicates.append(s"start_time = '$value'")
+
+        //Predicate push-down for end_time using SELECT * FROM segment WHERE et <=> ?
+        case sources.GreaterThan("end_time", value: Timestamp) => predicates.append(s"end_time > '$value'")
+        case sources.GreaterThanOrEqual("end_time", value: Timestamp) => predicates.append(s"end_time >= '$value'")
+        case sources.LessThan("end_time", value: Timestamp) => predicates.append(s"end_time < '$value'")
+        case sources.LessThanOrEqual("end_time", value: Timestamp) => predicates.append(s"end_time <= '$value'")
+        case sources.EqualTo("end_time", value: Timestamp) => predicates.append(s"end_time = '$value'")
+
+        //If a predicate is not supported the information is simply logged to inform the user
+        case p => Static.warn("ModelarDB: unsupported predicate " + p, 120)
+      }
+    }
+    val predicate = predicates.mkString(" AND ")
+    Static.info(s"ModelarDB: constructed predicates ($predicate)", 120)
+    if (predicate.isEmpty) {
+      df
+    } else {
+      df.where(predicate)
+    }
+  }
 }

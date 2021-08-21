@@ -17,7 +17,7 @@ package dk.aau.modelardb.engines
 import dk.aau.modelardb.core.Dimensions
 
 import java.sql.{SQLException, Timestamp}
-import java.util
+import scala.collection.mutable
 
 object EngineUtilities {
   /** Instance Variables **/
@@ -98,8 +98,9 @@ object EngineUtilities {
   }
 
   //Dimensions => Gid
-  def dimensionEqualToGidIn(column: String, value: Any, idc: util.HashMap[String, util.HashMap[Object, Array[Integer]]]): Array[Any] = {
-    idc.get(column).getOrDefault(value, Array(Integer.valueOf(-1))).asInstanceOf[Array[Any]]
+  def dimensionEqualToGidIn(column: String, value: Any,
+                            idc: mutable.HashMap[String, mutable.HashMap[Object, Array[Integer]]]): Array[Any] = {
+    idc(column).getOrElse(value.asInstanceOf[Object], Array(Integer.valueOf(-1))).asInstanceOf[Array[Any]]
   }
 
   //Timestamp => BigInt

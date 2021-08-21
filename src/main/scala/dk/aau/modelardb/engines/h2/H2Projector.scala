@@ -17,7 +17,6 @@ package dk.aau.modelardb.engines.h2
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{DataPoint, SegmentGroup}
 import dk.aau.modelardb.engines.{CodeGenerator, EngineUtilities, H2DataPointProjector, H2SegmentProjector}
-
 import org.h2.expression.aggregate.AbstractAggregate
 import org.h2.expression.condition.{Comparison, ConditionAndOr}
 import org.h2.expression.function.FunctionCall
