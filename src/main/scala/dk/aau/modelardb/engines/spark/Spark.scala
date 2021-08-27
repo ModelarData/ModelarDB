@@ -83,13 +83,12 @@ class Spark(config: ModelarConfig, sparkStorage: SparkStorage) extends QueryEngi
 
     //Initializes storage and Spark with any new time series that the system must ingest
     val derivedSources = config.derivedTimeSeries
+//    configuration.containsOrThrow("modelardb.batch_size")
     val ssc = if (config.ingestors == 0) {
-      Partitioner.initializeTimeSeries(config, sparkStorage.getMaxTid)
-      sparkStorage.storeMetadataAndInitializeCaches(
-        Array.empty,
-        derivedSources,
-        dimensions,
-        config.models)
+      if ( ! derivedSources.isEmpty) { //Initializes derived time series
+        Partitioner.initializeTimeSeries(config, sparkStorage.getMaxTid)
+      }
+      sparkStorage.storeMetadataAndInitializeCaches(config, Array())
       Spark.initialize(spark, config, sparkStorage, Range(0,0))
       null
     } else {
@@ -97,7 +96,7 @@ class Spark(config: ModelarConfig, sparkStorage: SparkStorage) extends QueryEngi
       val newGid = sparkStorage.getMaxGid + 1
       val timeSeries = Partitioner.initializeTimeSeries(config, sparkStorage.getMaxTid)
       val timeSeriesGroups = Partitioner.groupTimeSeries(correlation, dimensions, timeSeries, sparkStorage.getMaxGid)
-      sparkStorage.storeMetadataAndInitializeCaches(timeSeriesGroups, derivedSources, dimensions, config.models)
+      sparkStorage.storeMetadataAndInitializeCaches(config, timeSeriesGroups)
       Spark.initialize(spark, config, sparkStorage, Range(newGid, newGid + timeSeriesGroups.size))
       setupStream(spark, timeSeriesGroups)
     }
