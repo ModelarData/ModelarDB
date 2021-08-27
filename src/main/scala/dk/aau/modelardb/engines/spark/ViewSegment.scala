@@ -58,13 +58,13 @@ class ViewSegment(dimensions: Array[StructField]) (@transient val sqlContext: SQ
     val mtsc = Spark.getSparkStorage.memberTimeSeriesCache
     val gidFilters: Array[Filter] = filters.map {
       case sources.EqualTo("tid", tid: Int) => sources.EqualTo("gid", EngineUtilities.tidPointToGidPoint(tid, tsgc))
-      case sources.EqualNullSafe("tid", tid: Int) => sources.EqualTo("gid", EngineUtilities.tidPointToGidPoint(tid, tsgc))
+      case sources.EqualNullSafe("tid", tid: Int) => sources.EqualNullSafe("gid", EngineUtilities.tidPointToGidPoint(tid, tsgc))
       case sources.GreaterThan("tid", tid: Int) => sources.In("gid", EngineUtilities.tidRangeToGidIn(tid + 1, tsgc.length, tsgc))
       case sources.GreaterThanOrEqual("tid", tid: Int) => sources.In("gid", EngineUtilities.tidRangeToGidIn(tid, tsgc.length, tsgc))
       case sources.LessThan("tid", tid: Int) => sources.In("gid", EngineUtilities.tidRangeToGidIn(0, tid - 1, tsgc))
       case sources.LessThanOrEqual("tid", tid: Int) => sources.In("gid", EngineUtilities.tidRangeToGidIn(0, tid, tsgc))
       case sources.In("tid", values: Array[Any]) => sources.In("gid", EngineUtilities.tidInToGidIn(values, tsgc))
-      case sources.EqualTo(column: String, value: Any) if mtsc.containsKey(column.toUpperCase) => //mtsc's keys are uppercase for consistency
+      case sources.EqualTo(column: String, value: Any) if mtsc.contains(column.toUpperCase) => //mtsc's keys are uppercase for consistency
         sources.In("gid", EngineUtilities.dimensionEqualToGidIn(column, value, mtsc))
       case f => f
     }

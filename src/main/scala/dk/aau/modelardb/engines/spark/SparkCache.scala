@@ -24,11 +24,11 @@ import org.apache.spark.sql.{Row, SparkSession}
 import java.sql.Timestamp
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
-class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
+class SparkCache(sparkSession: SparkSession, maxSegmentsCached: Int, newGids: Range) {
 
   /** Instance Variables **/
   private var checkpointCounter = 10
-  private val emptyRDD = spark.sparkContext.emptyRDD[Row]
+  private val emptyRDD = sparkSession.sparkContext.emptyRDD[Row]
   private val cacheLock = new ReentrantReadWriteLock()
   private var lastFlush = 0
 
@@ -49,7 +49,7 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
       (_, r1: Array[Row], r2: Array[Row]) => SparkCache.updateTemporarySegment(r1, r2))
 
     //Flushes the ingested finalized segments to disk if the user-configurable batch size is reached
-    this.finalizedRDD = spark.sparkContext.union(this.finalizedRDD, microBatch.filter(_.getBoolean(6)))
+    this.finalizedRDD = sparkSession.sparkContext.union(this.finalizedRDD, microBatch.filter(_.getBoolean(6)))
     if (this.finalizedRDD.count() >= maxSegmentsCached) {
       flush()
     }
@@ -58,7 +58,7 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
     this.temporaryRDD = checkpointOrPersist(this.temporaryRDD)
     this.finalizedRDD.persist()
     this.ingestedRDD.unpersist()
-    this.ingestedRDD = spark.sparkContext.union(this.finalizedRDD, this.temporaryRDD.values.flatMap(rows => rows))
+    this.ingestedRDD = sparkSession.sparkContext.union(this.finalizedRDD, this.temporaryRDD.values.flatMap(rows => rows))
     this.ingestedRDD.persist()
     this.cacheLock.writeLock().unlock()
   }
@@ -91,7 +91,7 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
     //If the rows required from storage matches the contents of the cache, we return the cached rows
     if (filters.sameElements(this.storageCacheKey)) {
       Static.info("ModelarDB: cache hit")
-      val segmentRDD = spark.sparkContext.union(this.storageCacheRDD, this.ingestedRDD)
+      val segmentRDD = sparkSession.sparkContext.union(this.storageCacheRDD, this.ingestedRDD)
       this.cacheLock.readLock().unlock()
       return segmentRDD
     }
@@ -100,7 +100,7 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
     // as some segments then might be read from both the disk and finalizedRDD
     Static.info("ModelarDB: cache miss")
     val storageRDD = getStorageRDDFromDisk(filters)
-    val segmentRDD = spark.sparkContext.union(storageRDD, this.ingestedRDD)
+    val segmentRDD = sparkSession.sparkContext.union(storageRDD, this.ingestedRDD)
     val lastFlush = this.lastFlush
     this.cacheLock.readLock().unlock()
 
@@ -123,12 +123,13 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
   /** Private[spark] Methods **/
   private[spark] def write(microBatch: RDD[Row]): Unit = {
     //This method is not completely private so Spark can write RDDs directly to storage when bulk-loading
-    Spark.getSparkStorage.storeSegmentGroups(spark, microBatch)
+    Spark.getSparkStorage.storeSegmentGroups(sparkSession,
+      sparkSession.createDataFrame(microBatch, Spark.getStorageSegmentGroupsSchema))
   }
 
   /** Private Methods **/
   private def getStorageRDDFromDisk(filters: Array[Filter]): RDD[Row] = {
-    Spark.getSparkStorage.getSegmentGroups(spark, filters)
+    Spark.getSparkStorage.getSegmentGroups(sparkSession, filters).rdd
   }
 
   private def getIndexedRDD: IndexedRDD[Int, Array[Row]] = {
@@ -138,7 +139,7 @@ class SparkCache(spark: SparkSession, maxSegmentsCached: Int, newGids: Range) {
     } else {
       newGids.map(gid => (gid, Array[Row]())).toArray
     }
-    val rdd = spark.sparkContext.parallelize(initialData)
+    val rdd = sparkSession.sparkContext.parallelize(initialData)
     IndexedRDD(rdd)
   }
 

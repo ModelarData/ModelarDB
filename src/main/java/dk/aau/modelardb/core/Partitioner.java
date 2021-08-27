@@ -121,7 +121,7 @@ public class Partitioner {
     }
 
     public static WorkingSet[] partitionTimeSeries(ModelarConfig config, TimeSeriesGroup[] timeSeriesGroups,
-                                                   HashMap<String, Integer> mtidCache, int partitions) {
+                                                   Map<String, Integer> mtidCache, int partitions) {
         TimeSeriesGroup[][] pts = Partitioner.partitionTimeSeriesByRate(timeSeriesGroups, partitions);
         String[] models = config.models();
         int[] mtids = Arrays.stream(models).mapToInt(mtidCache::get).toArray();

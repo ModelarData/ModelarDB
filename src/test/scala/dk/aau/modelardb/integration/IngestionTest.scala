@@ -20,11 +20,10 @@ import dk.aau.modelardb.core.{DataPoint, TimeSeriesGroup, WorkingSet}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
+import java.io.{OutputStream, PrintStream}
 import java.nio.ByteBuffer
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-
-import java.io.{OutputStream, PrintStream}
 
 //Integration Test
 class IngestionTest extends AnyFlatSpec with Matchers with TimeSeriesGroupProvider {

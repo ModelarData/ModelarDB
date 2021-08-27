@@ -34,9 +34,7 @@ object Main {
   /** Public Methods **/
   def main(args: Array[String]): Unit = {
 
-    /* Configuration */
-
-    // Check args(0) for a config and use $HOME/modelardb.conf as a fallback
+    // ModelarDB checks args(0) for a config and uses $HOME/modelardb.conf as a fallback
     val fallback = System.getProperty("user.home") + "/modelardb.conf"
     val configPath: String = if (args.length == 1) {
       args(0)

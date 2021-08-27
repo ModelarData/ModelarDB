@@ -15,11 +15,9 @@
 package dk.aau.modelardb.engines
 
 import dk.aau.modelardb.config.ModelarConfig
-import dk.aau.modelardb.core.{Configuration, Storage}
 import dk.aau.modelardb.engines.h2.H2Storage
 import dk.aau.modelardb.engines.spark.SparkStorage
-
-import java.sql.Connection
+import dk.aau.modelardb.storage.Storage
 
 object EngineFactory {
 

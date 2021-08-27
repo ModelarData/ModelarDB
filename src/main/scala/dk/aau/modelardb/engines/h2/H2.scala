@@ -34,6 +34,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.function.BooleanSupplier
 import java.util.{Base64, TimeZone}
 import scala.collection.mutable
+import collection.JavaConverters._
 
 class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
   /** Instance Variables **/
@@ -65,7 +66,7 @@ class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
     H2.initialize(this, h2storage)
     startIngestion(queue)
     waitUntilIngestionIsDone(queue)
-    
+
   }
 
   def stop(): Unit = {
@@ -92,16 +93,16 @@ class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
       if ( ! config.derivedTimeSeries.isEmpty) { //Initializes derived time series
         Partitioner.initializeTimeSeries(config, h2storage.getMaxTid)
       }
-      h2storage.initialize(Array(), config.derivedTimeSeries, dimensions, config.models)
+      h2storage.storeMetadataAndInitializeCaches(Array(), config.derivedTimeSeries, dimensions, config.models)
       return
     }
 
     //Initialize Ingestion
     val timeSeries = Partitioner.initializeTimeSeries(config, h2storage.getMaxTid)
     val timeSeriesGroups = Partitioner.groupTimeSeries(correlations, dimensions, timeSeries, h2storage.getMaxGid)
-    h2storage.initialize(timeSeriesGroups, config.derivedTimeSeries, dimensions, config.models)
+    h2storage.storeMetadataAndInitializeCaches(timeSeriesGroups, config.derivedTimeSeries, dimensions, config.models)
 
-    val mtidCache = h2storage.mtidCache
+    val mtidCache = h2storage.mtidCache.asJava
     val ingestors = config.ingestors
     this.numberOfRunningIngestors = new CountDownLatch(ingestors)
     this.workingSets = Partitioner.partitionTimeSeries(config, timeSeriesGroups, mtidCache, ingestors)
@@ -318,7 +319,8 @@ object H2 {
        |""".stripMargin
   }
 
-  def expressionToSQLPredicates(expression: Expression, tsgc: Array[Int], idc: util.HashMap[String, util.HashMap[Object, Array[Integer]]],
+  def expressionToSQLPredicates(expression: Expression, tsgc: Array[Int],
+                                idc: mutable.HashMap[String, mutable.HashMap[Object, Array[Integer]]],
                                 supportsOr: Boolean): String = { //HACK: supportsOR ensures Cassandra does not receive an OR operator
     expression match {
       //NO PREDICATES
@@ -342,7 +344,7 @@ object H2 {
             "(START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime +
               " AND END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime + ")"
           //DIMENSIONS
-          case (columnName, "=") if idc.containsKey(columnName) =>
+          case (columnName, "=") if idc.contains(columnName) =>
             EngineUtilities.dimensionEqualToGidIn(columnName, ve.getValue(null).getObject, idc).mkString("GID IN (", ",", ")")
           case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
         }
