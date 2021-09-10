@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A storage layer that use Apache Parquet or Apache ORC as the on-disk format.
 
 ### Changed
+- The Apache Spark-based engine now uses INT64 to represent timestamps when
+  reading and writing Apache Parquet files for compatibility with the H2-based
+  engine.
+
 ### Deprecated
 ### Removed
 ### Fixed

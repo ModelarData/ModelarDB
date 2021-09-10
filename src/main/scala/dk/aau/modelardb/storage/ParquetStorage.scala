@@ -19,7 +19,6 @@ import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
 import dk.aau.modelardb.engines.spark.Spark
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-import org.apache.spark.sql.functions.col
 import org.apache.parquet.column.page.PageReadStore
 import org.apache.parquet.example.data.Group
 import org.apache.parquet.example.data.simple.SimpleGroup
@@ -315,8 +314,6 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     while (segmentGroupFoldersIterator.hasNext) {
       df = df.union(sparkSession.read.parquet(segmentGroupFoldersIterator.next()))
     }
-    df = df.withColumn("start_time", (col("start_time") / 1000).cast("timestamp"))
-    df = df.withColumn("end_time", (col("end_time") / 1000).cast("timestamp"))
     Spark.applyFiltersToDataFrame(df, filters)
   }
 
