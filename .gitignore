@@ -6,3 +6,7 @@ project/project/
 project/target/
 
 target/
+data
+*.sc
+*.db
+*.bak

@@ -74,7 +74,7 @@ case class ModelarConfig(
     new Dimensions(Array())
   } { spec =>
     val lineSplit = spec.trim().split(" ", 2)
-    readDimensionSpec(lineSplit(1))
+    readDimensionSpec(spec)
   }
 
   var correlations: Array[Correlation] = correlationSpec.fold(Array.empty[Correlation])(parseCorrelations)
