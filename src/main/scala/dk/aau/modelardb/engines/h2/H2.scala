@@ -19,18 +19,22 @@ import dk.aau.modelardb.core.Dimensions.Types
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Logger, SegmentFunction, Static}
 import dk.aau.modelardb.engines.EngineUtilities
+
 import org.h2.expression.condition.{Comparison, ConditionAndOr, ConditionInConstantSet}
 import org.h2.expression.{Expression, ExpressionColumn, ValueExpression}
 import org.h2.table.TableFilter
 import org.h2.value.{ValueInt, ValueTimestamp}
 
-import java.sql.DriverManager
+import java.sql.{DriverManager, Timestamp}
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.function.BooleanSupplier
 import java.util.{Base64, TimeZone}
+
 import scala.collection.mutable
-import collection.JavaConverters._
+import scala.collection.JavaConverters._
+
+import org.codehaus.jackson.map.util.ISO8601Utils
 
 class H2(configuration: Configuration, h2storage: H2Storage) {
   /** Instance Variables **/
@@ -254,8 +258,13 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
     output.append(':')
 
     //Numbers should not be quoted
-    if (value.isInstanceOf[Int] || value.isInstanceOf[Float]) {
+    if (value.isInstanceOf[Int] || value.isInstanceOf[Long]
+      || value.isInstanceOf[Float] || value.isInstanceOf[Double]) {
       output.append(value)
+    } else if (value.isInstanceOf[Timestamp]) {
+      output.append('"')
+      output.append(ISO8601Utils.format(value.asInstanceOf[Timestamp], true, H2.timeZone))
+      output.append('"')
     } else if (value.isInstanceOf[Array[Byte]]) {
       output.append('"')
       output.append(this.base64Encoder.encodeToString(value.asInstanceOf[Array[Byte]]))
@@ -274,6 +283,7 @@ object H2 {
   var h2: H2 = _ //Provides access to the h2 and h2storage instances from the views
   var h2storage: H2Storage =  _
   private val h2ConnectionString: String = "jdbc:h2:mem:modelardb"
+  private var timeZone: TimeZone = _
   private val compareTypeField = classOf[Comparison].getDeclaredField("compareType")
   this.compareTypeField.setAccessible(true)
   private val compareTypeMethod = classOf[Comparison].getDeclaredMethod("getCompareOperator", classOf[Int])
@@ -285,6 +295,7 @@ object H2 {
   def initialize(h2: H2, h2Storage: H2Storage): Unit = {
     this.h2 = h2
     this.h2storage = h2Storage
+    this.timeZone = TimeZone.getDefault
   }
 
   //Data Point View
@@ -319,13 +330,13 @@ object H2 {
           case ("TID", "=") => val tid = ve.getValue(null).asInstanceOf[ValueInt].getInt
             "GID = " + EngineUtilities.tidPointToGidPoint(tid, tsgc)
           //TIMESTAMP
-          case ("TIMESTAMP", ">") => "END_TIME > " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
-          case ("TIMESTAMP", ">=") => "END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
-          case ("TIMESTAMP", "<") => "START_TIME < " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
-          case ("TIMESTAMP", "<=") => "START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
+          case ("TIMESTAMP", ">") => "END_TIME > " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(this.timeZone).getTime
+          case ("TIMESTAMP", ">=") => "END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(this.timeZone).getTime
+          case ("TIMESTAMP", "<") => "START_TIME < " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(this.timeZone).getTime
+          case ("TIMESTAMP", "<=") => "START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(this.timeZone).getTime
           case ("TIMESTAMP", "=") =>
-            "(START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime +
-              " AND END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime + ")"
+            "(START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(this.timeZone).getTime +
+              " AND END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(this.timeZone).getTime + ")"
           //DIMENSIONS
           case (columnName, "=") if idc.contains(columnName) =>
             EngineUtilities.dimensionEqualToGidIn(columnName, ve.getValue(null).getObject, idc).mkString("GID IN (", ",", ")")

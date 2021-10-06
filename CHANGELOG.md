@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - A storage layer that use Apache Parquet or Apache ORC as the on-disk format.
+- Support for specifying a different port for the HTTP and Socket interfaces
+  using the syntax `interface:port`. The port 9999 is still used by default.
 
 ### Changed
+- Both engines now use the same format when serializing timestamps to JSON.
 - The Apache Spark-based engine now uses INT64 to represent timestamps when
   reading and writing Apache Parquet files for compatibility with the H2-based
   engine.
@@ -16,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 ### Removed
 ### Fixed
+  - Some numbers being quoted in the JSON output from the H2-based engine.
+  - The Apache Spark-based engine swapping tid and mtid for one projection.
+
 ### Security
 
 ## [0.1.0] - 2021-07-07

@@ -106,6 +106,6 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
     }
   }
 
-  /* HACK: needed because JDBCStorage class init fails when constructor arg is null */
+  /* HACK: Needed because JDBCStorage class init fails when constructor arg is null */
   private class JDBCStorageNoArgs extends JDBCStorage("jdbc:h2:mem")
 }
