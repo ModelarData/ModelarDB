@@ -29,7 +29,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import scala.collection.mutable
 import java.lang.ref.{PhantomReference, ReferenceQueue}
 
-abstract class FileStorage(rootFolder: String) extends Storage with H2Storage with SparkStorage {
+abstract class FileStorage(rootFolder: String, offset: Int) extends Storage(offset) with H2Storage with SparkStorage {
   //Warn users that the FileStorage storage layers should be considered experimental
   Static.warn("ModelarDB: using experimental storage layer " + this.getClass)
 

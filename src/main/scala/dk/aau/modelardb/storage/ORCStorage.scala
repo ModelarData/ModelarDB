@@ -29,7 +29,7 @@ import java.io.FileNotFoundException
 import java.sql.Timestamp
 import scala.collection.mutable
 
-class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
+class ORCStorage(rootFolder: String, offset: Int) extends FileStorage(rootFolder, offset) {
   /** Instance Variables **/
   private val segmentGroupSchema = TypeDescription.createStruct()
     .addField("gid", TypeDescription.createInt())
@@ -59,13 +59,16 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
 
     var id = 0L
     while (rows.nextBatch(batch)) {
-      val column = batch.cols(fieldIndex).asInstanceOf[LongColumnVector].vector
+      val column = batch
+        .cols(fieldIndex)
+        .asInstanceOf[LongColumnVector]
+        .vector
       for (i <- 0 until column.length) {
         id = math.max(column(i), id)
       }
     }
     rows.close()
-    id.toInt
+    id.toInt + offset
   }
 
   protected override def mergeFiles(outputFilePath: Path, inputFilesPaths: mutable.ArrayBuffer[Path]): Unit = {

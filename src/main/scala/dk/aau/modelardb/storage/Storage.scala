@@ -22,7 +22,7 @@ import dk.aau.modelardb.core.{Dimensions, TimeSeriesGroup}
 import scala.collection.mutable
 import scala.math.Ordering.Implicits.infixOrderingOps
 
-abstract class Storage {
+abstract class Storage(offset: Int) {
   /** Public Methods * */
   def open(dimensions: Dimensions): Unit
   def getMaxTid: Int

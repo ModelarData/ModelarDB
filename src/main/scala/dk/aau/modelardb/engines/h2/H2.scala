@@ -98,7 +98,7 @@ class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
 
     //Initialize Ingestion
     val timeSeries = Partitioner.initializeTimeSeries(config, h2storage.getMaxTid)
-    val timeSeriesGroups = Partitioner.groupTimeSeries(correlations, dimensions, timeSeries, h2storage.getMaxGid)
+    val timeSeriesGroups = Partitioner.groupTimeSeries(correlations, dimensions, timeSeries, getMaxGid)
     h2storage.storeMetadataAndInitializeCaches(config, timeSeriesGroups)
 
     val mtidCache = h2storage.mtidCache.asJava

@@ -25,7 +25,7 @@ import org.h2.table.TableFilter
 import java.sql.{Array => _, _}
 import scala.collection.mutable
 
-class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Storage with SparkStorage {
+class JDBCStorage(connectionStringAndTypes: String, offset: Int) extends Storage(offset) with H2Storage with SparkStorage {
   /** Instance Variables **/
   private var connection: Connection = _
   private var insertStmt: PreparedStatement = _
@@ -143,11 +143,11 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
   }
 
   override def getMaxTid: Int = {
-    getFirstInteger(this.getMaxTidStmt)
+    getFirstInteger(this.getMaxTidStmt) + offset
   }
 
   override def getMaxGid: Int = {
-    getFirstInteger(this.getMaxGidStmt)
+    getFirstInteger(this.getMaxGidStmt) + offset
   }
 
   override def close(): Unit = {
