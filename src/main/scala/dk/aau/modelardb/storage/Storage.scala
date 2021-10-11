@@ -36,7 +36,7 @@ abstract class Storage(tidOffset: Int) {
 
     //Inserts the metadata for the sources defined in the configuration file (Tid, Scaling Factor,
     // Sampling Interval, Gid, Dimensions) into the persistent storage defined by modelar.storage.
-    this.storeTimeSeries(timeSeriesGroups)
+    this.storeTimeSeries(timeSeriesGroups, gidOffset)
 
     //Computes the set of model types that must be inserted for the system to
     // function, per definition the mtid of the fallback model type is one
