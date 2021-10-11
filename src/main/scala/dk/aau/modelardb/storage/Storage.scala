@@ -22,14 +22,14 @@ import dk.aau.modelardb.core.{Dimensions, TimeSeriesGroup}
 import scala.collection.mutable
 import scala.math.Ordering.Implicits.infixOrderingOps
 
-abstract class Storage(offset: Int) {
+abstract class Storage(tidOffset: Int) {
   /** Public Methods * */
   def open(dimensions: Dimensions): Unit
   def getMaxTid: Int
   def getMaxGid: Int
   def close(): Unit
 
-  def storeMetadataAndInitializeCaches(config: ModelarConfig, timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
+  def storeMetadataAndInitializeCaches(config: ModelarConfig, timeSeriesGroups: Array[TimeSeriesGroup], gidOffset: Int): Unit = {
 
     //The Dimensions object is stored so the schema can be retrieved later
     this.dimensions = config.dimensions
@@ -159,7 +159,7 @@ abstract class Storage(offset: Int) {
   }
 
   /** Protected Methods * */
-  protected def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup]): Unit
+  protected def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup], gidOffset: Int): Unit
   protected def getTimeSeries: mutable.HashMap[Integer, Array[AnyRef]]
   protected def storeModelTypes(modelsToInsert: mutable.HashMap[String, Integer]): Unit
   protected def getModelTypes: mutable.HashMap[String, Integer]

@@ -29,7 +29,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import scala.collection.mutable
 import java.lang.ref.{PhantomReference, ReferenceQueue}
 
-abstract class FileStorage(rootFolder: String, offset: Int) extends Storage(offset) with H2Storage with SparkStorage {
+abstract class FileStorage(rootFolder: String, tidOffset: Int) extends Storage(tidOffset) with H2Storage with SparkStorage {
   //Warn users that the FileStorage storage layers should be considered experimental
   Static.warn("ModelarDB: using experimental storage layer " + this.getClass)
 
@@ -64,10 +64,10 @@ abstract class FileStorage(rootFolder: String, offset: Int) extends Storage(offs
     this.initialize()
   }
 
-  override final def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
+  override final def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup], gidOffset: Int): Unit = {
     val outputFilePath = new Path(this.rootFolder + "time_series" + this.getFileSuffix)
     val newFilePath = new Path(this.rootFolder + "time_series" + this.getFileSuffix + "_new")
-    this.writeTimeSeriesFile(timeSeriesGroups, newFilePath)
+    this.writeTimeSeriesFile(timeSeriesGroups, newFilePath, gidOffset)
     this.mergeAndDeleteInputFiles(outputFilePath, outputFilePath, newFilePath)
   }
 
@@ -166,7 +166,7 @@ abstract class FileStorage(rootFolder: String, offset: Int) extends Storage(offs
   protected def getFileSuffix: String
   protected def getMaxID(columnName: String, timeSeriesFilePath: Path): Int
   protected def mergeFiles(outputFilePath: Path, inputFilesPaths: mutable.ArrayBuffer[Path]): Unit
-  protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path): Unit
+  protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path, gidOffset: Int): Unit
   protected def readTimeSeriesFile(timeSeriesFilePath: Path): mutable.HashMap[Integer, Array[Object]]
   protected def writeModelTypeFile(modelsToInsert: mutable.HashMap[String,Integer], modelTypeFilePath: Path): Unit
   protected def readModelTypeFile(modelTypeFilePath: Path): mutable.HashMap[String, Integer]

@@ -96,6 +96,7 @@ class Spark(config: ModelarConfig, sparkStorage: SparkStorage) extends QueryEngi
       val newGid = sparkStorage.getMaxGid + 1
       val timeSeries = Partitioner.initializeTimeSeries(config, sparkStorage.getMaxTid)
       val timeSeriesGroups = Partitioner.groupTimeSeries(correlation, dimensions, timeSeries, sparkStorage.getMaxGid)
+      val gidCount = timeSeriesGroups.length
       sparkStorage.storeMetadataAndInitializeCaches(config, timeSeriesGroups)
       Spark.initialize(spark, config, sparkStorage, Range(newGid, newGid + timeSeriesGroups.size))
       setupStream(spark, timeSeriesGroups)

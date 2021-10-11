@@ -25,7 +25,8 @@ import org.h2.table.TableFilter
 import java.sql.{Array => _, _}
 import scala.collection.mutable
 
-class JDBCStorage(connectionStringAndTypes: String, offset: Int) extends Storage(offset) with H2Storage with SparkStorage {
+class JDBCStorage(connectionStringAndTypes: String, tidOffset: Int) extends Storage(tidOffset) with H2Storage with SparkStorage {
+
   /** Instance Variables **/
   private var connection: Connection = _
   private var insertStmt: PreparedStatement = _
@@ -62,7 +63,7 @@ class JDBCStorage(connectionStringAndTypes: String, offset: Int) extends Storage
     this.getMaxGidStmt = this.connection.prepareStatement("SELECT MAX(gid) FROM time_series")
   }
 
-  def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
+  def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup], gidOffset: Int): Unit = {
     val columnsInNormalizedDimensions = dimensions.getColumns.length
     val columns = "?, " * (columnsInNormalizedDimensions + 3) + "?"
     val insertSourceStmt = connection.prepareStatement("INSERT INTO time_series VALUES(" + columns + ")")
@@ -73,7 +74,7 @@ class JDBCStorage(connectionStringAndTypes: String, offset: Int) extends Storage
         insertSourceStmt.setInt(1, ts.tid)
         insertSourceStmt.setFloat(2, ts.scalingFactor)
         insertSourceStmt.setInt(3, ts.samplingInterval)
-        insertSourceStmt.setInt(4, tsg.gid)
+        insertSourceStmt.setInt(4, tsg.gid + gidOffset)
 
         var column = 5
         for (dim <- dimensions.get(ts.source)) {
@@ -143,11 +144,11 @@ class JDBCStorage(connectionStringAndTypes: String, offset: Int) extends Storage
   }
 
   override def getMaxTid: Int = {
-    getFirstInteger(this.getMaxTidStmt) + offset
+    getFirstInteger(this.getMaxTidStmt) + tidOffset
   }
 
   override def getMaxGid: Int = {
-    getFirstInteger(this.getMaxGidStmt) + offset
+    getFirstInteger(this.getMaxGidStmt) + tidOffset
   }
 
   override def close(): Unit = {

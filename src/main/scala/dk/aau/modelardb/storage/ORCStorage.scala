@@ -29,7 +29,8 @@ import java.io.FileNotFoundException
 import java.sql.Timestamp
 import scala.collection.mutable
 
-class ORCStorage(rootFolder: String, offset: Int) extends FileStorage(rootFolder, offset) {
+class ORCStorage(rootFolder: String, tidOffset: Int) extends FileStorage(rootFolder, tidOffset) {
+
   /** Instance Variables **/
   private val segmentGroupSchema = TypeDescription.createStruct()
     .addField("gid", TypeDescription.createInt())
@@ -68,7 +69,7 @@ class ORCStorage(rootFolder: String, offset: Int) extends FileStorage(rootFolder
       }
     }
     rows.close()
-    id.toInt + offset
+    id.toInt + tidOffset
   }
 
   protected override def mergeFiles(outputFilePath: Path, inputFilesPaths: mutable.ArrayBuffer[Path]): Unit = {
@@ -93,7 +94,7 @@ class ORCStorage(rootFolder: String, offset: Int) extends FileStorage(rootFolder
     writer.close()
   }
 
-  override protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path): Unit = {
+  override protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path, gidOffset: Int): Unit = {
     val schema = TypeDescription.createStruct()
       .addField("tid", TypeDescription.createInt())
       .addField("scaling_factor", TypeDescription.createFloat())
@@ -119,7 +120,7 @@ class ORCStorage(rootFolder: String, offset: Int) extends FileStorage(rootFolder
         batch.cols(0).asInstanceOf[LongColumnVector].vector(row) = ts.tid
         batch.cols(1).asInstanceOf[DoubleColumnVector].vector(row) = ts.scalingFactor
         batch.cols(2).asInstanceOf[LongColumnVector].vector(row) = ts.samplingInterval
-        batch.cols(3).asInstanceOf[LongColumnVector].vector(row) = tsg.gid
+        batch.cols(3).asInstanceOf[LongColumnVector].vector(row) = tsg.gid + gidOffset
         for (mi <- dimensions.get(ts.source).zipWithIndex) {
           dimensionTypes(mi._2) match {
             case Dimensions.Types.TEXT => batch.cols(4 + mi._2).asInstanceOf[BytesColumnVector].setVal(row, mi._1.toString.getBytes)

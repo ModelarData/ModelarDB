@@ -18,7 +18,7 @@ import java.util.UUID
 import scala.concurrent.Future
 import scala.util.control.NonFatal
 
-class AkkaSystem(config: Config, storage: Storage) {
+class AkkaSystem(config: Config, storage: Storage, arrowFlightClient: ArrowFlightClient) {
 
   private val log = Logger(AkkaSystem.getClass)
   private val h2Storage: H2Storage = storage match {
@@ -51,8 +51,6 @@ class AkkaSystem(config: Config, storage: Storage) {
   /* Akka Stream */
   private val batchSize = config.modelarDb.batchSize
   private val numIngetors = if (config.modelarDb.ingestors == 0) { 1 } else { config.modelarDb.ingestors }
-
-  private val arrowFlightClient = ArrowFlightClient(config.arrow)
 
   // Resume on non fatal error
   val decider: Supervision.Decider = {
@@ -110,5 +108,5 @@ class AkkaSystem(config: Config, storage: Storage) {
 }
 
 object AkkaSystem {
-  def apply(config: Config, storage: Storage): AkkaSystem = new AkkaSystem(config, storage)
+  def apply(config: Config, storage: Storage, arrowFlightClient: ArrowFlightClient): AkkaSystem = new AkkaSystem(config, storage, arrowFlightClient)
 }

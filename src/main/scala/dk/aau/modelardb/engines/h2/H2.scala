@@ -15,7 +15,7 @@
 package dk.aau.modelardb.engines.h2
 
 import akka.stream.scaladsl.SourceQueueWithComplete
-import dk.aau.modelardb.arrow.ArrowUtil
+import dk.aau.modelardb.arrow.{ArrowFlightClient, ArrowUtil}
 import dk.aau.modelardb.config.ModelarConfig
 import dk.aau.modelardb.core.Dimensions.Types
 import dk.aau.modelardb.core._
@@ -35,7 +35,7 @@ import java.util.{Base64, TimeZone}
 import scala.collection.mutable
 import collection.JavaConverters._
 
-class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
+class H2(config: ModelarConfig, h2storage: H2Storage, arrowFlightClient: ArrowFlightClient) extends QueryEngine {
   /** Instance Variables **/
   private var finalizedSegmentsIndex = 0
   private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](config.batchSize)
@@ -98,8 +98,10 @@ class H2(config: ModelarConfig, h2storage: H2Storage) extends QueryEngine {
 
     //Initialize Ingestion
     val timeSeries = Partitioner.initializeTimeSeries(config, h2storage.getMaxTid)
-    val timeSeriesGroups = Partitioner.groupTimeSeries(correlations, dimensions, timeSeries, getMaxGid)
-    h2storage.storeMetadataAndInitializeCaches(config, timeSeriesGroups)
+    val timeSeriesGroups = Partitioner.groupTimeSeries(correlations, dimensions, timeSeries, h2storage.getMaxGid)
+    val gidCount = timeSeriesGroups.length
+    val gidOffset = arrowFlightClient.getGidOffset(gidCount)
+    h2storage.storeMetadataAndInitializeCaches(config, timeSeriesGroups, gidOffset)
 
     val mtidCache = h2storage.mtidCache.asJava
     val ingestors = config.ingestors

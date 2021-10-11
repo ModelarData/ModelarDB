@@ -16,7 +16,7 @@ package dk.aau.modelardb
 
 import com.typesafe.scalalogging.Logger
 import dk.aau.modelardb.akka.AkkaSystem
-import dk.aau.modelardb.arrow.ArrowFlightServer
+import dk.aau.modelardb.arrow.{ArrowFlightClient, ArrowFlightServer}
 import dk.aau.modelardb.config.Config
 import dk.aau.modelardb.engines.EngineFactory
 import dk.aau.modelardb.storage.StorageFactory
@@ -55,14 +55,19 @@ object Main {
     val modelarConf = config.modelarDb
     TimeZone.setDefault(config.modelarDb.timezone) //Ensures all components use the same time zone
 
+    val arrowFlightClient = ArrowFlightClient(config.arrow)
+    val tsCount = config.modelarDb.sources.length
+    val tidOffset = arrowFlightClient.getTidOffset(tsCount)
 
     /* Storage */
-    val storage = StorageFactory.getStorage(modelarConf.storage)
+    val storage = StorageFactory.getStorage(modelarConf.storage, tidOffset)
 
-    val akkaSystem = AkkaSystem(config, storage)
+    val akkaSystem = AkkaSystem(config, storage, arrowFlightClient)
+
+
 
     /* Engine */
-    val engine = EngineFactory.getEngine(modelarConf, storage)
+    val engine = EngineFactory.getEngine(modelarConf, storage, arrowFlightClient)
     val queue = akkaSystem.start
     val mode = config.modelarDb.mode
 

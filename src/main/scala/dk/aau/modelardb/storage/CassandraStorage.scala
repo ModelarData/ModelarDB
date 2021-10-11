@@ -32,7 +32,7 @@ import java.time.Instant
 import java.util
 import scala.collection.mutable
 
-class CassandraStorage(connectionString: String) extends Storage with H2Storage with SparkStorage {
+class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage(tidOffset) with H2Storage with SparkStorage {
   /** Instance Variables **/
   private var keyspace: String = _
   private var connector: CassandraConnector = _
@@ -49,7 +49,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     createTables(dimensions)
   }
 
-  def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
+  def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup], gidOffset: Int): Unit = {
     val session = this.connector.openSession()
     val columnsInNormalizedDimensions = dimensions.getColumns.length
     val columns = if (columnsInNormalizedDimensions  == 0) "" else dimensions.getColumns.mkString(", ", ", ", "")
@@ -62,7 +62,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
             ts.tid.asInstanceOf[Object],
             ts.scalingFactor.asInstanceOf[Object],
             ts.samplingInterval.asInstanceOf[Object],
-            tsg.gid.asInstanceOf[Object])
+            (tsg.gid + gidOffset).asInstanceOf[Object])
 
         val members = dimensions.get(ts.source)
         if (members.nonEmpty) {

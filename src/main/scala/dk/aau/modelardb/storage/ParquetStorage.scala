@@ -40,7 +40,7 @@ import java.io.FileNotFoundException
 import java.util
 import scala.collection.mutable
 
-class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
+class ParquetStorage(rootFolder: String, tidOffset: Int) extends FileStorage(rootFolder, tidOffset) {
   /** Instance Variables **/
   private val segmentGroupSchema = new MessageType("segment",
     new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "gid" ),
@@ -107,7 +107,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
     writer.close()
   }
 
-  override protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path): Unit = {
+  override protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path, gidOffset: Int): Unit = {
     val columns = new util.ArrayList[Type]()
     columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "tid"))
     columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.FLOAT, "scaling_factor"))
@@ -132,7 +132,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
         group.add(0, ts.tid)
         group.add(1, ts.scalingFactor)
         group.add(2, ts.samplingInterval)
-        group.add(3, tsg.gid)
+        group.add(3, tsg.gid + gidOffset)
         for (mi <- dimensions.get(ts.source).zipWithIndex) {
           dimensionTypes(mi._2) match {
             case Dimensions.Types.TEXT => group.add(4 + mi._2, mi._1.toString)
