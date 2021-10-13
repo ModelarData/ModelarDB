@@ -11,7 +11,6 @@ import java.nio.charset.StandardCharsets.UTF_8
 
 class ArrowFlightClient(config: ArrowConfig) {
 
-
   val channel = ManagedChannelBuilder
     .forAddress(config.client.host, config.client.port)
     .usePlaintext()
@@ -28,6 +27,7 @@ class ArrowFlightClient(config: ArrowConfig) {
       result.close()
     }
   }
+
 
   def doPut(segmentGroups: Seq[SegmentGroup]): Seq[SegmentGroup] = {
     val streamListener = client.startPut(flightDescriptor, root, metadataListener)

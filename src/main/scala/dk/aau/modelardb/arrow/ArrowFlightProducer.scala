@@ -82,8 +82,11 @@ class ArrowFlightProducer(queryEngine: QueryEngine, storage: Storage, mode: Stri
       case Success(value) => value
     }
     val result: Int = action.getType.toUpperCase match {
-      case "TID" => storage.getMaxTid(count)
-      case "GID" => storage.getMaxGid(count)
+      case "TID" => storage.getTidOffset(count)
+      case "GID" => storage.getGidOffset(count)
+      case _ @ unknown =>
+        listener.onError(new Exception(s"Unknown Action Type: ${unknown}"))
+        return
     }
     val resultBody = ByteBuffer.allocate(4).putInt(result).array()
     listener.onNext(new Result(resultBody))
@@ -91,6 +94,8 @@ class ArrowFlightProducer(queryEngine: QueryEngine, storage: Storage, mode: Stri
   }
 
   override def listActions(context: CallContext, listener: StreamListener[ActionType]): Unit = {
-    listener.onError(???)
+    listener.onNext(new ActionType("TID", "The next TID for the edge to use for its Timeseries"))
+    listener.onNext(new ActionType("GID", "The next GID for the edge to use for its Segment Groups"))
+    listener.onCompleted()
   }
 }

@@ -15,7 +15,7 @@
 package dk.aau.modelardb.engines.spark
 
 import akka.stream.scaladsl.SourceQueueWithComplete
-import dk.aau.modelardb.arrow.ArrowUtil
+import dk.aau.modelardb.arrow.{ArrowFlightClient, ArrowUtil}
 import dk.aau.modelardb.config.ModelarConfig
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Static, ValueFunction}
@@ -33,7 +33,7 @@ import java.sql.Timestamp
 import scala.collection.mutable
 import collection.JavaConverters._
 
-class Spark(config: ModelarConfig, sparkStorage: SparkStorage) extends QueryEngine {
+class Spark(config: ModelarConfig, sparkStorage: SparkStorage, arrowFlightClient: ArrowFlightClient) extends QueryEngine {
 
   var sparkSession: SparkSession = _
 
@@ -88,7 +88,7 @@ class Spark(config: ModelarConfig, sparkStorage: SparkStorage) extends QueryEngi
       if ( ! derivedSources.isEmpty) { //Initializes derived time series
         Partitioner.initializeTimeSeries(config, sparkStorage.getMaxTid)
       }
-      sparkStorage.storeMetadataAndInitializeCaches(config, Array())
+      sparkStorage.storeMetadataAndInitializeCaches(config, Array(), 0)
       Spark.initialize(spark, config, sparkStorage, Range(0,0))
       null
     } else {
@@ -97,7 +97,8 @@ class Spark(config: ModelarConfig, sparkStorage: SparkStorage) extends QueryEngi
       val timeSeries = Partitioner.initializeTimeSeries(config, sparkStorage.getMaxTid)
       val timeSeriesGroups = Partitioner.groupTimeSeries(correlation, dimensions, timeSeries, sparkStorage.getMaxGid)
       val gidCount = timeSeriesGroups.length
-      sparkStorage.storeMetadataAndInitializeCaches(config, timeSeriesGroups)
+      val gidOffset = arrowFlightClient.getGidOffset(gidCount)
+      sparkStorage.storeMetadataAndInitializeCaches(config, timeSeriesGroups, gidOffset)
       Spark.initialize(spark, config, sparkStorage, Range(newGid, newGid + timeSeriesGroups.size))
       setupStream(spark, timeSeriesGroups)
     }
@@ -163,7 +164,7 @@ object Spark {
     this.parallelism = spark.sparkContext.defaultParallelism
     this.viewProvider = spark.read.format("dk.aau.modelardb.engines.spark.ViewProvider")
     this.sparkStorage = null
-    this.broadcastedTimeSeriesTransformationCache = spark.sparkContext.broadcast(sparkStorage.timeSeriesTransformationCache)
+    this.broadcastedTimeSeriesTransformationCache = spark.sparkContext.broadcast(sparkStorage.timeSeriesTransformationCache.array)
     this.sparkStorage = sparkStorage
     this.cache = new SparkCache(spark, config.batchSize, newGids)
   }
