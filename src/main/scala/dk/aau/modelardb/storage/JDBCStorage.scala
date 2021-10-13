@@ -34,6 +34,13 @@ class JDBCStorage(connectionStringAndTypes: String, tidOffset: Int) extends Stor
   private var getMaxGidStmt: PreparedStatement = _
   private val (connectionString, textType, blobType) = splitConnectionStringAndTypes(connectionStringAndTypes)
 
+  private def checkTableExist(tableName: String): Boolean = {
+    val metadata = this.connection.getMetaData
+    val tableType = Array("TABLE")
+    val tables = metadata.getTables(null, null, tableName, tableType)
+    tables.next()
+  }
+
   /** Public Methods **/
   //Storage
   override def open(dimensions: Dimensions): Unit = {
@@ -42,11 +49,9 @@ class JDBCStorage(connectionStringAndTypes: String, tidOffset: Int) extends Stor
     this.connection.setAutoCommit(false)
 
     //Checks if the tables and indexes exist and create them if necessary
-    val metadata = this.connection.getMetaData
-    val tableType = Array("TABLE")
-    val tables = metadata.getTables(null, null, "SEGMENT", tableType)
+    val tableExist = checkTableExist("SEGMENT")
 
-    if ( ! tables.next()) {
+    if ( ! tableExist) {
       val stmt = this.connection.createStatement()
       stmt.executeUpdate(s"CREATE TABLE model_type(mtid INTEGER, name ${this.textType})")
       stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mtid INTEGER, model ${this.blobType}, gaps ${this.blobType})")
@@ -55,6 +60,23 @@ class JDBCStorage(connectionStringAndTypes: String, tidOffset: Int) extends Stor
       stmt.executeUpdate("CREATE INDEX segment_gid ON segment(gid)")
       stmt.executeUpdate("CREATE INDEX segment_start_time ON segment(start_time)")
       stmt.executeUpdate("CREATE INDEX segment_end_time ON segment(end_time)")
+    }
+
+    val minTid = {
+      connection.createStatement()
+        .executeQuery("SELECT MIN(tid) FROM time_series")
+        .getInt(1)
+    }
+
+    val minGid = {
+      connection.createStatement()
+        .executeQuery("SELECT MIN(gid) FROM time_series")
+        .getInt(1)
+    }
+
+    if (tableExist) {
+      if (minTid != tidOffsetAtomic.get()) throw new Exception("Offset does not match min TID in database")
+      if (minGid != gidOffsetAtomic.get()) throw new Exception("Offset does not match min GID in database")
     }
 
     //Prepares the necessary statements
@@ -185,7 +207,7 @@ class JDBCStorage(connectionStringAndTypes: String, tidOffset: Int) extends Stor
 
   override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
     getSegmentGroups(H2.expressionToSQLPredicates(filter.getSelect.getCondition,
-      this.timeSeriesGroupCache, this.memberTimeSeriesCache, supportsOr = true))
+      timeSeriesGroupCache, memberTimeSeriesCache, supportsOr = true))
   }
 
   //SparkStorage

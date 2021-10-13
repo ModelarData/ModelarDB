@@ -38,26 +38,29 @@ object Main {
     val fallback = System.getProperty("user.home") + "/modelardb.conf"
     val configPath: String = if (args.length == 1) {
       args(0)
-    } else if (new java.io.File(fallback).exists) {
-      fallback
     } else {
-      println("usage: modelardb path/to/modelardb.conf")
-      System.exit(-1)
-      "" //HACK: necessary to have the same type in all branches of the match expression
+      fallback
     }
 
     val baseConfig = ConfigSource.default
-    val userConfig = ConfigSource.file(configPath)
+    val userConfig = ConfigSource
+      .file(configPath)
+      .optional // returns empty config if configPath is unspecified by user
     val config = userConfig
       .withFallback(baseConfig)
       .loadOrThrow[Config]
 
     val modelarConf = config.modelarDb
     TimeZone.setDefault(config.modelarDb.timezone) //Ensures all components use the same time zone
+    val mode = config.modelarDb.mode
 
     val arrowFlightClient = ArrowFlightClient(config.arrow)
     val tsCount = config.modelarDb.sources.length
-    val tidOffset = arrowFlightClient.getTidOffset(tsCount)
+    val tidOffset = mode.toLowerCase match {
+      case "edge" => arrowFlightClient.getTidOffset(tsCount)
+      case "server" => 0
+      case _ => throw new Exception("Config parameter \"mode\" only support values {server, edge}")
+    }
 
     /* Storage */
     val storage = StorageFactory.getStorage(modelarConf.storage, tidOffset)
@@ -65,19 +68,18 @@ object Main {
     val akkaSystem = AkkaSystem(config, storage, arrowFlightClient)
 
 
-
     /* Engine */
     val engine = EngineFactory.getEngine(modelarConf, storage, arrowFlightClient)
     val queue = akkaSystem.start
-    val mode = config.modelarDb.mode
 
     /* Interfaces */
     val arrowServer = ArrowFlightServer(config.arrow, engine, storage, mode)
     arrowServer.start()
 
-    mode match {
+    mode.toLowerCase match {
       case "edge" => engine.start(queue)
       case "server" => engine.start
+      case _ => throw new Exception("Config parameter \"mode\" only support values {server, edge}")
     }
 
     Interface.start(config, engine)

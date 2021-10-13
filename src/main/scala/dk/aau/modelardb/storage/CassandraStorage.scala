@@ -161,7 +161,7 @@ class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage
 
   def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
     val predicates = H2.expressionToSQLPredicates(filter.getSelect.getCondition,
-      this.timeSeriesGroupCache, this.memberTimeSeriesCache, supportsOr = false)
+      timeSeriesGroupCache, memberTimeSeriesCache, supportsOr = false)
     Static.info(s"ModelarDB: constructed predicates ($predicates)")
     val session = this.connector.openSession()
     val results = if (predicates.isEmpty) {

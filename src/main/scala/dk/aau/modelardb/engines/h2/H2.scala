@@ -21,6 +21,7 @@ import dk.aau.modelardb.core.Dimensions.Types
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Logger, SegmentFunction, Static}
 import dk.aau.modelardb.engines.{EngineUtilities, QueryEngine}
+import dk.aau.modelardb.storage.ArrayCache
 import org.apache.arrow.vector.VectorSchemaRoot
 import org.h2.expression.condition.{Comparison, ConditionAndOr, ConditionInConstantSet}
 import org.h2.expression.{Expression, ExpressionColumn, ValueExpression}
@@ -92,7 +93,7 @@ class H2(config: ModelarConfig, h2storage: H2Storage, arrowFlightClient: ArrowFl
       if ( ! config.derivedTimeSeries.isEmpty) { //Initializes derived time series
         Partitioner.initializeTimeSeries(config, h2storage.getMaxTid)
       }
-      h2storage.storeMetadataAndInitializeCaches(config, Array())
+      h2storage.storeMetadataAndInitializeCaches(config, Array(), 0)
       return
     }
 
@@ -178,8 +179,8 @@ class H2(config: ModelarConfig, h2storage: H2Storage, arrowFlightClient: ArrowFl
 
     //Extracts the metadata for the group of time series being updated
     val groupMetadataCache = h2storage.groupMetadataCache
-    val group = groupMetadataCache(inputSegmentGroup.gid).drop(1)
-    val samplingInterval = groupMetadataCache(inputSegmentGroup.gid)(0)
+    val group = groupMetadataCache.get(inputSegmentGroup.gid).drop(1)
+    val samplingInterval = groupMetadataCache.get(inputSegmentGroup.gid)(0)
     val inputIngested = group.toSet.diff(inputGaps.toSet)
     var updatedExistingSegment = false
 
@@ -320,7 +321,7 @@ object H2 {
        |""".stripMargin
   }
 
-  def expressionToSQLPredicates(expression: Expression, tsgc: Array[Int],
+  def expressionToSQLPredicates(expression: Expression, tsgc: ArrayCache[Int],
                                 idc: mutable.HashMap[String, mutable.HashMap[Object, Array[Integer]]],
                                 supportsOr: Boolean): String = { //HACK: supportsOR ensures Cassandra does not receive an OR operator
     expression match {
