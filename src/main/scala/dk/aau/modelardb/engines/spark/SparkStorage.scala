@@ -23,4 +23,5 @@ trait SparkStorage extends Storage {
   def open(ssb: SparkSession.Builder, dimensions: Dimensions): SparkSession
   def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit
   def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame
+  def storeTimeseries(tid: Int, scalingFactor: Float, samplingInterval: Int, gid: Int): Unit
 }

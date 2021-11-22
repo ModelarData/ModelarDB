@@ -14,6 +14,7 @@
  */
 package dk.aau.modelardb.storage
 
+import dk.aau.modelardb.OffsetType
 import dk.aau.modelardb.config.ModelarConfig
 import dk.aau.modelardb.core.models.{ModelType, ModelTypeFactory}
 import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
@@ -25,31 +26,138 @@ import scala.math.Ordering.Implicits.infixOrderingOps
 
 abstract class Storage(tidOffset: Int) {
 
-  protected val tidOffsetAtomic: AtomicInteger = new AtomicInteger(tidOffset)
-  protected val gidOffsetAtomic: AtomicInteger = new AtomicInteger(0)
+  val tidCounter = new AtomicInteger(0)
+  val gidCounter = new AtomicInteger(0)
+  private val offsetCache = mutable.Map.empty[String, mutable.Map[OffsetType, Int]]
 
-  def getTidOffset(count: Int): Int = {
-    tidOffsetAtomic.addAndGet(count)
+  protected def storeOffset(edgeId: String, offset: Int, offsetType: OffsetType): Unit
+  protected def readOffset(edgeId: String, offsetType: OffsetType): Option[Int]
+  protected def initializeOffsetCache(): Unit
+
+  def updateOffsetCache(key: String, offset: Int, offsetType: OffsetType): Int = {
+    offsetType match {
+      case OffsetType.TID | OffsetType.GID =>
+        if (offsetCache.contains(key)) {
+          val innerMap = offsetCache(key)
+          innerMap.put(offsetType, offset)
+          offsetCache.put(key, innerMap)
+          offset
+        } else {
+          offsetCache.put(key, mutable.Map[OffsetType, Int](offsetType -> offset))
+          offset
+        }
+      case _ @ unknown => throw new Exception(s"Unknown OffsetType: $unknown")
+    }
   }
 
-  def getGidOffset(count: Int): Int = {
-    gidOffsetAtomic.addAndGet(count)
+  def getOffset(offsetType: OffsetType, edgeId: String, count: Int): Int = {
+    val edgeIdInCache = offsetCache.contains(edgeId)
+    val offsetInCache = offsetCache
+      .get(edgeId)
+      .flatMap(_.get(offsetType))
+
+    (edgeIdInCache, offsetInCache) match {
+      case (_, Some(offset)) => offset
+      case (false, _) | (true, None) =>
+        val offsetInDB = readOffset(edgeId, offsetType)
+        offsetInDB match {
+          case None =>
+            val newOffset = offsetType match {
+              case OffsetType.TID => tidCounter.getAndAdd(count)
+              case OffsetType.GID => gidCounter.getAndAdd(count)
+            }
+            offsetCache.put(edgeId, mutable.Map((offsetType, newOffset)))
+            storeOffset(edgeId, newOffset, offsetType)
+            newOffset
+          case Some(offset) => updateOffsetCache(edgeId, offset, offsetType)
+//          case Some(offset) if edgeIdInCache =>
+//            offsetCache(edgeId).put(offsetType, offset)
+//            offset
+//          case Some(offset) if !edgeIdInCache =>
+//            offsetCache.put(edgeId, mutable.Map(offsetType -> offset ))
+//            offset
+          case _ => throw new IllegalStateException(s"Offset cache in illegal state")
+        }
+      case _ => throw new IllegalStateException(s"Offset cache in illegal state")
+    }
   }
+
+//  def getTidOffset(edgeId: String, count: Int): Int = {
+//    val edgeIdInCache = offsetCache.contains(edgeId)
+//    val tidInCache = offsetCache
+//      .get(edgeId)
+//      .flatMap(_.get(OffsetType.TID))
+//
+//    (edgeIdInCache, tidInCache) match {
+//      case (_, Some(tidOffset)) => tidOffset
+//      case (false, _) | (true, None) =>
+//        val offsetInDB = readOffset(edgeId, OffsetType.TID)
+//        offsetInDB match {
+//          case None =>
+//            val tidOffset = tidCounter.getAndAdd(count)
+//            offsetCache.put(edgeId, mutable.Map((OffsetType.TID, tidOffset)))
+//            storeOffset(edgeId, tidOffset, OffsetType.TID)
+//            tidOffset
+//          case Some(tidOffset) if edgeIdInCache =>
+//            offsetCache(edgeId).put(OffsetType.TID, tidOffset)
+//            tidOffset
+//          case Some(tidOffset) if !edgeIdInCache =>
+//            offsetCache.put(edgeId, mutable.Map(OffsetType.TID -> tidOffset ))
+//            tidOffset
+//          case _ => throw new IllegalStateException(s"Offset cache in illegal state")
+//        }
+//      case _ => throw new IllegalStateException(s"Offset cache in illegal state")
+//    }
+//  }
+//
+//  def getGidOffset(edgeId: String, count: Int): Int = {
+//    val hasEdgeId = offsetCache.contains(edgeId)
+//    val hasGid = offsetCache
+//      .get(edgeId)
+//      .flatMap(_.get(OffsetType.GID))
+//
+//    (hasEdgeId, hasGid) match {
+//      case (false, _) | (true, None) =>
+//        val gidOffset = gidCounter.getAndAdd(count)
+//        offsetCache.put(edgeId, mutable.Map((OffsetType.GID, gidOffset)))
+//        storeOffset(edgeId, gidOffset, OffsetType.GID)
+//        gidOffset
+//      case (_, Some(gid)) => gid
+//    }
+//  }
+
+//  protected val tidCounter: AtomicInteger = new AtomicInteger(tidOffset)
+//  protected val gidCounter: AtomicInteger = new AtomicInteger(0)
+//
+//  def getTidOffset(edgeId: String, count: Int): Int = {
+//    val offset = tidCounter.addAndGet(count)
+//    storeOffset(edgeId, offset, "TID")
+//    offset
+//  }
+//
+//
+//  def getGidOffset(edgeId: String, count: Int): Int = {
+//    val offset = gidCounter.addAndGet(count)
+//    storeOffset(edgeId, offset, "GID")
+//    offset
+//  }
 
   /** Public Methods * */
   def open(dimensions: Dimensions): Unit
+  def getMinTid: Int
   def getMaxTid: Int
+  def getMinGid: Int
   def getMaxGid: Int
   def close(): Unit
 
   def storeMetadataAndInitializeCaches(config: ModelarConfig, timeSeriesGroups: Array[TimeSeriesGroup], gidOffset: Int): Unit = {
-
+    gidCounter.compareAndSet(0, gidOffset)
     //The Dimensions object is stored so the schema can be retrieved later
-    this.dimensions = config.dimensions
+    dimensions = config.dimensions
 
     //Inserts the metadata for the sources defined in the configuration file (Tid, Scaling Factor,
     // Sampling Interval, Gid, Dimensions) into the persistent storage defined by modelar.storage.
-    this.storeTimeSeries(timeSeriesGroups, gidOffset)
+    storeTimeSeries(timeSeriesGroups, tidOffset)
 
     //Computes the set of model types that must be inserted for the system to
     // function, per definition the mtid of the fallback model type is one
@@ -81,19 +189,19 @@ abstract class Storage(tidOffset: Int) {
     var nextTid = getMaxTid + 1
     val derivedTimeSeries = config.derivedTimeSeries
     val totalNumberOfSources = nextTid + derivedTimeSeries.values.stream.mapToInt((v: Array[Pair[String, ValueFunction]]) => v.length).sum
-    timeSeriesGroupCache = new ArrayCache(totalNumberOfSources, tidOffsetAtomic.get())
-    timeSeriesSamplingIntervalCache = new ArrayCache(totalNumberOfSources, tidOffsetAtomic.get())
-    timeSeriesScalingFactorCache = new ArrayCache(totalNumberOfSources, tidOffsetAtomic.get())
-    timeSeriesMembersCache = new ArrayCache[Array[AnyRef]](totalNumberOfSources, tidOffsetAtomic.get())
+    timeSeriesGroupCache = new ArrayCache(totalNumberOfSources, tidCounter.get())
+    timeSeriesSamplingIntervalCache = new ArrayCache(totalNumberOfSources, tidCounter.get())
+    timeSeriesScalingFactorCache = new ArrayCache(totalNumberOfSources, tidCounter.get())
+    timeSeriesMembersCache = new ArrayCache[Array[AnyRef]](totalNumberOfSources, tidCounter.get())
     val gsc = mutable.HashMap[Integer, mutable.ArrayBuffer[Integer]]()
     val scalingTransformation = new ValueFunction()
-    timeSeriesTransformationCache = new ArrayCache[ValueFunction](totalNumberOfSources, tidOffsetAtomic.get())
-    val groupDerivedCacheBuilder = mutable.HashMap[Integer, mutable.ArrayBuffer[Integer]]()
+    timeSeriesTransformationCache = new ArrayCache[ValueFunction](totalNumberOfSources, tidCounter.get())
+    val groupDerivedCacheBuilder = mutable.HashMap[Int, mutable.ArrayBuffer[Integer]]()
     val timeSeriesInStorage = this.getTimeSeries
     for ((tid, metadata) <- timeSeriesInStorage) {
       //Metadata is a mapping from Tid to Scaling, Sampling Interval, Gid, and Dimensions
-      //Creates mappings from tid -> gid, tid -> sampling interval, tid -> scaling factor, and tid -> dimensions
       val gid = metadata(2).asInstanceOf[Int]
+      //Creates mappings from tid -> gid, tid -> sampling interval, tid -> scaling factor, and tid -> dimensions
       timeSeriesGroupCache.set(tid, gid)
       timeSeriesSamplingIntervalCache.set(tid, metadata(1).asInstanceOf[Int])
       timeSeriesScalingFactorCache.set(tid, metadata(0).asInstanceOf[Float])
@@ -131,13 +239,18 @@ abstract class Storage(tidOffset: Int) {
         }
       }
     }
-    groupDerivedCache = new HashMapIntegerCache[Array[Int]](gidOffsetAtomic.get())
-    groupDerivedCacheBuilder.foreach(kv => groupDerivedCache.set(kv._1, kv._2.map(i => i.intValue()).toArray))
+
+    groupDerivedCache = groupDerivedCacheBuilder
+//      .map { case (key, value) => (key, value.map(i => i.intValue()).toArray)
+      .map { case (key, value) => (Integer.valueOf(key), value.map(i => i.intValue()).toArray)
+      }
+    //    groupDerivedCache = Map[Int, Array[Int]]()
+    //    groupDerivedCacheBuilder.foreach(kv => groupDerivedCache.set(kv._1, kv._2.map(i => i.intValue()).toArray))
 
     //The inverseDimensionsCache is constructed from the dimensions cache
     val columns = this.dimensions.getColumns
     val outer = new mutable.HashMap[String, mutable.HashMap[AnyRef, mutable.HashSet[Integer]]]
-    for (i <- 1 until timeSeriesMembersCache.length) {
+    for (i <- (1+tidCounter.get()) until (timeSeriesMembersCache.length + tidCounter.get())) {
       //If data with existing tids are ingested missing tids can occur and must be handled
       if (timeSeriesMembersCache.get(i) == null) {
         Static.warn(f"CORE: a time series with tid $i does not exist")
@@ -239,5 +352,5 @@ abstract class Storage(tidOffset: Int) {
   var groupMetadataCache: ArrayCache[Array[Int]] = _
 
   //Read Cache: Maps the gid of a group to pairs of tids for time series with derived time series
-  var groupDerivedCache: HashMapIntegerCache[Array[Int]] = _
+  var groupDerivedCache: mutable.HashMap[Integer, Array[Int]] = _
 }

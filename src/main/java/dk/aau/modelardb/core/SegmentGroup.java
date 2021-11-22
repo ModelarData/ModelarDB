@@ -22,6 +22,7 @@ import dk.aau.modelardb.storage.HashMapIntegerCache;
 import dk.aau.modelardb.storage.Storage;
 
 import java.nio.ByteBuffer;
+
 import scala.collection.mutable.HashMap;
 
 public class SegmentGroup {
@@ -50,10 +51,9 @@ public class SegmentGroup {
         return sb.toString();
     }
 
-    public SegmentGroup[] explode(ArrayCache<int[]> groupMetadataCache, HashMapIntegerCache<int[]> groupDerivedCache) {
+    public SegmentGroup[] explode(ArrayCache<int[]> groupMetadataCache, HashMap<Integer, int[]> groupDerivedCache) {
         int[] gmc = groupMetadataCache.get(gid);
-//        int[] derivedTimeSeries = groupDerivedCache.getOrElse(this.gid, () -> SegmentGroup.defaultDerivedTimeSeries);
-        int[] derivedTimeSeries = groupDerivedCache.get(gid);
+        int[] derivedTimeSeries = groupDerivedCache.getOrElse(gid, () -> SegmentGroup.defaultDerivedTimeSeries);
         int[] timeSeriesInAGap = Static.bytesToInts(this.offsets);
         int temporalOffset = 0;
         if (timeSeriesInAGap.length > 0 && timeSeriesInAGap[timeSeriesInAGap.length - 1] < 0) {

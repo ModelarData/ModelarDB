@@ -5,6 +5,7 @@ import dk.aau.modelardb.config.{ArrowClientConfig, ArrowConfig, ArrowServerConfi
 import dk.aau.modelardb.core.SegmentGroup
 import dk.aau.modelardb.engines.QueryEngine
 import dk.aau.modelardb.engines.h2.H2Storage
+import dk.aau.modelardb.storage.{JDBCStorage, Storage}
 import org.apache.arrow.flight.Ticket
 import org.apache.arrow.memory.RootAllocator
 import org.apache.arrow.vector.{VectorSchemaRoot, VectorUnloader}
@@ -23,7 +24,7 @@ class ArrowClientServerTest extends AnyFlatSpec with should.Matchers with MockFa
 
   "Arrow Flight Server" should "be able to handle doPut from client" in {
     val randomPort = scala.util.Random.nextInt(60000) + 1024
-    val clientConfig = ArrowClientConfig("localhost", randomPort)
+    val clientConfig = ArrowClientConfig("localhost", randomPort, "test-edge")
     val serverConfig = ArrowServerConfig("localhost", randomPort)
     val flightPath = "/arrow/flight/test/path"
     val testConfig = ArrowConfig(flightPath, serverConfig, clientConfig)
@@ -31,8 +32,8 @@ class ArrowClientServerTest extends AnyFlatSpec with should.Matchers with MockFa
     val queryEngine = mock[QueryEngine]
 
     val c1 = CaptureOne[Array[SegmentGroup]]()
-    val storage = mock[H2Storage]
-    (storage.storeSegmentGroups _)
+    val storage = mock[H2StorageNoArgs]
+    (storage.storeSegmentGroups(_: Array[SegmentGroup], _: Int))
       .expects(capture(c1), testData.length)
 
     val arrowServer = ArrowFlightServer(testConfig, queryEngine, storage, "server")
@@ -51,14 +52,14 @@ class ArrowClientServerTest extends AnyFlatSpec with should.Matchers with MockFa
 
   it should "answer query" in {
     val randomPort = scala.util.Random.nextInt(60000) + 1024
-    val clientConfig = ArrowClientConfig("localhost", randomPort)
+    val clientConfig = ArrowClientConfig("localhost", randomPort, "test-edge")
     val serverConfig = ArrowServerConfig("localhost", randomPort)
     val flightPath = "/arrow/flight/test/path"
     val testConfig = ArrowConfig(flightPath, serverConfig, clientConfig)
 
     val sql = "select * from segment"
 
-    val storage = mock[H2Storage]
+    val storage = mock[H2StorageNoArgs]
     val queryEngine = mock[QueryEngine]
     val testDataRoot = VectorSchemaRoot.create(SegmentSchema.arrowSchema, new RootAllocator(Long.MaxValue))
 
@@ -96,5 +97,8 @@ class ArrowClientServerTest extends AnyFlatSpec with should.Matchers with MockFa
 
     totalRows should equal (testData.length)
   }
+
+  /* HACK: needed because Storage class does not have a no arg constructor */
+  private class H2StorageNoArgs extends JDBCStorage("jdbc:h2:mem", 0)
 
 }

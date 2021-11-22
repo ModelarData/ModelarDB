@@ -12,7 +12,7 @@ scalacOptions ++= Seq("-opt:l:inline", "-opt-inline-from:<sources>", "-feature",
 
 val AkkaVersion = "2.6.13"
 val SparkVersion = "3.1.2"
-val ArrowVersion = "4.0.1"
+val ArrowVersion = "6.0.1"
 
 libraryDependencies ++= Seq(
   /* Code Generation */
@@ -25,7 +25,7 @@ libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-sql" % SparkVersion % "provided",
 
   /* Storage Layer */
-  "com.datastax.spark" %% "spark-cassandra-connector" % "3.0.1" % "provided", //Requires Spark
+  "com.datastax.spark" %% "spark-cassandra-connector" % "3.1.0" % "provided", //Requires Spark
   "org.apache.hadoop" % "hadoop-client" % "3.2.0" //Same as Apache Spark
     exclude("com.google.protobuf", "protobuf-java"),
   "org.apache.parquet" % "parquet-hadoop" % "1.10.1", //Same as Apache Spark
@@ -45,6 +45,9 @@ libraryDependencies ++= Seq(
   /* Arrow */
   "org.apache.arrow" % "flight-grpc" % ArrowVersion,
   "org.apache.arrow" % "arrow-jdbc" % ArrowVersion,
+
+  "com.beachape" %% "enumeratum" % "1.7.0",
+  "joda-time" % "joda-time" % "2.10.13",
 
   /* Testing */
   "org.scalatest" %% "scalatest" % "3.2.9" % Test,

@@ -77,7 +77,7 @@ object H2Projector {
           segmentProjectorCache(target) = projector
           projector
         }
-        segments.map(segment => projector.project(segment, currentValues, H2.h2storage.timeSeriesMembersCache))
+        segments.map(segment => projector.project(segment, currentValues, H2.h2storage.timeSeriesMembersCache.toArray))
     }
   }
 
@@ -97,8 +97,8 @@ object H2Projector {
         currentValues
       })
       case 3 => dataPoints.map(dataPoint => {
-        currentValues(2) = ValueFloat.get(H2.h2storage.timeSeriesTransformationCache(dataPoint.tid)
-          .transform(dataPoint.value, H2.h2storage.timeSeriesScalingFactorCache(dataPoint.tid)))
+        currentValues(2) = ValueFloat.get(H2.h2storage.timeSeriesTransformationCache.get(dataPoint.tid)
+          .transform(dataPoint.value, H2.h2storage.timeSeriesScalingFactorCache.get(dataPoint.tid)))
         currentValues
       })
       case 12 => dataPoints.map(dataPoint => {
@@ -108,21 +108,21 @@ object H2Projector {
       })
       case 13 => dataPoints.map(dataPoint => {
         currentValues(0) = ValueInt.get(dataPoint.tid)
-        currentValues(2) = ValueFloat.get(H2.h2storage.timeSeriesTransformationCache(dataPoint.tid)
-          .transform(dataPoint.value, H2.h2storage.timeSeriesScalingFactorCache(dataPoint.tid)))
+        currentValues(2) = ValueFloat.get(H2.h2storage.timeSeriesTransformationCache.get(dataPoint.tid)
+          .transform(dataPoint.value, H2.h2storage.timeSeriesScalingFactorCache.get(dataPoint.tid)))
         currentValues
       })
       case 23 => dataPoints.map(dataPoint => {
         currentValues(1) = ValueTimestamp.fromMillis(dataPoint.timestamp, 0)
-        currentValues(2) = ValueFloat.get(H2.h2storage.timeSeriesTransformationCache(dataPoint.tid)
-          .transform(dataPoint.value, H2.h2storage.timeSeriesScalingFactorCache(dataPoint.tid)))
+        currentValues(2) = ValueFloat.get(H2.h2storage.timeSeriesTransformationCache.get(dataPoint.tid)
+          .transform(dataPoint.value, H2.h2storage.timeSeriesScalingFactorCache.get(dataPoint.tid)))
         currentValues
       })
       case 123 => dataPoints.map(dataPoint => {
         currentValues(0) = ValueInt.get(dataPoint.tid)
         currentValues(1) = ValueTimestamp.fromMillis(dataPoint.timestamp, 0)
-        currentValues(2) = ValueFloat.get(H2.h2storage.timeSeriesTransformationCache(dataPoint.tid)
-          .transform(dataPoint.value, H2.h2storage.timeSeriesScalingFactorCache(dataPoint.tid)))
+        currentValues(2) = ValueFloat.get(H2.h2storage.timeSeriesTransformationCache.get(dataPoint.tid)
+          .transform(dataPoint.value, H2.h2storage.timeSeriesScalingFactorCache.get(dataPoint.tid)))
         currentValues
       })
       //Static projections cannot be used for rows with dimensions
@@ -134,8 +134,8 @@ object H2Projector {
           dataPointProjectorCache(target) = projector
           projector
         }
-        dataPoints.map(dataPoint => projector.project(dataPoint, currentValues, H2.h2storage.timeSeriesMembersCache,
-          H2.h2storage.timeSeriesScalingFactorCache, H2.h2storage.timeSeriesTransformationCache))
+        dataPoints.map(dataPoint => projector.project(dataPoint, currentValues, H2.h2storage.timeSeriesMembersCache.toArray,
+          H2.h2storage.timeSeriesScalingFactorCache.toArray, H2.h2storage.timeSeriesTransformationCache.toArray))
     }
   }
 

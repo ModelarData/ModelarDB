@@ -19,14 +19,16 @@ sealed trait Schemas {
   type DBSchema = Seq[(String, JDBCType)]
 
   val dbSchema: DBSchema
+  val schemaMetadata: Map[String, String]
 
   def arrowSchema: Schema = new Schema(
-    byName(dbSchema).map {case (columnName, jdbcFieldInfo) =>
+    byName(dbSchema).map{ case (columnName, jdbcFieldInfo) =>
       val converter = jdbcToArrowConfig.getJdbcToArrowTypeConverter
       val arrowType = converter(jdbcFieldInfo)
       val fieldType = new FieldType(true, arrowType, /* dictionary encoding */ null, /* metadata */ null)
       new Field(columnName, fieldType, null) // Since children is null this does not work for nested schemas
-    }.asJava
+    }.asJava,
+    schemaMetadata.asJava
   )
 
 
@@ -57,7 +59,10 @@ sealed trait Schemas {
 }
 
 object SegmentSchema extends Schemas {
-  val dbSchema: DBSchema = Seq(
+
+  override val schemaMetadata: Map[String, String] = Map("name" -> "segment")
+
+  override val dbSchema: DBSchema = Seq(
     ("GID", JDBCType.INTEGER),
     ("START_TIME", JDBCType.BIGINT),
     ("END_TIME", JDBCType.BIGINT),
@@ -71,7 +76,10 @@ object SegmentSchema extends Schemas {
 }
 
 object TimeseriesSchema extends Schemas {
-  val dbSchema: DBSchema = Seq(
+
+  override val schemaMetadata: Map[String, String] = Map("name" -> "timeseries")
+
+  override val dbSchema: DBSchema = Seq(
     ("TID", JDBCType.INTEGER),
     ("SCALING_FACTOR", JDBCType.REAL),
     ("SAMPLING_INTERVAL", JDBCType.INTEGER),

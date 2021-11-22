@@ -62,7 +62,7 @@ object ArrowFlightServer {
   def main(args: Array[String]): Unit = {
     val serverConfig = ArrowServerConfig("localhost", 6006)
     val config = ArrowConfig("/test/path", serverConfig, /*client=*/ null)
-    val storage = StorageFactory.getStorage("jdbc:h2:file:./h2db;AUTO_SERVER=TRUE").asInstanceOf[JDBCStorage]
+    val storage = StorageFactory.getStorage("jdbc:h2:file:./h2db;AUTO_SERVER=TRUE", 0).asInstanceOf[JDBCStorage]
     val dimensions = new Dimensions(Array.empty[String])
     storage.open(dimensions)
 

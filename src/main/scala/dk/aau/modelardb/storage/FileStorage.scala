@@ -64,11 +64,11 @@ abstract class FileStorage(rootFolder: String, tidOffset: Int) extends Storage(t
     this.initialize()
   }
 
-  override final def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup], gidOffset: Int): Unit = {
-    val outputFilePath = new Path(this.rootFolder + "time_series" + this.getFileSuffix)
-    val newFilePath = new Path(this.rootFolder + "time_series" + this.getFileSuffix + "_new")
-    this.writeTimeSeriesFile(timeSeriesGroups, newFilePath, gidOffset)
-    this.mergeAndDeleteInputFiles(outputFilePath, outputFilePath, newFilePath)
+  override final def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup], tidOffset: Int): Unit = {
+    val outputFilePath = new Path(rootFolder + "time_series" + getFileSuffix)
+    val newFilePath = new Path(rootFolder + "time_series" + getFileSuffix + "_new")
+    writeTimeSeriesFile(timeSeriesGroups, newFilePath, tidOffset)
+    mergeAndDeleteInputFiles(outputFilePath, outputFilePath, newFilePath)
   }
 
   override final def getTimeSeries: mutable.HashMap[Integer, Array[Object]] = {
@@ -166,7 +166,7 @@ abstract class FileStorage(rootFolder: String, tidOffset: Int) extends Storage(t
   protected def getFileSuffix: String
   protected def getMaxID(columnName: String, timeSeriesFilePath: Path): Int
   protected def mergeFiles(outputFilePath: Path, inputFilesPaths: mutable.ArrayBuffer[Path]): Unit
-  protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path, gidOffset: Int): Unit
+  protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path, tidOffset: Int): Unit
   protected def readTimeSeriesFile(timeSeriesFilePath: Path): mutable.HashMap[Integer, Array[Object]]
   protected def writeModelTypeFile(modelsToInsert: mutable.HashMap[String,Integer], modelTypeFilePath: Path): Unit
   protected def readModelTypeFile(modelTypeFilePath: Path): mutable.HashMap[String, Integer]

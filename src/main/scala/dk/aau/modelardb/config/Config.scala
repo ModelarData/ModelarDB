@@ -28,7 +28,8 @@ case class ArrowConfig(
 
 case class ArrowClientConfig(
   host: String,
-  port: Int
+  port: Int,
+  edgeId: String
 )
 case class ArrowServerConfig(
   host: String,

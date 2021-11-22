@@ -1,12 +1,12 @@
 package dk.aau.modelardb.arrow
 
-import dk.aau.modelardb.core.SegmentGroup
+import dk.aau.modelardb.core.{SegmentGroup, TimeSeriesGroup}
 import dk.aau.modelardb.core.models.Segment
 import dk.aau.modelardb.engines.h2.H2Storage
 import dk.aau.modelardb.storage.{CassandraStorage, JDBCStorage, ORCStorage, Storage}
 import org.apache.arrow.adapter.jdbc.JdbcToArrowUtils
 import org.apache.arrow.memory.RootAllocator
-import org.apache.arrow.vector.{BigIntVector, IntVector, TimeStampVector, UInt4Vector, UInt8Vector, VarBinaryVector, VarCharVector, VectorSchemaRoot}
+import org.apache.arrow.vector.{BigIntVector, Float4Vector, Float8Vector, IntVector, TimeStampVector, UInt4Vector, UInt8Vector, VarBinaryVector, VarCharVector, VectorSchemaRoot}
 import org.apache.spark.sql.{ArrowConverter, DataFrame}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.arrow.ArrowWriter
@@ -14,17 +14,47 @@ import org.apache.spark.sql.functions.{col, from_utc_timestamp}
 
 import java.nio.charset.StandardCharsets
 import java.sql.ResultSet
+import scala.collection.JavaConverters._
 
 object ArrowUtil {
 
+  type TID = Int
+  type GID = Int
+  type SamplingInterval = Int
+  type ScalingFactor = Float
+
   def storeData(storage: Storage, root: VectorSchemaRoot): Int = {
     val rowCount = root.getRowCount
-    val groups = (0 until rowCount).map(index => toSegmentGroup(index, root))
-    storage match {
-      case storage: H2Storage => storage.storeSegmentGroups(groups.toArray, rowCount)
-      case _ => throw new Exception("ArrowUtil got wrong storage type")
+    val schemaName = root
+      .getSchema
+      .getCustomMetadata
+      .asScala
+      .getOrElse("name", throw new Exception("Unable to identify schema name"))
+
+    schemaName match {
+      case "segment" =>
+        val groups = (0 until rowCount).map(index => toSegmentGroup(index, root))
+        storage match {
+          case storage: H2Storage => storage.storeSegmentGroups(groups.toArray, rowCount)
+          case _ => throw new Exception("ArrowUtil got wrong storage type")
+        }
+        rowCount
+      case "timeseries" =>
+        val timeseries = (0 until rowCount).map(index => toTimeseries(index, root))
+        storage.storeTimeSeries()
+      case _ => throw new Exception(s"Unknown schema name received: $schemaName")
     }
-    rowCount
+
+
+  }
+
+  def toTimeseries(index: Int, root: VectorSchemaRoot): (TID, ScalingFactor, SamplingInterval, GID) = {
+    val tid = root.getVector("TID").asInstanceOf[IntVector].get(index)
+    val scalingFactor = root.getVector("SCALING_FACTOR").asInstanceOf[Float4Vector].get(index)
+    val samplingInterval = root.getVector("SAMPLING_INTERVAL").asInstanceOf[IntVector].get(index)
+    val gid = root.getVector("GID").asInstanceOf[IntVector].get(index)
+    val dimensions = root.getVector("dimensions").asInstanceOf[].get(index)
+    (tid, scalingFactor, samplingInterval, gid, dimensions)
   }
 
   def toSegmentGroup(index: Int, root: VectorSchemaRoot): SegmentGroup = {
@@ -48,10 +78,9 @@ object ArrowUtil {
 
   def dfToArrow: DataFrame => VectorSchemaRoot = { df =>
     val allocator = new RootAllocator(Long.MaxValue)
-//    val schema = SegmentSchema.arrowSchema
     val schema = ArrowConverter.toArrow(df)
     val root = VectorSchemaRoot.create(schema, allocator)
-    var index = 0
+    var count = 0
     val writer = ArrowWriter.create(root)
 
     val transformedDf = if (df.columns.contains("end_time")) {
@@ -61,9 +90,10 @@ object ArrowUtil {
     transformedDf.collect().foreach { row =>
       val internalRow = InternalRow.fromSeq(row.toSeq)
       writer.write(internalRow)
-      index += 1
+      count += 1
     }
     writer.finish
+    root.setRowCount(count)
     root
   }
 
@@ -85,7 +115,6 @@ object ArrowUtil {
   }
 
   def mapToVector(index: Int, rs: ResultSet, schemaRoot: VectorSchemaRoot): VectorSchemaRoot = {
-//    sid INT, start_time TIMESTAMP, end_time TIMESTAMP, resolution INT, mid INT, parameters BINARY, gaps BINARY
     schemaRoot.getVector("sid").asInstanceOf[UInt8Vector].setSafe(index, rs.getLong(1))
     schemaRoot.getVector("start_time").asInstanceOf[UInt8Vector].setSafe(index, rs.getTimestamp(2).getTime)
     schemaRoot.getVector("end_time").asInstanceOf[UInt8Vector].setSafe(index, rs.getTimestamp(3).getTime)

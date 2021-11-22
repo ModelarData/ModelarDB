@@ -6,10 +6,14 @@ import io.grpc.ManagedChannelBuilder
 import org.apache.arrow.flight.{Action, AsyncPutListener, FlightDescriptor, FlightGrpcUtils, PutResult}
 import org.apache.arrow.memory.RootAllocator
 import org.apache.arrow.vector.VectorSchemaRoot
+
 import scala.collection.JavaConverters._
 import java.nio.charset.StandardCharsets.UTF_8
+import scala.util.{Failure, Success, Try}
 
 class ArrowFlightClient(config: ArrowConfig) {
+
+  val edgeId = config.client.edgeId
 
   val channel = ManagedChannelBuilder
     .forAddress(config.client.host, config.client.port)
@@ -44,23 +48,35 @@ class ArrowFlightClient(config: ArrowConfig) {
   }
 
   def getTidOffset(tsCount: Int): Int = {
-    val body = tsCount.toString.getBytes(UTF_8)
+    val body = s"$edgeId,$tsCount".getBytes(UTF_8)
     val action = new Action("TID", body)
     val results = client.doAction(action)
-    val result = results.asScala.toList.map{ result =>
-     new String(result.getBody, UTF_8).toInt
-    }.head
-    result
+    val result = if (results.hasNext) {
+      val bytes = results.next().getBody
+      Try(new String(bytes, UTF_8).toInt)
+    } else {
+      throw new Exception("Unable to obtain TID offset from server")
+    }
+    result match {
+      case Failure(exception) => throw exception
+      case Success(value) => value
+    }
   }
 
   def getGidOffset(gidCount: Int): Int = {
-    val body = gidCount.toString.getBytes(UTF_8)
+    val body = s"$edgeId,$gidCount".getBytes(UTF_8)
     val action = new Action("GID", body)
     val results = client.doAction(action)
-    val result = results.asScala.toList.map{ result =>
-      new String(result.getBody, UTF_8).toInt
-    }.head
-    result
+    val result = if (results.hasNext) {
+      val bytes = results.next().getBody
+      Try(new String(bytes, UTF_8).toInt)
+    } else {
+      throw new Exception("Unable to obtain GID offset from server")
+    }
+    result match {
+      case Failure(exception) => throw exception
+      case Success(value) => value
+    }
   }
 
 }

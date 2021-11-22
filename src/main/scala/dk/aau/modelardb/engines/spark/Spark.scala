@@ -164,7 +164,7 @@ object Spark {
     this.parallelism = spark.sparkContext.defaultParallelism
     this.viewProvider = spark.read.format("dk.aau.modelardb.engines.spark.ViewProvider")
     this.sparkStorage = null
-    this.broadcastedTimeSeriesTransformationCache = spark.sparkContext.broadcast(sparkStorage.timeSeriesTransformationCache.array)
+    this.broadcastedTimeSeriesTransformationCache = spark.sparkContext.broadcast(sparkStorage.timeSeriesTransformationCache.toArray)
     this.sparkStorage = sparkStorage
     this.cache = new SparkCache(spark, config.batchSize, newGids)
   }

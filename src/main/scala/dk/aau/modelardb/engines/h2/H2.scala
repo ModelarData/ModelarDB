@@ -89,19 +89,30 @@ class H2(config: ModelarConfig, h2storage: H2Storage, arrowFlightClient: ArrowFl
     val dimensions = config.dimensions
     val correlations = config.correlations
     h2storage.open(dimensions)
+    val maxTid = h2storage.getMaxTid match {
+      case 0 => h2storage.tidCounter.get() // when maxTid is 0 then use offset
+      case _@n => n // when maxTid > 0 then offset already included
+    }
+    val minGid = h2storage.getMinGid
+    val maxGid = h2storage.getMaxGid
     if (config.ingestors == 0) {
-      if ( ! config.derivedTimeSeries.isEmpty) { //Initializes derived time series
-        Partitioner.initializeTimeSeries(config, h2storage.getMaxTid)
+      if (!config.derivedTimeSeries.isEmpty) { //Initializes derived time series
+        Partitioner.initializeTimeSeries(config, maxTid)
       }
-      h2storage.storeMetadataAndInitializeCaches(config, Array(), 0)
+      h2storage.storeMetadataAndInitializeCaches(config, Array(), minGid - 1) // we -1 because offset has to account for GID being 1-based not 0-based
       return
     }
 
     //Initialize Ingestion
-    val timeSeries = Partitioner.initializeTimeSeries(config, h2storage.getMaxTid)
-    val timeSeriesGroups = Partitioner.groupTimeSeries(correlations, dimensions, timeSeries, h2storage.getMaxGid)
+    val timeSeries = Partitioner.initializeTimeSeries(config, maxTid)
+    val timeSeriesGroups = Partitioner.groupTimeSeries(correlations, dimensions, timeSeries, maxGid)
     val gidCount = timeSeriesGroups.length
     val gidOffset = arrowFlightClient.getGidOffset(gidCount)
+    if (maxGid == 0) { // We know the DB is empty so add offset
+      timeSeriesGroups.foreach { group =>
+      group.setGid(group.gid + gidOffset)
+    }
+  }
     h2storage.storeMetadataAndInitializeCaches(config, timeSeriesGroups, gidOffset)
 
     val mtidCache = h2storage.mtidCache.asJava

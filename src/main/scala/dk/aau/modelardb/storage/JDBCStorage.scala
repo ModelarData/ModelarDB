@@ -14,6 +14,7 @@
  */
 package dk.aau.modelardb.storage
 
+import dk.aau.modelardb.OffsetType
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.engines.h2.{H2, H2Storage}
@@ -33,6 +34,7 @@ class JDBCStorage(connectionStringAndTypes: String, tidOffset: Int) extends Stor
   private var getMaxTidStmt: PreparedStatement = _
   private var getMaxGidStmt: PreparedStatement = _
   private val (connectionString, textType, blobType) = splitConnectionStringAndTypes(connectionStringAndTypes)
+  private var tableExist: Boolean = _
 
   private def checkTableExist(tableName: String): Boolean = {
     val metadata = this.connection.getMetaData
@@ -41,43 +43,68 @@ class JDBCStorage(connectionStringAndTypes: String, tidOffset: Int) extends Stor
     tables.next()
   }
 
+  override def storeOffset(edgeId: String, offset: Int, offsetType: OffsetType): Unit = ???
+  override protected def readOffset(edgeId: String, offsetType: OffsetType): Option[Int] = ???
+  override def initializeOffsetCache(): Unit = {
+    ???
+//    val statement = connection.createStatement()
+//    val rs = statement.executeQuery("SELECT edge_id, tid_offset, gid_offset FROM offsets")
+//    while (rs.next()) {
+//      val edgeId = rs.getString("edge_id")
+//      val tidOffset = rs.getInt("tid_offset")
+//      val gidOffset = rs.getInt("gid_offset")
+//      offsetCache.put(edgeId, Map(("tid", tidOffset)))
+//      offsetCache.put(edgeId, Map(("gid", gidOffset)))
+//    }
+//    val maxTid = getMaxTid
+//    tidCounter.set(maxTid)
+//    val maxGid = getMaxGid
+//    gidCounter.set(maxGid)
+//    statement.close()
+  }
+
   /** Public Methods **/
   //Storage
   override def open(dimensions: Dimensions): Unit = {
+    tidCounter.set(tidOffset)
     //Initializes the RDBMS connection
-    this.connection = DriverManager.getConnection(connectionString)
-    this.connection.setAutoCommit(false)
+    connection = DriverManager.getConnection(connectionString)
+    connection.setAutoCommit(false)
 
     //Checks if the tables and indexes exist and create them if necessary
-    val tableExist = checkTableExist("SEGMENT")
+    tableExist = checkTableExist("SEGMENT")
 
     if ( ! tableExist) {
       val stmt = this.connection.createStatement()
-      stmt.executeUpdate(s"CREATE TABLE model_type(mtid INTEGER, name ${this.textType})")
-      stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mtid INTEGER, model ${this.blobType}, gaps ${this.blobType})")
-      stmt.executeUpdate(s"CREATE TABLE time_series(tid INTEGER, scaling_factor REAL, sampling_interval INTEGER, gid INTEGER${getDimensionsSQL(dimensions, this.textType)})")
+      stmt.executeUpdate(s"CREATE TABLE model_type(mtid INTEGER, name ${textType})")
+      stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mtid INTEGER, model ${blobType}, gaps ${blobType})")
+      stmt.executeUpdate(s"CREATE TABLE time_series(tid INTEGER, scaling_factor REAL, sampling_interval INTEGER, gid INTEGER${getDimensionsSQL(dimensions, textType)})")
+//      stmt.executeUpdate(s"CREATE TABLE offsets(edge_id TEXT, tid_offset INT, gid_offset INT, PRIMARY KEY (edge_id))")
 
       stmt.executeUpdate("CREATE INDEX segment_gid ON segment(gid)")
       stmt.executeUpdate("CREATE INDEX segment_start_time ON segment(start_time)")
       stmt.executeUpdate("CREATE INDEX segment_end_time ON segment(end_time)")
     }
 
-    val minTid = {
-      connection.createStatement()
-        .executeQuery("SELECT MIN(tid) FROM time_series")
-        .getInt(1)
-    }
-
-    val minGid = {
-      connection.createStatement()
-        .executeQuery("SELECT MIN(gid) FROM time_series")
-        .getInt(1)
-    }
-
-    if (tableExist) {
-      if (minTid != tidOffsetAtomic.get()) throw new Exception("Offset does not match min TID in database")
-      if (minGid != gidOffsetAtomic.get()) throw new Exception("Offset does not match min GID in database")
-    }
+//    FIXME: Make a check that ensures the tid from the server corresponds to the one in the db.
+//    if (tableExist) {
+//      val minTid = {
+//        val rs = connection.createStatement()
+//          .executeQuery("SELECT MIN(tid) FROM time_series")
+//        rs.next()
+//        rs.getInt(1)
+//      }
+//
+//      val minGid = {
+//        val rs = connection.createStatement()
+//          .executeQuery("SELECT MIN(gid) FROM time_series")
+//        rs.next()
+//        rs.getInt(1)
+//      }
+//      FIXME: tidCounter is not initialized at this point. So it is 0
+//      if (minTid != tidCounter.get()) throw new Exception("Offset does not match min TID in database")
+//      if (minGid != gidCounter.get()) throw new Exception("Offset does not match min GID in database")
+//    }
 
     //Prepares the necessary statements
     this.insertStmt = this.connection.prepareStatement("INSERT INTO segment VALUES(?, ?, ?, ?, ?, ?)")
@@ -85,7 +112,7 @@ class JDBCStorage(connectionStringAndTypes: String, tidOffset: Int) extends Stor
     this.getMaxGidStmt = this.connection.prepareStatement("SELECT MAX(gid) FROM time_series")
   }
 
-  def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup], gidOffset: Int): Unit = {
+  def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup], tidOffset: Int): Unit = {
     val columnsInNormalizedDimensions = dimensions.getColumns.length
     val columns = "?, " * (columnsInNormalizedDimensions + 3) + "?"
     val insertSourceStmt = connection.prepareStatement("INSERT INTO time_series VALUES(" + columns + ")")
@@ -96,7 +123,7 @@ class JDBCStorage(connectionStringAndTypes: String, tidOffset: Int) extends Stor
         insertSourceStmt.setInt(1, ts.tid)
         insertSourceStmt.setFloat(2, ts.scalingFactor)
         insertSourceStmt.setInt(3, ts.samplingInterval)
-        insertSourceStmt.setInt(4, tsg.gid + gidOffset)
+        insertSourceStmt.setInt(4, tsg.gid)
 
         var column = 5
         for (dim <- dimensions.get(ts.source)) {
@@ -166,11 +193,15 @@ class JDBCStorage(connectionStringAndTypes: String, tidOffset: Int) extends Stor
   }
 
   override def getMaxTid: Int = {
-    getFirstInteger(this.getMaxTidStmt) + tidOffset
+//    val offset = if (tableExist) {0} else {tidCounter.get()}
+//    getFirstInteger(getMaxTidStmt) + offset
+    getFirstInteger(getMaxTidStmt)
   }
 
   override def getMaxGid: Int = {
-    getFirstInteger(this.getMaxGidStmt) + tidOffset
+//    val offset = if (tableExist) {0} else {gidCounter.get()}
+//    getFirstInteger(getMaxGidStmt) + offset
+    getFirstInteger(getMaxGidStmt)
   }
 
   override def close(): Unit = {
@@ -292,5 +323,19 @@ class JDBCStorage(connectionStringAndTypes: String, tidOffset: Int) extends Stor
         close()
         throw new java.lang.RuntimeException(se)
     }
+  }
+
+  override def getMinTid: Int = {
+    val rs = connection.createStatement()
+      .executeQuery("SELECT MIN(tid) FROM time_series")
+    rs.next()
+    rs.getInt(1)
+  }
+
+  override def getMinGid: Int = {
+    val rs = connection.createStatement()
+      .executeQuery("SELECT MIN(gid) FROM time_series")
+    rs.next()
+    rs.getInt(1)
   }
 }

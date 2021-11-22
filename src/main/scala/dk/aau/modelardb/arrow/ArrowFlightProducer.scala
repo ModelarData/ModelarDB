@@ -1,6 +1,7 @@
 package dk.aau.modelardb.arrow
 
 import com.typesafe.scalalogging.Logger
+import dk.aau.modelardb.OffsetType
 import dk.aau.modelardb.engines.QueryEngine
 import dk.aau.modelardb.storage.Storage
 import org.apache.arrow.flight.FlightProducer._
@@ -54,41 +55,48 @@ class ArrowFlightProducer(queryEngine: QueryEngine, storage: Storage, mode: Stri
   }
 
   override def acceptPut(context: CallContext, flightStream: FlightStream, ackStream: StreamListener[PutResult]): Runnable = {
-        mode match {
-          case "edge" =>
-            () => { // doPut not accepted on edge nodes so just close the stream
-              flightStream.close()
-            }
-          case "server" =>
-            () => {
-              // TODO: How to check schema is for SegmentGroup?
-              // TODO: check that flightStream.getDescriptor.getPath matches a
-              val flightRoot = flightStream.getRoot
-              while (flightStream.next()) {
-                ArrowUtil.storeData(storage, flightRoot)
-              }
-              flightRoot.close()
-              flightStream.close()
-            }
+    mode match {
+      case "edge" =>
+        () => { // doPut not accepted on edge nodes so just close the stream
+          flightStream.close()
         }
+      case "server" =>
+        () => {
+          // TODO: How to check schema is for SegmentGroup?
+          // TODO: check that flightStream.getDescriptor.getPath matches a
+          val flightRoot = flightStream.getRoot
+          while (flightStream.next()) {
+            ArrowUtil.storeData(storage, flightRoot)
+          }
+          flightRoot.close()
+          flightStream.close()
+        }
+    }
   }
 
   override def doAction(context: CallContext, action: Action, listener: StreamListener[Result]): Unit = {
+    if (mode.equalsIgnoreCase("edge")) {
+      listener.onError(new Exception("doAction not supported on edge nodes"))
+      return
+    }
+
     val actionBody = new String(action.getBody, UTF_8)
-    val count = Try[Int](actionBody.toInt) match {
+    val parameters = actionBody.split(",") // parameters = [edgeId, timeseriesCount]
+    val edgeId = parameters(0)
+    val count = Try[Int](parameters(1).toInt) match {
       case Failure(exception) =>
         listener.onError(exception)
         return
       case Success(value) => value
     }
     val result: Int = action.getType.toUpperCase match {
-      case "TID" => storage.getTidOffset(count)
-      case "GID" => storage.getGidOffset(count)
+      case "TID" => storage.getOffset(OffsetType.TID, edgeId, count)
+      case "GID" => storage.getOffset(OffsetType.GID, edgeId, count)
       case _ @ unknown =>
         listener.onError(new Exception(s"Unknown Action Type: ${unknown}"))
         return
     }
-    val resultBody = ByteBuffer.allocate(4).putInt(result).array()
+    val resultBody = result.toString.getBytes(UTF_8)
     listener.onNext(new Result(resultBody))
     listener.onCompleted()
   }

@@ -16,6 +16,7 @@ package dk.aau.modelardb.engines.spark
 
 import dk.aau.modelardb.core.models.Segment
 import dk.aau.modelardb.core.utility.{CubeFunction, Static}
+import dk.aau.modelardb.storage.ArrayCache
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.expressions.Aggregator
 import org.apache.spark.sql.{Encoders, SparkSession, functions}
@@ -37,7 +38,7 @@ class CountS extends Aggregator[UDAFCountInput, Long, Long] {
   override def zero: Long = 0L
 
   override def reduce(total: Long, input: UDAFCountInput): Long = {
-    total + ((input.end_time.getTime - input.start_time.getTime) / this.timeSeriesSamplingIntervalCache(input.tid)) + 1
+    total + ((input.end_time.getTime - input.start_time.getTime) / timeSeriesSamplingIntervalCache.get(input.tid)) + 1
   }
 
   override def merge(total1: Long, total2: Long): Long = {
@@ -51,7 +52,7 @@ class CountS extends Aggregator[UDAFCountInput, Long, Long] {
   override def outputEncoder: org.apache.spark.sql.Encoder[Long] = Encoders.scalaLong
 
   /** Instance Variables **/
-  private val timeSeriesSamplingIntervalCache: Array[Int] = Spark.getSparkStorage.timeSeriesSamplingIntervalCache
+  private val timeSeriesSamplingIntervalCache: ArrayCache[Int] = Spark.getSparkStorage.timeSeriesSamplingIntervalCache
 }
 
 //Min
@@ -61,7 +62,7 @@ class MinS extends Aggregator[UDAFInput, Float, Option[Float]] {
   override def zero: Float = Float.PositiveInfinity
 
   override def reduce(currentMin: Float, input: UDAFInput): Float = {
-    Math.min(currentMin, this.inputToSegment(input).min() / this.timeSeriesScalingFactorCache(input.tid))
+    Math.min(currentMin, inputToSegment(input).min() / timeSeriesScalingFactorCache.get(input.tid))
   }
 
   override def merge(total1: Float, total2: Float): Float = {
@@ -82,7 +83,7 @@ class MinS extends Aggregator[UDAFInput, Float, Option[Float]] {
 
   /** Instance Variables **/
   private val inputToSegment: UDAFInput => Segment = SparkUDAF.getInputToSegment
-  private val timeSeriesScalingFactorCache: Array[Float] = Spark.getSparkStorage.timeSeriesScalingFactorCache
+  private val timeSeriesScalingFactorCache: ArrayCache[Float] = Spark.getSparkStorage.timeSeriesScalingFactorCache
 }
 
 //Max
@@ -92,7 +93,7 @@ class MaxS extends Aggregator[UDAFInput, Float, Option[Float]] {
   override def zero: Float = Float.NegativeInfinity
 
   override def reduce(currentMax: Float, input: UDAFInput): Float = {
-    Math.max(currentMax, this.inputToSegment(input).max() / this.scalingCache(input.tid))
+    Math.max(currentMax, inputToSegment(input).max() / scalingCache.get(input.tid))
   }
 
   override def merge(total1: Float, total2: Float): Float = {
@@ -113,7 +114,7 @@ class MaxS extends Aggregator[UDAFInput, Float, Option[Float]] {
 
   /** Instance Variables **/
   private val inputToSegment: UDAFInput => Segment = SparkUDAF.getInputToSegment
-  private val scalingCache: Array[Float] = Spark.getSparkStorage.timeSeriesScalingFactorCache
+  private val scalingCache: ArrayCache[Float] = Spark.getSparkStorage.timeSeriesScalingFactorCache
 }
 
 //Sum
@@ -123,7 +124,7 @@ class SumS extends Aggregator[UDAFInput, Option[Double], Option[Double]] {
   override def zero: Option[Double] = None
 
   override def reduce(currentSum: Option[Double], input: UDAFInput): Option[Double] = {
-    Option.apply(currentSum.getOrElse(0.0) + (this.inputToSegment(input).sum() / this.timeSeriesScalingFactorCache(input.tid)))
+    Option.apply(currentSum.getOrElse(0.0) + (inputToSegment(input).sum() / timeSeriesScalingFactorCache.get(input.tid)))
   }
 
   override def merge(total1: Option[Double], total2: Option[Double]): Option[Double] = {
@@ -148,7 +149,7 @@ class SumS extends Aggregator[UDAFInput, Option[Double], Option[Double]] {
 
   /** Instance Variables **/
   private val inputToSegment: UDAFInput => Segment = SparkUDAF.getInputToSegment
-  private val timeSeriesScalingFactorCache: Array[Float] = Spark.getSparkStorage.timeSeriesScalingFactorCache
+  private val timeSeriesScalingFactorCache: ArrayCache[Float] = Spark.getSparkStorage.timeSeriesScalingFactorCache
 }
 
 //Avg
@@ -158,8 +159,8 @@ class AvgS extends Aggregator[UDAFInput, (Double, Long), Option[Double]] {
   override def zero: (Double, Long) = (0.0, 0L)
 
   override def reduce(currentAvg: (Double, Long), input: UDAFInput): (Double, Long) = {
-    val segment = this.inputToSegment(input)
-    (currentAvg._1 + (segment.sum() / this.timeSeriesScalingFactorCache(input.tid)), currentAvg._2 + segment.length())
+    val segment = inputToSegment(input)
+    (currentAvg._1 + (segment.sum() / timeSeriesScalingFactorCache.get(input.tid)), currentAvg._2 + segment.length())
   }
 
   override def merge(total1: (Double, Long), total2: (Double, Long)): (Double, Long) = {
@@ -180,7 +181,7 @@ class AvgS extends Aggregator[UDAFInput, (Double, Long), Option[Double]] {
 
   /** Instance Variables **/
   private val inputToSegment: UDAFInput => Segment = SparkUDAF.getInputToSegment
-  private val timeSeriesScalingFactorCache: Array[Float] = Spark.getSparkStorage.timeSeriesScalingFactorCache
+  private val timeSeriesScalingFactorCache: ArrayCache[Float] = Spark.getSparkStorage.timeSeriesScalingFactorCache
 }
 
 //UDAFs for Time-based Aggregates
@@ -188,10 +189,10 @@ class AvgS extends Aggregator[UDAFInput, (Double, Long), Option[Double]] {
 abstract class TimeUDAF[OUT](val size: Int) extends Aggregator[UDAFInput, Array[Double], OUT] {
 
   /** Public Methods **/
-  override def zero: Array[Double] = Array.fill(size){this.default}
+  override def zero: Array[Double] = Array.fill(size){default}
 
   override def reduce(currentCount: Array[Double], input: UDAFInput): Array[Double] = {
-    this.inputToSegment(input).cube(calendar, this.level, this.aggregate, currentCount)
+    inputToSegment(input).cube(calendar, level, aggregate, currentCount)
   }
 
   override def merge(total1: Array[Double], total2: Array[Double]): Array[Double] = {
@@ -211,7 +212,7 @@ abstract class TimeUDAF[OUT](val size: Int) extends Aggregator[UDAFInput, Array[
   protected val level: Int
   protected val default: Double = 0.0
   protected val aggregate: CubeFunction
-  protected val timeSeriesScalingFactorCache: Array[Float] = Spark.getSparkStorage.timeSeriesScalingFactorCache
+  protected val timeSeriesScalingFactorCache: ArrayCache[Float] = Spark.getSparkStorage.timeSeriesScalingFactorCache
 }
 
 class TimeCount(override val level: Int, override val size: Int) extends TimeUDAF[Map[Int, Long]](size) {
@@ -255,7 +256,7 @@ class TimeMin(override val level: Int, override val size: Int) extends TimeUDAF[
 
   /** Instance Variables **/
   override protected val aggregate: CubeFunction = (segment: Segment, tid: Int, field: Int, total: Array[Double]) => {
-    total(field) = Math.min(total(field).toFloat, segment.min / this.timeSeriesScalingFactorCache(tid))
+    total(field) = Math.min(total(field).toFloat, segment.min / timeSeriesScalingFactorCache.get(tid))
   }
   override protected val default: Double = Double.PositiveInfinity
 }
@@ -282,7 +283,7 @@ class TimeMax(override val level: Int, override val size: Int) extends TimeUDAF[
 
   /** Instance Variables **/
   override protected val aggregate: CubeFunction = (segment: Segment, tid: Int, field: Int, total: Array[Double]) => {
-    total(field) = Math.max(total(field).toFloat, segment.max / this.timeSeriesScalingFactorCache(tid))
+    total(field) = Math.max(total(field).toFloat, segment.max / timeSeriesScalingFactorCache.get(tid))
   }
   override protected val default: Double = Double.NegativeInfinity
 }
@@ -308,7 +309,7 @@ class TimeSum(override val level: Int, override val size: Int) extends TimeUDAF[
   override protected val aggregate: CubeFunction = (segment: Segment, tid: Int, field: Int, total: Array[Double]) => {
     //HACK: as field is continuous all indicators that values were added are stored after the sum
     val hasSum = (size / 2) + field - 1
-    total(field) = total(field) + (segment.sum() / this.timeSeriesScalingFactorCache(tid))
+    total(field) = total(field) + (segment.sum() / timeSeriesScalingFactorCache.get(tid))
     total(hasSum) = 1.0
   }
 }
@@ -334,7 +335,7 @@ class TimeAvg(override val level: Int, override val size: Int) extends TimeUDAF[
   override protected val aggregate: CubeFunction = (segment: Segment, tid: Int, field: Int, total: Array[Double]) => {
     //HACK: as field is continuous all of the counts are stored after the sum
     val count = (size / 2) + field - 1
-    total(field) = total(field) + (segment.sum / this.timeSeriesScalingFactorCache(tid))
+    total(field) = total(field) + (segment.sum / timeSeriesScalingFactorCache.get(tid))
     total(count) = total(count) + segment.length
   }
 }
@@ -401,7 +402,7 @@ object SparkUDAF {
   //User-defined Functions
   def start(tid: Int, st: Timestamp, endTime: Timestamp, mtid: Int,
             model: Array[Byte], gaps: Array[Byte], newStartTime: Timestamp): Array[UDAFInput] = {
-    val samplingInterval = Spark.getSparkStorage.timeSeriesSamplingIntervalCache(tid)
+    val samplingInterval = Spark.getSparkStorage.timeSeriesSamplingIntervalCache.get(tid)
     val offsets = Static.bytesToInts(gaps)
     val fromTime = Segment.start(newStartTime.getTime, st.getTime, endTime.getTime, samplingInterval, offsets)
     val updatedGaps = Static.intToBytes(offsets)
@@ -410,14 +411,14 @@ object SparkUDAF {
 
   def end(tid: Int, startTime: Timestamp, endTime: Timestamp, mtid: Int,
           model: Array[Byte], gaps: Array[Byte], newEndTime: Timestamp):  Array[UDAFInput]  = {
-    val samplingInterval = Spark.getSparkStorage.timeSeriesSamplingIntervalCache(tid)
+    val samplingInterval = Spark.getSparkStorage.timeSeriesSamplingIntervalCache.get(tid)
     val toTime = Segment.end(newEndTime.getTime, startTime.getTime, endTime.getTime, samplingInterval)
     Array(UDAFInput(tid, startTime, new Timestamp(toTime), mtid, model, gaps))
   }
 
   def interval(tid: Int, startTime: Timestamp, endTime: Timestamp, mtid: Int,
                model: Array[Byte], gaps: Array[Byte], newStartTime: Timestamp, newEndTime: Timestamp): Array[UDAFInput] = {
-    val samplingInterval = Spark.getSparkStorage.timeSeriesSamplingIntervalCache(tid)
+    val samplingInterval = Spark.getSparkStorage.timeSeriesSamplingIntervalCache.get(tid)
     val offsets = Static.bytesToInts(gaps)
     val fromTime = Segment.start(newStartTime.getTime, startTime.getTime, endTime.getTime, samplingInterval, offsets)
     val toTime = Segment.end(newEndTime.getTime, startTime.getTime, endTime.getTime, samplingInterval)
@@ -429,7 +430,7 @@ object SparkUDAF {
     val mtc = Spark.getSparkStorage.modelTypeCache
     val tssic = Spark.getSparkStorage.timeSeriesSamplingIntervalCache
     input => {
-      mtc(input.mtid).get(input.tid, input.start_time.getTime, input.end_time.getTime, tssic(input.tid), input.model, input.gaps)
+      mtc(input.mtid).get(input.tid, input.start_time.getTime, input.end_time.getTime, tssic.get(input.tid), input.model, input.gaps)
     }
   }
 }
