@@ -90,28 +90,19 @@ class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage
     initializeOffsetCache()
   }
 
-  override def storeTimeseries(tid: Int, scalingFactor: Float, samplingInterval: Int, gid: Int): Unit = {
+  override def storeTimeseries(timeseries: Seq[(Int, Float, Int, Int)]): Unit = {
     val session = this.connector.openSession()
-    val columnsInNormalizedDimensions = dimensions.getColumns.length
-    val columns = if (columnsInNormalizedDimensions  == 0) "" else dimensions.getColumns.mkString(", ", ", ", "")
-    val placeholders = "?, " * (columnsInNormalizedDimensions + 3) + "?"
-    val insertString = s"INSERT INTO ${this.keyspace}.time_series(tid, scaling_factor, sampling_interval, gid $columns) VALUES($placeholders)"
-    for (tsg <- timeSeriesGroups) {
-      for (ts <- tsg.getTimeSeries) {
-        var stmt = SimpleStatement.builder(insertString)
-          .addPositionalValues(
-            (tid + tidOffset).asInstanceOf[Object],
-            scalingFactor.asInstanceOf[Object],
-            samplingInterval.asInstanceOf[Object],
-            gid.asInstanceOf[Object]
-          )
-
-        val members = dimensions.get(ts.source)
-        if (members.nonEmpty) {
-          stmt = stmt.addPositionalValues(members: _*) //Dimensions
-        }
-        session.execute(stmt.build())
-      }
+    // TODO: Add support for dimensions
+    val insertString = s"INSERT INTO ${keyspace}.time_series(tid, scaling_factor, sampling_interval, gid) VALUES(?, ?, ?, ?)"
+    timeseries.foreach { case (tid, scalingFactor, samplingInterval, gid) =>
+      val stmt = SimpleStatement.builder(insertString)
+        .addPositionalValues(
+          (tid + tidOffset).asInstanceOf[Object],
+          scalingFactor.asInstanceOf[Object],
+          samplingInterval.asInstanceOf[Object],
+          gid.asInstanceOf[Object]
+        )
+      session.execute(stmt.build())
     }
     session.close()
   }

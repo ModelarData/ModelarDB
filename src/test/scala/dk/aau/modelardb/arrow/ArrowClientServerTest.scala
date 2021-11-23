@@ -39,7 +39,7 @@ class ArrowClientServerTest extends AnyFlatSpec with should.Matchers with MockFa
     val arrowServer = ArrowFlightServer(testConfig, queryEngine, storage, "server")
     arrowServer.start()
     val arrowClient = ArrowFlightClient(testConfig)
-    arrowClient.doPut(testData)
+    arrowClient.putSegmentGroups(testData)
     arrowServer.stop()
     arrowClient.client.close()
 
@@ -61,10 +61,10 @@ class ArrowClientServerTest extends AnyFlatSpec with should.Matchers with MockFa
 
     val storage = mock[H2StorageNoArgs]
     val queryEngine = mock[QueryEngine]
-    val testDataRoot = VectorSchemaRoot.create(SegmentSchema.arrowSchema, new RootAllocator(Long.MaxValue))
+    val testDataRoot = VectorSchemaRoot.create(SegmentSchema.toArrow, new RootAllocator(Long.MaxValue))
 
     testData.zipWithIndex.foreach { case (sg, i) =>
-      ArrowUtil.addToRoot(i, sg, testDataRoot)
+      ArrowUtil.addSegmentToRoot(i, sg, testDataRoot)
     }
     testDataRoot.setRowCount(testData.length)
 
