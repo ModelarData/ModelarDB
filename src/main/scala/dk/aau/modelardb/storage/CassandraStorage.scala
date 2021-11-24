@@ -220,6 +220,7 @@ class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage
       //The maximum batch size supported by Cassandra is 65535
       if (batch.size() == 65535) {
         storeSegmentGroups(session, batch)
+        groupMetadataCache.set()
       }
     }
     storeSegmentGroups(session, batch)
