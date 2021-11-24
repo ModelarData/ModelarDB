@@ -12,7 +12,7 @@ scalacOptions ++= Seq("-opt:l:inline", "-opt-inline-from:<sources>", "-feature",
 
 val AkkaVersion = "2.6.13"
 val SparkVersion = "3.1.2"
-val ArrowVersion = "6.0.1"
+val ArrowVersion = "5.0.0"
 
 libraryDependencies ++= Seq(
   /* Code Generation */
