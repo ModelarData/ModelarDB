@@ -62,8 +62,6 @@ class ArrowFlightProducer(queryEngine: QueryEngine, storage: Storage, mode: Stri
         }
       case "server" =>
         () => {
-          // TODO: How to check schema is for SegmentGroup?
-          // TODO: check that flightStream.getDescriptor.getPath matches a
           val flightRoot = flightStream.getRoot
           while (flightStream.next()) {
             ArrowUtil.storeData(storage, flightRoot)

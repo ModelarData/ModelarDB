@@ -112,6 +112,19 @@ class JDBCStorage(connectionStringAndTypes: String, tidOffset: Int) extends Stor
     this.getMaxGidStmt = this.connection.prepareStatement("SELECT MAX(gid) FROM time_series")
   }
 
+  override def storeTimeseries(timeseries: Seq[(Int, Float, Int, Int)]): Unit = {
+    val insertSourceStmt = connection.prepareStatement("INSERT INTO time_series VALUES(?, ?, ?, ?)")
+    timeseries.foreach { case (tid, scalingFactor, samplingInterval, gid) =>
+      insertSourceStmt.clearParameters()
+      insertSourceStmt.setInt(1, tid)
+      insertSourceStmt.setFloat(2, scalingFactor)
+      insertSourceStmt.setInt(3, samplingInterval)
+      insertSourceStmt.setInt(4, gid)
+
+      insertSourceStmt.executeUpdate()
+    }
+  }
+
   def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup], tidOffset: Int): Unit = {
     val columnsInNormalizedDimensions = dimensions.getColumns.length
     val columns = "?, " * (columnsInNormalizedDimensions + 3) + "?"

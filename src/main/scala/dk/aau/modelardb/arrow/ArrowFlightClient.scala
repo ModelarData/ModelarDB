@@ -1,7 +1,7 @@
 package dk.aau.modelardb.arrow
 
 import dk.aau.modelardb.config.ArrowConfig
-import dk.aau.modelardb.core.SegmentGroup
+import dk.aau.modelardb.core.{SegmentGroup, TimeSeriesGroup}
 import io.grpc.ManagedChannelBuilder
 import org.apache.arrow.flight.{Action, AsyncPutListener, FlightDescriptor, FlightGrpcUtils, PutResult}
 import org.apache.arrow.memory.RootAllocator
@@ -22,7 +22,8 @@ class ArrowFlightClient(config: ArrowConfig) {
 
   val allocator = new RootAllocator()
   val client = FlightGrpcUtils.createFlightClient(allocator, channel)
-  val root = VectorSchemaRoot.create(SegmentSchema.arrowSchema, allocator)
+  val segmentRoot = VectorSchemaRoot.create(SegmentSchema.toArrow, allocator)
+  val timeseriesRoot = VectorSchemaRoot.create(TimeseriesSchema.toArrow, allocator)
   val flightDescriptor = FlightDescriptor.path(config.flightPath)
 
   val metadataListener = new AsyncPutListener {
@@ -32,18 +33,35 @@ class ArrowFlightClient(config: ArrowConfig) {
     }
   }
 
-
-  def doPut(segmentGroups: Seq[SegmentGroup]): Seq[SegmentGroup] = {
-    val streamListener = client.startPut(flightDescriptor, root, metadataListener)
-    segmentGroups.zipWithIndex.foreach { case (sg, index) =>
-      ArrowUtil.addToRoot(index, sg, root)
+  def putTimeseries(timeseriesGroup: Seq[TimeSeriesGroup]): Seq[TimeSeriesGroup] = {
+    val streamListener = client.startPut(flightDescriptor, timeseriesRoot, metadataListener)
+    var count = 0;
+    timeseriesGroup.zipWithIndex.foreach{ case (tsg, index) =>
+      tsg.getTimeSeries.foreach { ts =>
+        ArrowUtil.addTsToRoot(index, tsg.gid, ts, timeseriesRoot)
+        count += 1
+      }
     }
-    root.setRowCount(segmentGroups.size)
+    timeseriesRoot.setRowCount(count)
     streamListener.putNext()
     while (!streamListener.isReady) {}
     streamListener.completed()
     streamListener.getResult()
-    root.clear()
+    timeseriesRoot.clear()
+    timeseriesGroup
+  }
+
+  def putSegmentGroups(segmentGroups: Seq[SegmentGroup]): Seq[SegmentGroup] = {
+    val streamListener = client.startPut(flightDescriptor, segmentRoot, metadataListener)
+    segmentGroups.zipWithIndex.foreach { case (sg, index) =>
+      ArrowUtil.addSegmentToRoot(index, sg, segmentRoot)
+    }
+    segmentRoot.setRowCount(segmentGroups.size)
+    streamListener.putNext()
+    while (!streamListener.isReady) {}
+    streamListener.completed()
+    streamListener.getResult()
+    segmentRoot.clear()
     segmentGroups
   }
 
@@ -97,7 +115,7 @@ object ArrowFlightClient {
 
     val desc = FlightDescriptor.path("sensor/1")
     val root = ArrowUtil.insertTestSGData(10,
-      VectorSchemaRoot.create(SegmentSchema.arrowSchema, allocator)
+      VectorSchemaRoot.create(SegmentSchema.toArrow, allocator)
     )
 
     val metadataListener = new AsyncPutListener {

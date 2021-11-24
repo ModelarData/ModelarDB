@@ -21,7 +21,7 @@ sealed trait Schemas {
   val dbSchema: DBSchema
   val schemaMetadata: Map[String, String]
 
-  def arrowSchema: Schema = new Schema(
+  def toArrow: Schema = new Schema(
     byName(dbSchema).map{ case (columnName, jdbcFieldInfo) =>
       val converter = jdbcToArrowConfig.getJdbcToArrowTypeConverter
       val arrowType = converter(jdbcFieldInfo)

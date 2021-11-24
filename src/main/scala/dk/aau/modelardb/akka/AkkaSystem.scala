@@ -65,7 +65,7 @@ class AkkaSystem(config: Config, storage: Storage, arrowFlightClient: ArrowFligh
     .withAttributes(ActorAttributes.supervisionStrategy(decider))
     .run()
 
-  private val arrowSink = Sink.foreach[Seq[SegmentGroup]](arrowFlightClient.doPut)
+  private val arrowSink = Sink.foreach[Seq[SegmentGroup]](arrowFlightClient.putSegmentGroups)
   private val jdbcSink = Sink.foreach[Seq[SegmentGroup]](sgs => h2Storage.storeSegmentGroups(sgs.toArray, batchSize))
   private val mqttSink = mqttOpt.map { case (mqttSession, _, mqttTopic) =>
     Sink.foreach[SegmentGroup] { sg =>

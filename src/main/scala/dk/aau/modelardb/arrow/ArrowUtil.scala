@@ -2,7 +2,9 @@ package dk.aau.modelardb.arrow
 
 import dk.aau.modelardb.core.{SegmentGroup, TimeSeriesGroup}
 import dk.aau.modelardb.core.models.Segment
+import dk.aau.modelardb.core.timeseries.TimeSeries
 import dk.aau.modelardb.engines.h2.H2Storage
+import dk.aau.modelardb.engines.spark.SparkStorage
 import dk.aau.modelardb.storage.{CassandraStorage, JDBCStorage, ORCStorage, Storage}
 import org.apache.arrow.adapter.jdbc.JdbcToArrowUtils
 import org.apache.arrow.memory.RootAllocator
@@ -41,7 +43,11 @@ object ArrowUtil {
         rowCount
       case "timeseries" =>
         val timeseries = (0 until rowCount).map(index => toTimeseries(index, root))
-        storage.storeTimeSeries()
+        storage match {
+          case storage: SparkStorage => storage.storeTimeseries(timeseries)
+          case _ => throw new Exception("ArrowUtil got wrong storage type")
+        }
+        rowCount
       case _ => throw new Exception(s"Unknown schema name received: $schemaName")
     }
 
@@ -53,8 +59,8 @@ object ArrowUtil {
     val scalingFactor = root.getVector("SCALING_FACTOR").asInstanceOf[Float4Vector].get(index)
     val samplingInterval = root.getVector("SAMPLING_INTERVAL").asInstanceOf[IntVector].get(index)
     val gid = root.getVector("GID").asInstanceOf[IntVector].get(index)
-    val dimensions = root.getVector("dimensions").asInstanceOf[].get(index)
-    (tid, scalingFactor, samplingInterval, gid, dimensions)
+//    val dimensions = root.getVector("dimensions").asInstanceOf[].get(index)
+    (tid, scalingFactor, samplingInterval, gid)
   }
 
   def toSegmentGroup(index: Int, root: VectorSchemaRoot): SegmentGroup = {
@@ -97,13 +103,20 @@ object ArrowUtil {
     root
   }
 
-  def addToRoot(index: Int, sg: SegmentGroup, root: VectorSchemaRoot): Unit = {
+  def addSegmentToRoot(index: Int, sg: SegmentGroup, root: VectorSchemaRoot): Unit = {
     root.getVector("GID").asInstanceOf[IntVector].setSafe(index, sg.gid)
     root.getVector("START_TIME").asInstanceOf[BigIntVector].setSafe(index, sg.startTime)
     root.getVector("END_TIME").asInstanceOf[BigIntVector].setSafe(index, sg.endTime)
     root.getVector("MTID").asInstanceOf[IntVector].setSafe(index, sg.mtid)
     root.getVector("MODEL").asInstanceOf[VarBinaryVector].setSafe(index, sg.model)
     root.getVector("GAPS").asInstanceOf[VarBinaryVector].setSafe(index, sg.offsets)
+  }
+
+  def addTsToRoot(index: Int, gid: Int, ts: TimeSeries, root: VectorSchemaRoot): Unit = {
+    root.getVector("TID").asInstanceOf[IntVector].setSafe(index, ts.tid)
+    root.getVector("SCALING_FACTOR").asInstanceOf[Float4Vector].setSafe(index, ts.scalingFactor)
+    root.getVector("SAMPLING_INTERVAL").asInstanceOf[IntVector].setSafe(index, ts.samplingInterval)
+    root.getVector("GID").asInstanceOf[IntVector].setSafe(index, gid)
   }
 
   def mapToVector(index: Int, segment: Segment, schemaRoot: VectorSchemaRoot): VectorSchemaRoot = {

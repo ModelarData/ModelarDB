@@ -64,6 +64,10 @@ abstract class FileStorage(rootFolder: String, tidOffset: Int) extends Storage(t
     this.initialize()
   }
 
+  override def storeTimeseries(timeseries: Seq[(Int, Float, Int, Int)]): Unit = {
+    ???
+  }
+
   override final def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup], tidOffset: Int): Unit = {
     val outputFilePath = new Path(rootFolder + "time_series" + getFileSuffix)
     val newFilePath = new Path(rootFolder + "time_series" + getFileSuffix + "_new")
