@@ -18,6 +18,7 @@ import com.datastax.oss.driver.api.core.CqlSession
 import com.datastax.oss.driver.api.core.cql._
 import com.datastax.spark.connector._
 import com.datastax.spark.connector.cql.CassandraConnector
+import dk.aau.modelardb.InternalTypes._
 import dk.aau.modelardb.OffsetType
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
@@ -31,7 +32,9 @@ import org.h2.table.TableFilter
 import java.nio.ByteBuffer
 import java.time.Instant
 import java.util
+import scala.+:
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 import scala.util.{Failure, Try}
 
 class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage(tidOffset) with H2Storage with SparkStorage {
@@ -90,9 +93,10 @@ class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage
     initializeOffsetCache()
   }
 
-  override def storeTimeseries(timeseries: Seq[(Int, Float, Int, Int)]): Unit = {
+  override def storeTimeseries(timeseries: Seq[(TID, ScalingFactor, SamplingInterval, GID)]): Unit = {
     val session = this.connector.openSession()
     // TODO: Add support for dimensions
+    val tids = ArrayBuffer(timeseries.length)
     val insertString = s"INSERT INTO ${keyspace}.time_series(tid, scaling_factor, sampling_interval, gid) VALUES(?, ?, ?, ?)"
     timeseries.foreach { case (tid, scalingFactor, samplingInterval, gid) =>
       val stmt = SimpleStatement.builder(insertString)
@@ -102,9 +106,15 @@ class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage
           samplingInterval.asInstanceOf[Object],
           gid.asInstanceOf[Object]
         )
+      tids += tid
       session.execute(stmt.build())
     }
     session.close()
+    //Group Metadata Cache: Maps the gid of a group to the groups sampling interval and the tids that are part of that group
+    val gid = timeseries.head._1
+    val samplingInterval = timeseries.head._3
+//    val tids = timeseries.map(_._1).toArray
+    groupMetadataCache.set(gid, (samplingInterval +: tids).toArray)
   }
 
   def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup], tidOffset: Int): Unit = {
@@ -220,7 +230,6 @@ class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage
       //The maximum batch size supported by Cassandra is 65535
       if (batch.size() == 65535) {
         storeSegmentGroups(session, batch)
-        groupMetadataCache.set()
       }
     }
     storeSegmentGroups(session, batch)

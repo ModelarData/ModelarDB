@@ -6,7 +6,7 @@ authors = ["Christian <5160123+c5m@users.noreply.github.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.9"
-pyarrow = "^4.0.0"
+pyarrow = "^6.0.0"
 pandas = "^1.2.4"
 numpy = "^1.21.0"
 

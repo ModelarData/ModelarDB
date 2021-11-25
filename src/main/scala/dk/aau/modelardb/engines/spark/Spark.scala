@@ -88,7 +88,7 @@ class Spark(config: ModelarConfig, sparkStorage: SparkStorage, arrowFlightClient
       if ( ! derivedSources.isEmpty) { //Initializes derived time series
         Partitioner.initializeTimeSeries(config, sparkStorage.getMaxTid)
       }
-      sparkStorage.storeMetadataAndInitializeCaches(config, Array(), 0)
+      sparkStorage.storeMetadataAndInitializeCaches(config, Array.empty, 0)
       Spark.initialize(spark, config, sparkStorage, Range(0,0))
       null
     } else {

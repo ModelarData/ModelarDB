@@ -65,6 +65,7 @@ case class ModelarConfig(
   maxLatency: Int,
   samplingInterval: Int,
   ingestors: Int,
+  cacheSize: Option[Int],
   human: Boolean) {
 
   val sources: Array[String] = parseSource
