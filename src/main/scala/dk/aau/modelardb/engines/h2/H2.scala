@@ -111,8 +111,9 @@ class H2(config: ModelarConfig, h2storage: H2Storage, arrowFlightClient: ArrowFl
     if (maxGid == 0) { // We know the DB is empty so add offset
       timeSeriesGroups.foreach { group =>
       group.setGid(group.gid + gidOffset)
+      }
     }
-  }
+    arrowFlightClient.putTimeseries(timeSeriesGroups.toSeq)
     h2storage.storeMetadataAndInitializeCaches(config, timeSeriesGroups, gidOffset)
 
     val mtidCache = h2storage.mtidCache.asJava

@@ -1,5 +1,6 @@
 package dk.aau.modelardb.arrow
 
+import dk.aau.modelardb.InternalTypes._
 import dk.aau.modelardb.core.{SegmentGroup, TimeSeriesGroup}
 import dk.aau.modelardb.core.models.Segment
 import dk.aau.modelardb.core.timeseries.TimeSeries
@@ -19,11 +20,6 @@ import java.sql.ResultSet
 import scala.collection.JavaConverters._
 
 object ArrowUtil {
-
-  type TID = Int
-  type GID = Int
-  type SamplingInterval = Int
-  type ScalingFactor = Float
 
   def storeData(storage: Storage, root: VectorSchemaRoot): Int = {
     val rowCount = root.getRowCount
@@ -89,9 +85,17 @@ object ArrowUtil {
     var count = 0
     val writer = ArrowWriter.create(root)
 
-    val transformedDf = if (df.columns.contains("end_time")) {
-      df.withColumn("end_time", from_utc_timestamp(col("end_time"), "UTC"))
-    } else { df }
+    val containsStartTime = df.columns.contains("start_time")
+    val containsEndTime = df.columns.contains("end_time")
+
+    val transformedDf = (containsStartTime, containsEndTime) match {
+      case (true, false) => df.withColumn("start_time", from_utc_timestamp(col("start_time"), "UTC").cast("long"))
+      case (false, true) => df.withColumn("end_time", from_utc_timestamp(col("end_time"), "UTC").cast("long"))
+      case (true, true) =>
+        df.withColumn("start_time", from_utc_timestamp(col("start_time"), "UTC").cast("long"))
+          .withColumn("end_time", from_utc_timestamp(col("end_time"), "UTC").cast("long"))
+      case _ => df
+    }
 
     transformedDf.collect().foreach { row =>
       val internalRow = InternalRow.fromSeq(row.toSeq)

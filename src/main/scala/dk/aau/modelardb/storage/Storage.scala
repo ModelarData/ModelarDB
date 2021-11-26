@@ -60,7 +60,7 @@ abstract class Storage(tidOffset: Int) {
       case (_, Some(offset)) => offset
       case (false, _) | (true, None) =>
         val offsetInDB = readOffset(edgeId, offsetType)
-        offsetInDB match {
+        offsetInDB match { // offset not in DB so create a new one
           case None =>
             val newOffset = offsetType match {
               case OffsetType.TID => tidCounter.getAndAdd(count)
@@ -69,78 +69,14 @@ abstract class Storage(tidOffset: Int) {
             offsetCache.put(edgeId, mutable.Map((offsetType, newOffset)))
             storeOffset(edgeId, newOffset, offsetType)
             newOffset
-          case Some(offset) => updateOffsetCache(edgeId, offset, offsetType)
-//          case Some(offset) if edgeIdInCache =>
-//            offsetCache(edgeId).put(offsetType, offset)
-//            offset
-//          case Some(offset) if !edgeIdInCache =>
-//            offsetCache.put(edgeId, mutable.Map(offsetType -> offset ))
-//            offset
+          case Some(offset) => // offset in DB but not in cache so update cache and return offset
+            updateOffsetCache(edgeId, offset, offsetType)
           case _ => throw new IllegalStateException(s"Offset cache in illegal state")
         }
       case _ => throw new IllegalStateException(s"Offset cache in illegal state")
     }
   }
 
-//  def getTidOffset(edgeId: String, count: Int): Int = {
-//    val edgeIdInCache = offsetCache.contains(edgeId)
-//    val tidInCache = offsetCache
-//      .get(edgeId)
-//      .flatMap(_.get(OffsetType.TID))
-//
-//    (edgeIdInCache, tidInCache) match {
-//      case (_, Some(tidOffset)) => tidOffset
-//      case (false, _) | (true, None) =>
-//        val offsetInDB = readOffset(edgeId, OffsetType.TID)
-//        offsetInDB match {
-//          case None =>
-//            val tidOffset = tidCounter.getAndAdd(count)
-//            offsetCache.put(edgeId, mutable.Map((OffsetType.TID, tidOffset)))
-//            storeOffset(edgeId, tidOffset, OffsetType.TID)
-//            tidOffset
-//          case Some(tidOffset) if edgeIdInCache =>
-//            offsetCache(edgeId).put(OffsetType.TID, tidOffset)
-//            tidOffset
-//          case Some(tidOffset) if !edgeIdInCache =>
-//            offsetCache.put(edgeId, mutable.Map(OffsetType.TID -> tidOffset ))
-//            tidOffset
-//          case _ => throw new IllegalStateException(s"Offset cache in illegal state")
-//        }
-//      case _ => throw new IllegalStateException(s"Offset cache in illegal state")
-//    }
-//  }
-//
-//  def getGidOffset(edgeId: String, count: Int): Int = {
-//    val hasEdgeId = offsetCache.contains(edgeId)
-//    val hasGid = offsetCache
-//      .get(edgeId)
-//      .flatMap(_.get(OffsetType.GID))
-//
-//    (hasEdgeId, hasGid) match {
-//      case (false, _) | (true, None) =>
-//        val gidOffset = gidCounter.getAndAdd(count)
-//        offsetCache.put(edgeId, mutable.Map((OffsetType.GID, gidOffset)))
-//        storeOffset(edgeId, gidOffset, OffsetType.GID)
-//        gidOffset
-//      case (_, Some(gid)) => gid
-//    }
-//  }
-
-//  protected val tidCounter: AtomicInteger = new AtomicInteger(tidOffset)
-//  protected val gidCounter: AtomicInteger = new AtomicInteger(0)
-//
-//  def getTidOffset(edgeId: String, count: Int): Int = {
-//    val offset = tidCounter.addAndGet(count)
-//    storeOffset(edgeId, offset, "TID")
-//    offset
-//  }
-//
-//
-//  def getGidOffset(edgeId: String, count: Int): Int = {
-//    val offset = gidCounter.addAndGet(count)
-//    storeOffset(edgeId, offset, "GID")
-//    offset
-//  }
 
   /** Public Methods * */
   def open(dimensions: Dimensions): Unit
@@ -197,7 +133,7 @@ abstract class Storage(tidOffset: Int) {
     val scalingTransformation = new ValueFunction()
     timeSeriesTransformationCache = new ArrayCache[ValueFunction](totalNumberOfSources, tidCounter.get())
     val groupDerivedCacheBuilder = mutable.HashMap[Int, mutable.ArrayBuffer[Integer]]()
-    val timeSeriesInStorage = this.getTimeSeries
+    val timeSeriesInStorage = getTimeSeries
     for ((tid, metadata) <- timeSeriesInStorage) {
       //Metadata is a mapping from Tid to Scaling, Sampling Interval, Gid, and Dimensions
       val gid = metadata(2).asInstanceOf[Int]
@@ -276,7 +212,11 @@ abstract class Storage(tidOffset: Int) {
     }
 
     //Finally the sorted groupMetadataCache is created and consists of sampling interval and tids
-    groupMetadataCache = new ArrayCache[Array[Int]](gsc.size + 1, gidOffset)
+    groupMetadataCache = config.mode.toLowerCase match {
+      case "edge" => new ArrayCache[Array[Int]](gsc.size + 1, gidOffset)
+      case "server" => new ArrayCache[Array[Int]](config.cacheSize.getOrElse(gsc.size + 1), gidOffset)
+    }
+
     gsc.foreach(kv => {
       val key = kv._1 //gid
       // metadata = [samplingInterval, tid1, tid2, ...]
