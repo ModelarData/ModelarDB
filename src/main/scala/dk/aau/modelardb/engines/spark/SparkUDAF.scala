@@ -27,17 +27,18 @@ import scala.collection.mutable
 
 //Implementation of simple user-defined aggregate functions on top of the Segment View
 //The name of the variables in the case classes should match the schema of the segment view to make sub-queries intuitive
-case class UDAFCountInput(tid: Int, start_time: Timestamp, end_time: Timestamp) //CountS only require the tid and timestamps
+// TODO: UDAFCountInput did not work because spark shrows an error about only receiving 3 inputs instead of 6 (Incorrect number of children)
+//case class UDAFCountInput(tid: Int, start_time: Timestamp, end_time: Timestamp) //CountS only require the tid and timestamps
 case class UDAFInput(tid: Int, start_time: Timestamp, end_time: Timestamp, mtid: Integer, model: Array[Byte], gaps: Array[Byte])
 
 //UDAFs for Simple Aggregates
 //Count
-class CountS extends Aggregator[UDAFCountInput, Long, Long] {
+class CountS extends Aggregator[UDAFInput, Long, Long] {
 
   /** Public Methods **/
   override def zero: Long = 0L
 
-  override def reduce(total: Long, input: UDAFCountInput): Long = {
+  override def reduce(total: Long, input: UDAFInput): Long = {
     total + ((input.end_time.getTime - input.start_time.getTime) / timeSeriesSamplingIntervalCache.get(input.tid)) + 1
   }
 
@@ -430,7 +431,16 @@ object SparkUDAF {
     val mtc = Spark.getSparkStorage.modelTypeCache
     val tssic = Spark.getSparkStorage.timeSeriesSamplingIntervalCache
     input => {
-      mtc(input.mtid).get(input.tid, input.start_time.getTime, input.end_time.getTime, tssic.get(input.tid), input.model, input.gaps)
+      val mtid = input.mtid
+      val modelType = mtc(mtid)
+
+      val tid = input.tid
+      val startTime = input.start_time.getTime
+      val endTime = input.end_time.getTime
+      val samplingInterval = tssic.get(tid)
+      val model = input.model
+      val gaps = input.gaps
+      modelType.get(tid, startTime, endTime, samplingInterval, model, gaps)
     }
   }
 }

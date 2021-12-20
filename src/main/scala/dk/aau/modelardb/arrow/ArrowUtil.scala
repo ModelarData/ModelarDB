@@ -14,6 +14,7 @@ import org.apache.spark.sql.{ArrowConverter, DataFrame}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.arrow.ArrowWriter
 import org.apache.spark.sql.functions.{col, from_utc_timestamp}
+import org.apache.spark.sql.types.TimestampType
 
 import java.nio.charset.StandardCharsets
 import java.sql.ResultSet
@@ -85,16 +86,21 @@ object ArrowUtil {
     var count = 0
     val writer = ArrowWriter.create(root)
 
-    val containsStartTime = df.columns.contains("start_time")
-    val containsEndTime = df.columns.contains("end_time")
 
-    val transformedDf = (containsStartTime, containsEndTime) match {
-      case (true, false) => df.withColumn("start_time", from_utc_timestamp(col("start_time"), "UTC").cast("long"))
-      case (false, true) => df.withColumn("end_time", from_utc_timestamp(col("end_time"), "UTC").cast("long"))
-      case (true, true) =>
-        df.withColumn("start_time", from_utc_timestamp(col("start_time"), "UTC").cast("long"))
-          .withColumn("end_time", from_utc_timestamp(col("end_time"), "UTC").cast("long"))
-      case _ => df
+    val timestampColumns = df.dtypes
+      .filter{ case (name, datatype) =>
+        datatype match {
+          case "TimestampType" => true
+          case _ => false
+        }
+      }
+      .map{ case (name, datatype) => name }
+
+    val transformedDf = timestampColumns.foldLeft(df) { case (memoDF, colName) =>
+      memoDF.withColumn(
+        colName,
+        from_utc_timestamp(col(colName), "UTC").cast("long")
+      )
     }
 
     transformedDf.collect().foreach { row =>
