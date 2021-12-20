@@ -67,10 +67,10 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory with H2Provider 
         .expects(*)
         .returns(Iterator(sg))
 
-      storage.timeSeriesGroupCache = new ArrayCache[Int](1, offset)
+      storage.timeSeriesGroupCache = new ArrayCache[Int](2, offset)
 
       // Maps the gid of a group to the groups sampling interval and the tids that are part of that group
-      storage.groupMetadataCache = new ArrayCache[Array[Int]](1, 0)
+      storage.groupMetadataCache = new ArrayCache[Array[Int]](2, 0)
       storage.groupMetadataCache.set(gid, Array(samplingInterval, tid))
 
       // Maps the gid of a group to pairs of tids for time series with derived time series
@@ -78,7 +78,7 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory with H2Provider 
       storage.groupDerivedCache.put(gid, Array())
 
       storage.modelTypeCache = Array(model, model)
-      storage.timeSeriesMembersCache = new ArrayCache[Array[AnyRef]](1,0)
+      storage.timeSeriesMembersCache = new ArrayCache[Array[AnyRef]](2,0)
 
       import ModelarConfig.timezoneReader // needed to read config
       val config = ConfigSource.resources("application-test.conf").loadOrThrow[Config]
