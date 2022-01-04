@@ -16,15 +16,15 @@ package dk.aau.modelardb
 
 import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
 import dk.aau.modelardb.config.Config
+import java.net.{ServerSocket, InetSocketAddress}
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.engines.QueryEngine
 import org.apache.arrow.vector.VectorSchemaRoot
 import org.apache.arrow.vector.ipc.ArrowStreamWriter
 
-import java.io.OutputStream
-import java.nio.charset.StandardCharsets
+//import java.io.OutputStream
 import java.nio.charset.StandardCharsets.UTF_8
-import java.nio.file.{Files, Paths}
+import java.io.{BufferedReader, InputStreamReader, OutputStream}
 import java.nio.file.{Files, Paths}
 import java.util.concurrent.{Executor, Executors}
 import scala.io.Source
@@ -41,7 +41,8 @@ object Interface {
   def start(config: Config, queryEngine: QueryEngine): Unit = {
     humanFriendly = config.modelarDb.human
     this.queryEngine = queryEngine
-    config.modelarDb.interface.toLowerCase match {
+    val (interface, port) = getInterfaceAndPort(config)
+    interface match {
       case "socket" => socket(executor)
       case "http" => http(executor)
       case "repl" => repl(config.modelarDb.storage)
@@ -51,15 +52,25 @@ object Interface {
   }
 
   /** Private Methods **/
-  private def socket(executor: Executor): Unit = {
+  private def getInterfaceAndPort(config: Config): (String, Int) = {
+    val interface = config.modelarDb.interface
+    val startOfPort = interface .lastIndexOf(':')
+    if (startOfPort == -1) {
+      (interface, 9999)
+    } else {
+      (interface.substring(0, startOfPort), interface.substring(startOfPort + 1).toInt)
+    }
+  }
+
+  private def socket(executor: Executor, port: Int, sql: String => Array[String]): Unit = {
     //Setup
-    val serverSocket = new java.net.ServerSocket(9999)
+    val serverSocket = new ServerSocket(port)
+    Static.info(s"ModelarDB: socket end-point is ready (Port: $port)")
 
     while (true) {
-      Static.info("ModelarDB: socket end-point is ready (Port: 9999)")
       val clientSocket = serverSocket.accept()
       executor.execute(() => {
-        val in = new java.io.BufferedReader(new java.io.InputStreamReader(clientSocket.getInputStream))
+        val in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream))
         val out = clientSocket.getOutputStream
 
         //Query
@@ -79,7 +90,7 @@ object Interface {
               stop = false //The empty string terminates the connection
               Static.info("ModelarDB: conection is closed")
             } else {
-              out.write("only SELECT is supported".getBytes(StandardCharsets.UTF_8))
+              out.write("only SELECT is supported".getBytes(UTF_8))
               out.flush()
             }
           }
@@ -92,17 +103,18 @@ object Interface {
 
     //Cleanup
     serverSocket.close()
+    Static.info(s"ModelarDB: socket end-point is closed (Port: $port)")
   }
 
-  private def http(executor: Executor): Unit = {
+  private def http(executor: Executor, port: Int, sql: String => Array[String]): Unit = {
     //Setup
-    val server = HttpServer.create(new java.net.InetSocketAddress(8888), 0)
+    val server = HttpServer.create(new InetSocketAddress(port), 0)
 
     //Query
     class QueryHandler extends HttpHandler {
       override def handle(httpExchange: HttpExchange): Unit = {
         val request = httpExchange.getRequestBody
-        val reader = new java.io.BufferedReader(new java.io.InputStreamReader(request))
+        val reader = new BufferedReader(new InputStreamReader(request))
 
         httpExchange.sendResponseHeaders(200, 0)
         val response = httpExchange.getResponseBody
@@ -115,11 +127,12 @@ object Interface {
     server.createContext("/", new QueryHandler())
     server.setExecutor(executor)
     server.start()
-    Static.info("ModelarDB: HTTP end-point is ready (Port: 8888)")
+    Static.info("ModelarDB: HTTP end-point is ready (Port: $port)")
     scala.io.StdIn.readLine() //Prevents the method from returning to keep the server running
 
     //Cleanup
     server.stop(0)
+    Static.info(s"ModelarDB: HTTP end-point is closed (Port: $port)")
   }
 
   private def repl(storage: String): Unit = {
@@ -150,7 +163,8 @@ object Interface {
   private def execute(query: String, out: OutputStream): Unit = {
     val st = System.currentTimeMillis()
     val result: VectorSchemaRoot = try {
-      val query_rewritten = query.replace("COUNT_S(#)", "COUNT_S(tid, start_time, end_time)")
+      val query_rewritten = query
+        .replace("COUNT_S(#)", "COUNT_S(tid, start_time, end_time)")
         .replace("#", "tid, start_time, end_time, mtid, model, gaps")
       queryEngine.execute(query_rewritten)
     } catch {

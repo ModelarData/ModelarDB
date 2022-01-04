@@ -73,6 +73,7 @@ class Spark(config: ModelarConfig, sparkStorage: SparkStorage, arrowFlightClient
     val master = if (engine == "spark") "local[*]" else engine
     val conf = new SparkConf()
       .set("spark.streaming.unpersist", "false")
+      .set("spark.sql.parquet.outputTimestampType", "TIMESTAMP_MICROS")
       .set("spark.streaming.stopGracefullyOnShutdown", "true")
     val ssb = SparkSession.builder.master(master).config(conf)
 
@@ -187,14 +188,14 @@ object Spark {
         case sources.EqualNullSafe("gid", value: Int) => predicates.append(s"gid = $value")
         case sources.In("gid", values: Array[Any]) => values.map(_.asInstanceOf[Int]).mkString("GID IN (", ",", ")")
 
-        //Predicate push-down for start_time using SELECT * FROM segment WHERE et <=> ?
+        //Predicate push-down for start_time using SELECT * FROM segment WHERE start_time <=> ?
         case sources.GreaterThan("start_time", value: Timestamp) => predicates.append(s"start_time > '$value'")
         case sources.GreaterThanOrEqual("start_time", value: Timestamp) => predicates.append(s"start_time >= '$value'")
         case sources.LessThan("start_time", value: Timestamp) => predicates.append(s"start_time < '$value'")
         case sources.LessThanOrEqual("start_time", value: Timestamp) => predicates.append(s"start_time <= '$value'")
         case sources.EqualTo("start_time", value: Timestamp) => predicates.append(s"start_time = '$value'")
 
-        //Predicate push-down for end_time using SELECT * FROM segment WHERE et <=> ?
+        //Predicate push-down for end_time using SELECT * FROM segment WHERE end_time <=> ?
         case sources.GreaterThan("end_time", value: Timestamp) => predicates.append(s"end_time > '$value'")
         case sources.GreaterThanOrEqual("end_time", value: Timestamp) => predicates.append(s"end_time >= '$value'")
         case sources.LessThan("end_time", value: Timestamp) => predicates.append(s"end_time < '$value'")
