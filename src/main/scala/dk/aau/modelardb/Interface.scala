@@ -43,8 +43,8 @@ object Interface {
     this.queryEngine = queryEngine
     val (interface, port) = getInterfaceAndPort(config)
     interface match {
-      case "socket" => socket(executor)
-      case "http" => http(executor)
+      case "socket" => socket(executor, port)
+      case "http" => http(executor, port)
       case "repl" => repl(config.modelarDb.storage)
       case path if Files.exists(Paths.get(path)) => file(path)
       case _ => throw new java.lang.UnsupportedOperationException("unknown value for modelardb.interface in the config file")
@@ -54,7 +54,7 @@ object Interface {
   /** Private Methods **/
   private def getInterfaceAndPort(config: Config): (String, Int) = {
     val interface = config.modelarDb.interface
-    val startOfPort = interface .lastIndexOf(':')
+    val startOfPort = interface.lastIndexOf(':')
     if (startOfPort == -1) {
       (interface, 9999)
     } else {
@@ -62,7 +62,7 @@ object Interface {
     }
   }
 
-  private def socket(executor: Executor, port: Int, sql: String => Array[String]): Unit = {
+  private def socket(executor: Executor, port: Int): Unit = {
     //Setup
     val serverSocket = new ServerSocket(port)
     Static.info(s"ModelarDB: socket end-point is ready (Port: $port)")
@@ -106,7 +106,7 @@ object Interface {
     Static.info(s"ModelarDB: socket end-point is closed (Port: $port)")
   }
 
-  private def http(executor: Executor, port: Int, sql: String => Array[String]): Unit = {
+  private def http(executor: Executor, port: Int): Unit = {
     //Setup
     val server = HttpServer.create(new InetSocketAddress(port), 0)
 
