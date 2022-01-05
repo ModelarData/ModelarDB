@@ -73,7 +73,7 @@ Test / logBuffered := false
 /* Otherwise Derby throws a java.security.AccessControlException in tests */
 Test / testOptions += Tests.Setup(() => System.setSecurityManager(null))
 
-assembly / assemblyJarName := "ModelarDB.jar"
+assembly / assemblyJarName := s"ModelarDB-${version.value}.jar"
 assembly / mainClass := Some("dk.aau.modelardb.Main")
 
 Compile / discoveredMainClasses := Seq()
@@ -101,8 +101,7 @@ val repo = "ModelarDB"
 publishMavenStyle := true
 publishTo := Some("GitHub Package Registry" at s"https://maven.pkg.github.com/$owner/$repo")
 
-credentials +=
-Credentials(
+credentials += Credentials(
   "GitHub Package Registry",
   "maven.pkg.github.com",
   "_", // The username is ignored when a GITHUB_TOKEN is used for login

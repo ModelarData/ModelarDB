@@ -44,7 +44,7 @@ import scala.collection.JavaConverters._
 
 class QueryTest extends AnyFlatSpec with Matchers {
 
-  val defaultConfig = ConfigSource.resources("test.conf")
+  val defaultConfig = ConfigSource.resources("application-test.conf")
 
   /** Instance Variable **/
   private val h2Port = 9991
