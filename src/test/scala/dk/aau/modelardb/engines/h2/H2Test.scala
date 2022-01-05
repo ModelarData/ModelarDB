@@ -15,31 +15,25 @@
 package dk.aau.modelardb.engines.h2
 
 import dk.aau.modelardb.core.models.ModelTypeFactory
-import dk.aau.modelardb.core.{Configuration, Dimensions, SegmentGroup}
+import dk.aau.modelardb.H2Provider
+import dk.aau.modelardb.arrow.ArrowFlightClient
+import dk.aau.modelardb.config.{ArrowClientConfig, ArrowConfig, Config, ModelarConfig}
+import dk.aau.modelardb.core.{Dimensions, SegmentGroup}
 import dk.aau.modelardb.engines.EngineUtilities
-import dk.aau.modelardb.storage.JDBCStorage
+import dk.aau.modelardb.storage.{ArrayCache, HashMapIntegerCache, JDBCStorage}
 import org.h2.expression.condition.{Comparison, ConditionAndOr}
 import org.h2.jdbc.JdbcSQLDataException
 import org.h2.table.TableFilter
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+import pureconfig.ConfigSource
+import pureconfig.generic.auto._
 
-import java.sql.{DriverManager, Statement}
 import java.time.Instant
 import scala.collection.mutable
 
-class H2Test extends AnyFlatSpec with Matchers with MockFactory {
-
-  private def withH2[A](fun: Statement => A): A = {
-    val conn = DriverManager.getConnection("jdbc:h2:mem:")
-    try {
-      val statement = conn.createStatement()
-      fun(statement)
-    } finally {
-      conn.close()
-    }
-  }
+class H2Test extends AnyFlatSpec with Matchers with MockFactory with H2Provider {
 
   behavior of "H2 Companion Object"
   it should "be able to make compareType and getCompareOperator public" in {
@@ -59,6 +53,7 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
       val gid = 1
       val mtid = 1
       val tid = 1
+      val offset = 0
       val samplingInterval = 10
       val startTime = Instant.ofEpochMilli(100L)
       val endTime = Instant.ofEpochMilli(110L)
@@ -72,15 +67,24 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
         .expects(*)
         .returns(Iterator(sg))
 
-      storage.timeSeriesGroupCache = Array(0, 1)
-      storage.groupMetadataCache = Array(Array(), Array(samplingInterval, 1, 1), Array(samplingInterval, 1, 1))
-      storage.groupDerivedCache = mutable.HashMap[Integer, Array[Int]]()
-      storage.modelTypeCache = Array(model, model)
-      storage.timeSeriesMembersCache = Array(null, Array())
+      storage.timeSeriesGroupCache = new ArrayCache[Int](2, offset)
 
-      val configuration = new Configuration()
-      configuration.add("modelardb.batch_size", 500)
-      val h2 = new H2(configuration, storage)
+      // Maps the gid of a group to the groups sampling interval and the tids that are part of that group
+      storage.groupMetadataCache = new ArrayCache[Array[Int]](2, 0)
+      storage.groupMetadataCache.set(gid, Array(samplingInterval, tid))
+
+      // Maps the gid of a group to pairs of tids for time series with derived time series
+      storage.groupDerivedCache = mutable.HashMap[Integer, Array[Int]]()
+      storage.groupDerivedCache.put(gid, Array())
+
+      storage.modelTypeCache = Array(model, model)
+      storage.timeSeriesMembersCache = new ArrayCache[Array[AnyRef]](2,0)
+
+      import ModelarConfig.timezoneReader // needed to read config
+      val config = ConfigSource.resources("application-test.conf").loadOrThrow[Config]
+      val modelarConfig = config.modelarDb
+      val arrowFlightClient = ArrowFlightClient(config.arrow)
+      val h2 = new H2(modelarConfig, storage, arrowFlightClient)
       H2.initialize(h2, storage)
 
       statement.execute(H2.getCreateSegmentViewSQL(dimensions))
@@ -94,7 +98,7 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
         rs.getTimestamp("start_time").toInstant should equal(startTime)
         rs.getTimestamp(3).toInstant should equal(endTime)
         rs.getTimestamp("end_time").toInstant should equal(endTime)
-        rs.getInt(1) should equal (mtid)
+        rs.getInt(4) should equal (mtid)
         rs.getInt("mtid") should equal (mtid)
 
         an [JdbcSQLDataException] should be thrownBy rs.getInt(2)
@@ -102,10 +106,11 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
         an [JdbcSQLDataException] should be thrownBy rs.getTimestamp(1)
         an [JdbcSQLDataException] should be thrownBy rs.getTimestamp(4)
       }
-      count should equal(2)
+      count should equal(1)
     }
   }
 
   /* HACK: Needed because JDBCStorage class init fails when constructor arg is null */
-  private class JDBCStorageNoArgs extends JDBCStorage("jdbc:h2:mem")
+  private class JDBCStorageNoArgs extends JDBCStorage("jdbc:h2:mem", 0)
+
 }

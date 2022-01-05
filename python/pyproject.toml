@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "modelardb"
+version = "0.1.0"
+description = ""
+authors = ["Christian <5160123+c5m@users.noreply.github.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+pyarrow = "^6.0.0"
+pandas = "^1.2.4"
+numpy = "^1.21.0"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

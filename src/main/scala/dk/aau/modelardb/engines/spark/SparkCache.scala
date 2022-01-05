@@ -170,8 +170,8 @@ object SparkCache {
     val inputGaps = Static.bytesToInts(inputRow.getAs[Array[Byte]](5))
 
     //Extracts the metadata for the group of time series being updated
-    val group = this.groupMetadataCache(inputRow.getInt(0)).drop(1)
-    val samplingInterval = this.groupMetadataCache(inputRow.getInt(0))(0)
+    val group = groupMetadataCache.get(inputRow.getInt(0)).drop(1)
+    val samplingInterval = groupMetadataCache.get(inputRow.getInt(0))(0)
     val inputIngested = group.toSet.diff(inputGaps.toSet)
     var updatedExistingSegment = false
 
