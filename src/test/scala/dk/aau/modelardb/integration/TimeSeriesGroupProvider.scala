@@ -25,23 +25,45 @@ import org.apache.hadoop.hive.ql.exec.vector.TimestampColumnVector
 import org.apache.orc.OrcFile
 
 import org.scalatest.Assertions
+import org.scalatest.Assertions.{cancel, pending}
+import org.scalatest.exceptions.TestCanceledException
 
 import java.io.File
 import java.nio.ByteBuffer
 import scala.collection.mutable
 
-trait TimeSeriesGroupProvider extends Assertions {
+trait TimeSeriesGroupProvider {
 
   /** Instance Variables **/
-  private var samplingInterval = -1  //HACK: assumes all test files uses the same sampling interval
+  private val orcTestDataKey: String = "MODELARDB_TEST_DATA_ORC"
+  private val isOrcTestDataFolderSet = sys.env.contains(orcTestDataKey)
+  var samplingInterval: Int = -1
+
   protected val modelTypeNames = Array(
     "dk.aau.modelardb.core.models.PMC_MeanModelType",
     "dk.aau.modelardb.core.models.SwingFilterModelType",
-    "dk.aau.modelardb.core.models.FacebookGorillaModelType")
-  assume(TimeSeriesGroupProvider.testDataWasProvided, TimeSeriesGroupProvider.missingTestDataMessage)
+    "dk.aau.modelardb.core.models.FacebookGorillaModelType"
+  )
+
+  def withTSGroup[A](fun: Array[TimeSeriesGroup] => A): A = {
+    if (!isOrcTestDataFolderSet) {
+      cancel(s"$orcTestDataKey environment variable not set!")
+    }
+    fun(newTimeSeriesGroups)
+  }
 
   /** Public Methods  **/
+  private def newTimeSeriesGroups: Array[TimeSeriesGroup] = {
+    if (!isOrcTestDataFolderSet) {
+      cancel(s"$orcTestDataKey environment variable not set!")
+    }
+    newTimeSeriesGroups(sys.env(orcTestDataKey))
+  }
+
   def getTimeSeriesFiles: Array[File] = {
+    if (!isOrcTestDataFolderSet) {
+      cancel(s"$orcTestDataKey environment variable not set!")
+    }
     new File(sys.env(TimeSeriesGroupProvider.orcTestDataKey))
       .listFiles().filter(f => f.isFile && f.getName.endsWith(".orc"))
   }
@@ -79,6 +101,12 @@ trait TimeSeriesGroupProvider extends Assertions {
   }
 
   /** Private Methods **/
+  private def newTimeSeriesGroups(folderPath: String): Array[TimeSeriesGroup] = {
+    val testDataFolder = new File(folderPath)
+    val testDataFiles = testDataFolder.listFiles().filter(f => f.isFile && f.getName.endsWith(".orc"))
+    testDataFiles.zipWithIndex.map(pair => newTimeSeriesGroup(pair._1, pair._2 + 1))
+  }
+
   private def newTimeSeriesGroup(orcTestFile: File, id: Int): TimeSeriesGroup = {
     val orcTestFileAbsolutePath = orcTestFile.getAbsolutePath
     val path = new Path(orcTestFileAbsolutePath)
@@ -106,16 +134,16 @@ trait TimeSeriesGroupProvider extends Assertions {
     val counter = mutable.HashMap[Long, Int]()
     rowBatch.cols(timestampColumnIndex).asInstanceOf[TimestampColumnVector]
       .time.sliding(size = 2, step = 1).foreach(pair => {
-        val elapsedTime = pair(1) - pair(0)
-        counter.put(elapsedTime , counter.getOrElse(elapsedTime, 0) + 1)
-      })
-      this.samplingInterval = counter.maxBy(_._2)._1.toInt
-      recordReader.close()
+      val elapsedTime = pair(1) - pair(0)
+      counter.put(elapsedTime , counter.getOrElse(elapsedTime, 0) + 1)
+    })
+    this.samplingInterval = counter.maxBy(_._2)._1.toInt
+    recordReader.close()
 
-      //Instantiate the time series with the inferred values
-      assert(this.samplingInterval > -1 && timestampColumnIndex > -1 && valueColumnIndex > -1)
-      val tso = new TimeSeriesORC(orcTestFileAbsolutePath, id, this.samplingInterval, timestampColumnIndex, valueColumnIndex)
-      new TimeSeriesGroup(id, Array(tso))
+    //Instantiate the time series with the inferred values
+    assert(this.samplingInterval > -1 && timestampColumnIndex > -1 && valueColumnIndex > -1)
+    val tso = new TimeSeriesORC(orcTestFileAbsolutePath, id, this.samplingInterval, timestampColumnIndex, valueColumnIndex)
+    new TimeSeriesGroup(id, Array(tso))
   }
 
   private def ingestTimeSeriesGroups(finalizedSegmentFunction: SegmentFunction, errorBound: Float): Unit = {

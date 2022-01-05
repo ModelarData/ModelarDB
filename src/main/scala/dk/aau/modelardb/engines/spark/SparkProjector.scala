@@ -54,7 +54,7 @@ object SparkProjector {
           val tsmc = Spark.getSparkStorage.timeSeriesMembersCache
           rows.mapPartitions(it => {
             val projector = CodeGenerator.compileSparkSegmentProjection(code)
-            it.map(row => projector.project(row, tsmc))
+            it.map(row => projector.project(row, tsmc.toArray))
           })
         }
     }
@@ -86,7 +86,7 @@ object SparkProjector {
         val btstc = Spark.getBroadcastedTimeSeriesTransformationCache
         dataPoints.mapPartitions(it => {
           val projector = CodeGenerator.compileSparkDataPointProjection(code)
-          it.map(row => projector.project(row, tsmc, tssfc, btstc))
+          it.map(row => projector.project(row, tsmc.toArray, tssfc.toArray, btstc))
         })
       }
     }
@@ -98,7 +98,7 @@ object SparkProjector {
     row => {
       val tid = row.getInt(0)
       mtc(row.getInt(3)).get(tid, row.getTimestamp(1).getTime, row.getTimestamp(2).getTime,
-        tssic(tid), row.getAs[Array[Byte]](4), row.getAs[Array[Byte]](5))
+        tssic.get(tid), row.getAs[Array[Byte]](4), row.getAs[Array[Byte]](5))
     }
   }
 
@@ -113,7 +113,7 @@ object SparkProjector {
       case 4 => row.getInt(3)
       case 5 => row.getAs[Array[Byte]](4)
       case 6 => row.getAs[Array[Long]](5)
-      case index => tsmc(row.getInt(0))(index - 7)
+      case index => tsmc.get(row.getInt(0))(index - 7)
     }))
   }
 
@@ -127,23 +127,23 @@ object SparkProjector {
       //Permutations of ('ts')
       case 2 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp))
       //Permutations of ('val')
-      case 3 => (dp: DataPoint) => Row(btstc.value(dp.tid).transform(dp.value, tssfc(dp.tid)))
+      case 3 => (dp: DataPoint) => Row(btstc.value(dp.tid).transform(dp.value, tssfc.get(dp.tid)))
       //Permutations of ('tid', 'ts')
       case 12 => (dp: DataPoint) => Row(dp.tid, new Timestamp(dp.timestamp))
       case 21 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp), dp.tid)
       //Permutations of ('tid', 'val')
-      case 13 => (dp: DataPoint) => Row(dp.tid, btstc.value(dp.tid).transform(dp.value, tssfc(dp.tid)))
-      case 31 => (dp: DataPoint) => Row(btstc.value(dp.tid).transform(dp.value, tssfc(dp.tid)), dp.tid)
+      case 13 => (dp: DataPoint) => Row(dp.tid, btstc.value(dp.tid).transform(dp.value, tssfc.get(dp.tid)))
+      case 31 => (dp: DataPoint) => Row(btstc.value(dp.tid).transform(dp.value, tssfc.get(dp.tid)), dp.tid)
       //Permutations of ('ts', 'val')
-      case 23 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp), btstc.value(dp.tid).transform(dp.value, tssfc(dp.tid)))
-      case 32 => (dp: DataPoint) => Row(btstc.value(dp.tid).transform(dp.value, tssfc(dp.tid)), new Timestamp(dp.timestamp))
+      case 23 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp), btstc.value(dp.tid).transform(dp.value, tssfc.get(dp.tid)))
+      case 32 => (dp: DataPoint) => Row(btstc.value(dp.tid).transform(dp.value, tssfc.get(dp.tid)), new Timestamp(dp.timestamp))
       //Permutations of ('tid', 'ts', 'val')
-      case 123 => (dp: DataPoint) => Row(dp.tid, new Timestamp(dp.timestamp), btstc.value(dp.tid).transform(dp.value, tssfc(dp.tid)))
-      case 132 => (dp: DataPoint) => Row(dp.tid, btstc.value(dp.tid).transform(dp.value, tssfc(dp.tid)), new Timestamp(dp.timestamp))
-      case 213 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp), dp.tid, btstc.value(dp.tid).transform(dp.value, tssfc(dp.tid)))
-      case 231 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp), btstc.value(dp.tid).transform(dp.value, tssfc(dp.tid)), dp.tid)
-      case 312 => (dp: DataPoint) => Row(btstc.value(dp.tid).transform(dp.value, tssfc(dp.tid)), dp.tid, new Timestamp(dp.timestamp))
-      case 321 => (dp: DataPoint) => Row(btstc.value(dp.tid).transform(dp.value, tssfc(dp.tid)), new Timestamp(dp.timestamp), dp.tid)
+      case 123 => (dp: DataPoint) => Row(dp.tid, new Timestamp(dp.timestamp), btstc.value(dp.tid).transform(dp.value, tssfc.get(dp.tid)))
+      case 132 => (dp: DataPoint) => Row(dp.tid, btstc.value(dp.tid).transform(dp.value, tssfc.get(dp.tid)), new Timestamp(dp.timestamp))
+      case 213 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp), dp.tid, btstc.value(dp.tid).transform(dp.value, tssfc.get(dp.tid)))
+      case 231 => (dp: DataPoint) => Row(new Timestamp(dp.timestamp), btstc.value(dp.tid).transform(dp.value, tssfc.get(dp.tid)), dp.tid)
+      case 312 => (dp: DataPoint) => Row(btstc.value(dp.tid).transform(dp.value, tssfc.get(dp.tid)), dp.tid, new Timestamp(dp.timestamp))
+      case 321 => (dp: DataPoint) => Row(btstc.value(dp.tid).transform(dp.value, tssfc.get(dp.tid)), new Timestamp(dp.timestamp), dp.tid)
       //Static projections cannot be used for rows with dimensions
       case _ => null
     }
@@ -157,8 +157,8 @@ object SparkProjector {
     dp => Row.fromSeq(columns.map({
       case 1 => dp.tid
       case 2 => new Timestamp(dp.timestamp)
-      case 3 => btstc.value(dp.tid).transform(dp.value, tssfc(dp.tid))
-      case index => tsmc(dp.tid)(index - 4)
+      case 3 => btstc.value(dp.tid).transform(dp.value, tssfc.get(dp.tid))
+      case index => tsmc.get(dp.tid)(index - 4)
     }))
   }
 

@@ -31,16 +31,20 @@ import java.nio.file.Files
 import java.time.Duration
 import java.util
 import java.util.concurrent.Executors
-
 import scala.collection.mutable
-
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.fasterxml.jackson.databind.ObjectMapper
-
+import com.typesafe.config.ConfigFactory
+import dk.aau.modelardb.config.{Config, ModelarConfig}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+import pureconfig.{ConfigObjectSource, ConfigSource}
+import pureconfig.generic.auto._
+import scala.collection.JavaConverters._
 
 class QueryTest extends AnyFlatSpec with Matchers {
+
+  val defaultConfig = ConfigSource.resources("test.conf")
 
   /** Instance Variable **/
   private val h2Port = 9991
@@ -50,20 +54,22 @@ class QueryTest extends AnyFlatSpec with Matchers {
   private var sparkStoragefield: Field = null
   private val storageDirectory = Files.createTempDirectory("").toFile
   private val storages = List(
-    StorageFactory.getStorage("jdbc:h2:" + storageDirectory + "/h2"),
-    StorageFactory.getStorage("orc:" + storageDirectory + "/orc"),
-    StorageFactory.getStorage("parquet:" + storageDirectory + "/parquet"))
+    StorageFactory.getStorage("jdbc:h2:" + storageDirectory + "/h2", 0),
+    StorageFactory.getStorage("orc:" + storageDirectory + "/orc", 0),
+    StorageFactory.getStorage("parquet:" + storageDirectory + "/parquet", 0)
+  )
 
   //Ingest
   val executor = Executors.newCachedThreadPool()
   "ModelarDB" should "support ingesting test data using H2" in new TimeSeriesGroupProvider {
-    val configuration = getConfiguration
-    configuration.add("modelardb.ingestors", 1)
-    configuration.add("modelardb.sources", getTimeSeriesFiles.map(_.getAbsolutePath()))
-    configuration.add("modelardb.model_types", modelTypeNames)
-    configuration.add("modelardb.sampling_interval", getSamplingInterval);
+    val configValues = Map(
+      "modelardb.sources" -> getTimeSeriesFiles.map(_.getAbsolutePath()),
+      "modelardb.model_types" -> modelTypeNames,
+      "modelardb.sampling_interval" -> getSamplingInterval
+    )
+    val config = createConfig(configValues)
     for (storage <- storages) {
-      val h2Engine = new H2(configuration, storage.asInstanceOf[H2Storage])
+      val h2Engine = new H2(config.modelarDb, storage.asInstanceOf[H2Storage], arrowFlightClient = null)
       h2Engine.start()
     }
   }
@@ -71,13 +77,23 @@ class QueryTest extends AnyFlatSpec with Matchers {
   //Connect
   it should "initialize the H2 and Apache Spark-based query engines" in {
     assume(TimeSeriesGroupProvider.testDataWasProvided, TimeSeriesGroupProvider.missingTestDataMessage)
-    val h2Configuration = getQueryConfiguration(h2Port)
-    this.h2Engine = new H2(h2Configuration, storages(0).asInstanceOf[H2Storage])
+    val h2ConfigValues = Map(
+      "modelardb.model_types" -> Array(),
+      "modelardb.sampling_interval" -> -1,
+      "modelardb.interface" -> s"http:$h2Port"
+    )
+    val h2config = createConfig(h2ConfigValues)
+    this.h2Engine = new H2(h2config.modelarDb, storages(0).asInstanceOf[H2Storage], arrowFlightClient = null)
     executor.execute(() => h2Engine.start())
 
-    val sparkConfiguration = getQueryConfiguration(sparkPort)
-    sparkConfiguration.add("modelardb.engine", "spark")
-    this.sparkEngine = new Spark(sparkConfiguration, storages(0).asInstanceOf[SparkStorage])
+    val sparkConfigValues =  Map(
+      "modelardb.model_types" -> Array(),
+      "modelardb.sampling_interval" -> -1,
+      "modelardb.interface" -> s"http:$sparkPort",
+      "modelardb.engine" -> "spark"
+    )
+    val sparkConfiguration = createConfig(sparkConfigValues)
+    this.sparkEngine = new Spark(sparkConfiguration.modelarDb, storages(0).asInstanceOf[SparkStorage], arrowFlightClient = null)
     this.sparkStoragefield = sparkEngine.getClass.getDeclaredField("sparkStorage")
     this.sparkStoragefield.setAccessible(true)
     executor.execute(() => sparkEngine.start())
@@ -170,30 +186,14 @@ class QueryTest extends AnyFlatSpec with Matchers {
 
 
   /** Private Methods **/
-  private def getConfiguration: Configuration = {
-    val configuration = new Configuration()
-    configuration.add("modelardb.batch_size", 50000)
-    configuration.add("modelardb.dimensions", new Dimensions(Array())).asInstanceOf[Dimensions]
-    configuration.add("modelardb.sources.derived", new util.HashMap())
-    configuration.add("modelardb.csv.separator", " ")
-    configuration.add("modelardb.csv.header", false)
-    configuration.add("modelardb.timestamp_column", 0)
-    configuration.add("modelardb.csv.date_format", "unix")
-    configuration.add("modelardb.dynamic_split_fraction", 10.0F)
-    configuration.add("modelardb.time_zone", "UTC")
-    configuration.add("modelardb.correlations", Array[Correlation]())
-    configuration.add("modelardb.value_column", 1)
-    configuration.add("modelardb.csv.locale", "en")
-    configuration.add("modelardb.executor_service", executor)
-    configuration
-  }
 
-  private def getQueryConfiguration(port: Int): Configuration = {
-    val configuration = getConfiguration
-    configuration.add("modelardb.model_types", Array()) //Not used
-    configuration.add("modelardb.sampling_interval", -1) //Not used
-    configuration.add("modelardb.interface", "http:" + port)
-    configuration
+  private def createConfig(properties: Map[String, Any]): Config = {
+    import ModelarConfig.timezoneReader // needed to read config
+    val localConfig = ConfigFactory.parseMap(properties.asJava)
+    ConfigSource
+      .fromConfig(localConfig)
+      .withFallback(defaultConfig)
+      .loadOrThrow[Config]
   }
 
   private def assertEnginesAndStorageAreEquivalent(queries: String *) = {

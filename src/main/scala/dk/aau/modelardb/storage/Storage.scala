@@ -14,36 +14,91 @@
  */
 package dk.aau.modelardb.storage
 
-import dk.aau.modelardb.core.{Configuration, Dimensions, TimeSeriesGroup}
-import dk.aau.modelardb.core.models.ModelType
-import dk.aau.modelardb.core.models.ModelTypeFactory
-import dk.aau.modelardb.core.utility.Pair
-import dk.aau.modelardb.core.utility.Static
-import dk.aau.modelardb.core.utility.ValueFunction
+import dk.aau.modelardb.OffsetType
+import dk.aau.modelardb.config.ModelarConfig
+import dk.aau.modelardb.core.models.{ModelType, ModelTypeFactory}
+import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
+import dk.aau.modelardb.core.{Dimensions, TimeSeriesGroup}
 
+import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.mutable
 import scala.math.Ordering.Implicits.infixOrderingOps
 
-abstract class Storage {
+abstract class Storage(tidOffset: Int) {
+
+  val tidCounter = new AtomicInteger(0)
+  val gidCounter = new AtomicInteger(0)
+  private val offsetCache = mutable.Map.empty[String, mutable.Map[OffsetType, Int]]
+
+  protected def storeOffset(edgeId: String, offset: Int, offsetType: OffsetType): Unit
+  protected def readOffset(edgeId: String, offsetType: OffsetType): Option[Int]
+  protected def initializeOffsetCache(): Unit
+
+  def updateOffsetCache(key: String, offset: Int, offsetType: OffsetType): Int = {
+    offsetType match {
+      case OffsetType.TID | OffsetType.GID =>
+        if (offsetCache.contains(key)) {
+          val innerMap = offsetCache(key)
+          innerMap.put(offsetType, offset)
+          offsetCache.put(key, innerMap)
+          offset
+        } else {
+          offsetCache.put(key, mutable.Map[OffsetType, Int](offsetType -> offset))
+          offset
+        }
+      case _ @ unknown => throw new Exception(s"Unknown OffsetType: $unknown")
+    }
+  }
+
+  def getOffset(offsetType: OffsetType, edgeId: String, count: Int): Int = {
+    val edgeIdInCache = offsetCache.contains(edgeId)
+    val offsetInCache = offsetCache
+      .get(edgeId)
+      .flatMap(_.get(offsetType))
+
+    (edgeIdInCache, offsetInCache) match {
+      case (_, Some(offset)) => offset
+      case (false, _) | (true, None) =>
+        val offsetInDB = readOffset(edgeId, offsetType)
+        offsetInDB match { // offset not in DB so create a new one
+          case None =>
+            val newOffset = offsetType match {
+              case OffsetType.TID => tidCounter.getAndAdd(count)
+              case OffsetType.GID => gidCounter.getAndAdd(count)
+            }
+            offsetCache.put(edgeId, mutable.Map((offsetType, newOffset)))
+            storeOffset(edgeId, newOffset, offsetType)
+            newOffset
+          case Some(offset) => // offset in DB but not in cache so update cache and return offset
+            updateOffsetCache(edgeId, offset, offsetType)
+          case _ => throw new IllegalStateException(s"Offset cache in illegal state")
+        }
+      case _ => throw new IllegalStateException(s"Offset cache in illegal state")
+    }
+  }
+
+
   /** Public Methods * */
   def open(dimensions: Dimensions): Unit
+  def getMinTid: Int
   def getMaxTid: Int
+  def getMinGid: Int
   def getMaxGid: Int
   def close(): Unit
 
-  def storeMetadataAndInitializeCaches(configuration: Configuration, timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
-
+  def storeMetadataAndInitializeCaches(config: ModelarConfig, timeSeriesGroups: Array[TimeSeriesGroup], gidOffset: Int): Unit = {
+    gidCounter.compareAndSet(0, gidOffset)
     //The Dimensions object is stored so the schema can be retrieved later
-    this.dimensions = configuration.getDimensions
+    dimensions = config.dimensions
 
     //Inserts the metadata for the sources defined in the configuration file (Tid, Scaling Factor,
     // Sampling Interval, Gid, Dimensions) into the persistent storage defined by modelar.storage.
-    this.storeTimeSeries(timeSeriesGroups)
+    storeTimeSeries(timeSeriesGroups, tidOffset)
 
     //Computes the set of model types that must be inserted for the system to
     // function, per definition the mtid of the fallback model type is one
     val modelTypesToBeInserted = mutable.HashMap[String, Integer]()
-    val modelsWithFallback = mutable.ArrayBuffer[String](configuration.getModelTypeNames: _*)
+    val modelsWithFallback = mutable.ArrayBuffer[String](config.models: _*)
     modelsWithFallback.prepend("dk.aau.modelardb.core.models.UncompressedModelType")
     val modelTypesInStorage = this.getModelTypes
     var mtid: Integer = modelTypesInStorage.values.reduceOption(_ max _).getOrElse(0)
@@ -68,24 +123,24 @@ abstract class Storage {
 
     //Creates the timeSeriesGroupCache, timeSeriesScalingFactorCache, and timeSeriesMembersCache
     var nextTid = getMaxTid + 1
-    val derivedTimeSeries = configuration.getDerivedTimeSeries
+    val derivedTimeSeries = config.derivedTimeSeries
     val totalNumberOfSources = nextTid + derivedTimeSeries.values.stream.mapToInt((v: Array[Pair[String, ValueFunction]]) => v.length).sum
-    this.timeSeriesGroupCache = Array.fill[Int](totalNumberOfSources)(0)
-    this.timeSeriesSamplingIntervalCache = Array.fill[Int](totalNumberOfSources)(0)
-    this.timeSeriesScalingFactorCache = Array.fill(totalNumberOfSources)(0.0F)
-    this.timeSeriesMembersCache = Array.fill[Array[AnyRef]](totalNumberOfSources)(Array())
+    timeSeriesGroupCache = new ArrayCache(totalNumberOfSources, tidCounter.get())
+    timeSeriesSamplingIntervalCache = new ArrayCache(totalNumberOfSources, tidCounter.get())
+    timeSeriesScalingFactorCache = new ArrayCache(totalNumberOfSources, tidCounter.get())
+    timeSeriesMembersCache = new ArrayCache[Array[AnyRef]](totalNumberOfSources, tidCounter.get())
     val gsc = mutable.HashMap[Integer, mutable.ArrayBuffer[Integer]]()
     val scalingTransformation = new ValueFunction()
-    this.timeSeriesTransformationCache = Array.fill[ValueFunction](totalNumberOfSources)(null)
-    val groupDerivedCacheBuilder = mutable.HashMap[Integer, mutable.ArrayBuffer[Integer]]()
-    val timeSeriesInStorage = this.getTimeSeries
+    timeSeriesTransformationCache = new ArrayCache[ValueFunction](totalNumberOfSources, tidCounter.get())
+    val groupDerivedCacheBuilder = mutable.HashMap[Int, mutable.ArrayBuffer[Integer]]()
+    val timeSeriesInStorage = getTimeSeries
     for ((tid, metadata) <- timeSeriesInStorage) {
       //Metadata is a mapping from Tid to Scaling, Sampling Interval, Gid, and Dimensions
-      //Creates mappings from tid -> gid, tid -> sampling interval, tid -> scaling factor, and tid -> dimensions
       val gid = metadata(2).asInstanceOf[Int]
-      this.timeSeriesGroupCache(tid) = gid
-      this.timeSeriesSamplingIntervalCache(tid) = metadata(1).asInstanceOf[Int]
-      this.timeSeriesScalingFactorCache(tid) = metadata(0).asInstanceOf[Float]
+      //Creates mappings from tid -> gid, tid -> sampling interval, tid -> scaling factor, and tid -> dimensions
+      timeSeriesGroupCache.set(tid, gid)
+      timeSeriesSamplingIntervalCache.set(tid, metadata(1).asInstanceOf[Int])
+      timeSeriesScalingFactorCache.set(tid, metadata(0).asInstanceOf[Float])
       if ( ! gsc.contains(gid)) {
         //A group consist of time series with equivalent SI
         val metadataArray = mutable.ArrayBuffer[Integer]()
@@ -100,8 +155,8 @@ abstract class Storage {
         columns(dim) = metadata(i)
         dim += 1
       }
-      this.timeSeriesMembersCache(tid) = columns
-      this.timeSeriesTransformationCache(tid) = scalingTransformation
+      timeSeriesMembersCache.set(tid, columns)
+      timeSeriesTransformationCache.set(tid, scalingTransformation)
 
       //Creates mappings from gid -> pair of tids for original and derived (gdc), and from tid -> to transformation (tc)
       if (derivedTimeSeries.containsKey(tid)) {
@@ -110,32 +165,37 @@ abstract class Storage {
         val gdcb: mutable.ArrayBuffer[Integer] = groupDerivedCacheBuilder.getOrElse(gid, mutable.ArrayBuffer[Integer]())
         for (sat <- sourcesAndTransformations) {
           val dtid = { nextTid += 1; nextTid - 1 }  //nextTid++
-          this.timeSeriesGroupCache(dtid) = gid
-          this.timeSeriesSamplingIntervalCache(dtid) = metadata(1).asInstanceOf[Int]
-          this.timeSeriesScalingFactorCache(dtid) = 1.0F //HACK: scaling is assumed to be part of the transformation
-          this.timeSeriesMembersCache(dtid) = dimensions.get(sat._1)
-          this.timeSeriesTransformationCache(dtid) = sat._2
+          timeSeriesGroupCache.set(dtid, gid)
+          timeSeriesSamplingIntervalCache.set(dtid, metadata(1).asInstanceOf[Int])
+          timeSeriesScalingFactorCache.set(dtid, 1.0F) //HACK: scaling is assumed to be part of the transformation
+          timeSeriesMembersCache.set(dtid, dimensions.get(sat._1))
+          timeSeriesTransformationCache.set(dtid, sat._2)
           gdcb.append(tid)
           gdcb.append(dtid)
         }
       }
     }
-    this.groupDerivedCache = mutable.HashMap[Integer, Array[Int]]()
-    groupDerivedCacheBuilder.foreach(kv => this.groupDerivedCache.put(kv._1, kv._2.map(i => i.intValue()).toArray))
+
+    groupDerivedCache = groupDerivedCacheBuilder
+//      .map { case (key, value) => (key, value.map(i => i.intValue()).toArray)
+      .map { case (key, value) => (Integer.valueOf(key), value.map(i => i.intValue()).toArray)
+      }
+    //    groupDerivedCache = Map[Int, Array[Int]]()
+    //    groupDerivedCacheBuilder.foreach(kv => groupDerivedCache.set(kv._1, kv._2.map(i => i.intValue()).toArray))
 
     //The inverseDimensionsCache is constructed from the dimensions cache
     val columns = this.dimensions.getColumns
     val outer = new mutable.HashMap[String, mutable.HashMap[AnyRef, mutable.HashSet[Integer]]]
-    for (i <- 1 until this.timeSeriesMembersCache.length) {
+    for (i <- (1+tidCounter.get()) until (timeSeriesMembersCache.length + tidCounter.get())) {
       //If data with existing tids are ingested missing tids can occur and must be handled
-      if (this.timeSeriesMembersCache(i) == null) {
+      if (timeSeriesMembersCache.get(i) == null) {
         Static.warn(f"CORE: a time series with tid $i does not exist")
       } else {
         for (j <- 0 until columns.length) {
-          val value = this.timeSeriesMembersCache(i)(j)
+          val value = timeSeriesMembersCache.get(i)(j)
           val inner = outer.getOrElse(columns(j), mutable.HashMap[AnyRef, mutable.HashSet[Integer]]())
           val tids = inner.getOrElse(value, mutable.HashSet[Integer]())
-          tids.add(this.timeSeriesGroupCache(i))
+          tids.add(timeSeriesGroupCache.get(i))
           inner.put(value, tids)
           outer.put(columns(j), inner)
         }
@@ -152,16 +212,24 @@ abstract class Storage {
     }
 
     //Finally the sorted groupMetadataCache is created and consists of sampling interval and tids
-    this.groupMetadataCache = new Array[Array[Int]](gsc.size + 1)
+    groupMetadataCache = config.mode.toLowerCase match {
+      case "edge" => new ArrayCache[Array[Int]](gsc.size + 1, gidOffset)
+      case "server" => new ArrayCache[Array[Int]](config.cacheSize.getOrElse(gsc.size + 1), gidOffset)
+    }
+
     gsc.foreach(kv => {
-      this.groupMetadataCache(kv._1) = kv._2.map((i: Integer) => i.intValue()).toArray
-      java.util.Arrays.sort(this.groupMetadataCache(kv._1), 1, this.groupMetadataCache(kv._1).length)
+      val key = kv._1 //gid
+      // metadata = [samplingInterval, tid1, tid2, ...]
+      val metadataArray = kv._2.map((i: Integer) => i.intValue()).toArray
+      // skip first element (sampling interval) and sort (in-place) remaining elements (tids)
+      java.util.Arrays.sort(metadataArray, 1, metadataArray.length)
+      groupMetadataCache.set(key, metadataArray)
     })
-    this.storeModelTypes(modelTypesToBeInserted)
+    storeModelTypes(modelTypesToBeInserted)
   }
 
   /** Protected Methods * */
-  protected def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup]): Unit
+  protected def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup], gidOffset: Int): Unit
   protected def getTimeSeries: mutable.HashMap[Integer, Array[AnyRef]]
   protected def storeModelTypes(modelsToInsert: mutable.HashMap[String, Integer]): Unit
   protected def getModelTypes: mutable.HashMap[String, Integer]
@@ -203,27 +271,25 @@ abstract class Storage {
 
 
   //Read Cache: Maps the tid of a time series to the gid of the group that the time series is a member of
-  var timeSeriesGroupCache: Array[Int] = _
+  var timeSeriesGroupCache: ArrayCache[Int] = _
 
   //Read Cache: Maps the tid of a time series to the sampling interval specified for that time series
-  var timeSeriesSamplingIntervalCache: Array[Int] = _
+  var timeSeriesSamplingIntervalCache: ArrayCache[Int] = _
 
   //Read Cache: Maps the tid of a time series to the scaling factor specified for for that time series
-  var timeSeriesScalingFactorCache: Array[Float] = _
+  var timeSeriesScalingFactorCache: ArrayCache[Float] = _
 
   //Read Cache: Maps the tid of a time series to the transformation specified for that time series
-  var timeSeriesTransformationCache: Array[ValueFunction] = _
+  var timeSeriesTransformationCache: ArrayCache[ValueFunction] = _
 
   //Read Cache: Maps the tid of a time series to the members specified for that time series
-  var timeSeriesMembersCache: Array[Array[AnyRef]] = _
-
+  var timeSeriesMembersCache: ArrayCache[Array[AnyRef]] = _
 
   //Read Cache: Maps the value of a column for a dimension to the tids with that member
   var memberTimeSeriesCache: mutable.HashMap[String, mutable.HashMap[AnyRef, Array[Integer]]] = _
 
-
   //Read Cache: Maps the gid of a group to the groups sampling interval and the tids that are part of that group
-  var groupMetadataCache: Array[Array[Int]] = _
+  var groupMetadataCache: ArrayCache[Array[Int]] = _
 
   //Read Cache: Maps the gid of a group to pairs of tids for time series with derived time series
   var groupDerivedCache: mutable.HashMap[Integer, Array[Int]] = _
