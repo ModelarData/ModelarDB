@@ -6,24 +6,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+### Changed
+### Deprecated
+### Removed
+### Fixed
+### Security
+
+## [0.2.0] - 2021-12-21
+### Added
 - A storage layer that use Apache Parquet or Apache ORC as the on-disk format.
 - Support for specifying a different port for the HTTP and Socket interfaces
   using the syntax `interface:port`. The port 9999 is still used by default.
 - Integration tests that ensure engines and data stores return the same result.
+- An experimental configuration file format based on PureConfig and HOCON.
+- A prototype transfer module based on Akka Streams and Apache Arrow Flight.
+- A binary column-based query interface that is based on Apache Arrow Flight.
 
 ### Changed
-- The Apache Spark-based engine now uses INT64 to represent timestamps when
-  reading and writing Apache Parquet files for compatibility with the H2-based
-  engine.
+- The Apache Spark-based engine now uses INT64 for the timestamps when storing
+  segments in Apache Parquet files for compatibility with the H2-based engine.
 - Both engines now use the same format when serializing timestamps to JSON.
 
-### Deprecated
-### Removed
 ### Fixed
 - Some numbers being quoted in the JSON output from the H2-based engine.
 - The Apache Spark-based engine swapping tid and mtid for one projection.
-
-### Security
 
 ## [0.1.0] - 2021-07-07
 ### Added

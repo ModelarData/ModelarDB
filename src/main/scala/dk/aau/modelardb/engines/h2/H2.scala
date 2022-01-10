@@ -14,58 +14,66 @@
  */
 package dk.aau.modelardb.engines.h2
 
-import dk.aau.modelardb.Interface
+import akka.stream.scaladsl.SourceQueueWithComplete
+import dk.aau.modelardb.arrow.{ArrowFlightClient, ArrowUtil}
+import dk.aau.modelardb.config.ModelarConfig
 import dk.aau.modelardb.core.Dimensions.Types
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Logger, SegmentFunction, Static}
-import dk.aau.modelardb.engines.EngineUtilities
+import dk.aau.modelardb.engines.{EngineUtilities, QueryEngine}
+import dk.aau.modelardb.storage.ArrayCache
+import org.apache.arrow.vector.VectorSchemaRoot
 import org.h2.expression.condition.{Comparison, ConditionAndOr, ConditionInConstantSet}
 import org.h2.expression.{Expression, ExpressionColumn, ValueExpression}
 import org.h2.table.TableFilter
 import org.h2.value.{ValueInt, ValueTimestamp}
 
 import java.sql.{DriverManager, Timestamp}
-import java.util.concurrent.CountDownLatch
+import java.util.concurrent.{CountDownLatch, Executors}
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.function.BooleanSupplier
 import java.util.{Base64, TimeZone}
+
 import scala.collection.mutable
-import collection.JavaConverters._
+import scala.collection.JavaConverters._
 
 import org.codehaus.jackson.map.util.ISO8601Utils
 
-class H2(configuration: Configuration, h2storage: H2Storage) {
+class H2(config: ModelarConfig, h2storage: H2Storage, arrowFlightClient: ArrowFlightClient) extends QueryEngine {
   /** Instance Variables **/
   private var finalizedSegmentsIndex = 0
-  private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](configuration.getBatchSize)
+  private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](config.batchSize)
   private var workingSets: Array[WorkingSet] = _
   private var numberOfRunningIngestors: CountDownLatch = _
   private val cacheLock = new ReentrantReadWriteLock()
   private val temporarySegments = mutable.HashMap[Int, Array[SegmentGroup]]()
   private val base64Encoder = Base64.getEncoder
+  val connection = DriverManager.getConnection(H2.h2ConnectionString)
+  val executor = Executors.newCachedThreadPool()
 
   /** Public Methods **/
-  def start(): Unit = {
+  def start(): Unit = ???
+
+  def start(queue: SourceQueueWithComplete[SegmentGroup]): Unit = {
+
     //Initialize
-    val connection = DriverManager.getConnection(H2.h2ConnectionString)
     val stmt = connection.createStatement()
-    stmt.execute(H2.getCreateDataPointViewSQL(configuration.getDimensions))
-    stmt.execute(H2.getCreateSegmentViewSQL(configuration.getDimensions))
+    stmt.execute(H2.getCreateDataPointViewSQL(config.dimensions))
+    stmt.execute(H2.getCreateSegmentViewSQL(config.dimensions))
     H2UDAF.initialize(stmt)
     stmt.close()
-    val dimensions = configuration.getDimensions
+    val dimensions = config.dimensions
     EngineUtilities.initialize(dimensions)
 
     //Ingestion
     H2.initialize(this, h2storage)
-    startIngestion(dimensions)
+    startIngestion(queue)
+    waitUntilIngestionIsDone(queue)
 
-    //Interface
-    Interface.start(configuration, q => this.executeQuery(q))
+  }
 
-    //Shutdown
+  def stop(): Unit = {
     connection.close()
-    waitUntilIngestionIsDone()
   }
 
   def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
@@ -79,37 +87,52 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
 
   /** Private Methods **/
   //Ingestion
-  private def startIngestion(dimensions: Dimensions): Unit = {
+  private def startIngestion(queue: SourceQueueWithComplete[SegmentGroup]): Unit = {
     //Initialize Storage
+    val dimensions = config.dimensions
+    val correlations = config.correlations
     h2storage.open(dimensions)
-    if (configuration.getIngestors == 0) {
-      if ( ! configuration.getDerivedTimeSeries.isEmpty) { //Initializes derived time series
-        Partitioner.initializeTimeSeries(configuration, h2storage.getMaxTid)
+    val maxTid = h2storage.getMaxTid match {
+      case 0 => h2storage.tidCounter.get() // when maxTid is 0 then use offset
+      case _@n => n // when maxTid > 0 then offset already included
+    }
+    val minGid = h2storage.getMinGid
+    val maxGid = h2storage.getMaxGid
+    if (config.ingestors == 0) {
+      if (!config.derivedTimeSeries.isEmpty) { //Initializes derived time series
+        Partitioner.initializeTimeSeries(config, maxTid)
       }
-      h2storage.storeMetadataAndInitializeCaches(configuration, Array())
+      h2storage.storeMetadataAndInitializeCaches(config, Array(), minGid - 1) // we -1 because offset has to account for GID being 1-based not 0-based
       return
     }
 
     //Initialize Ingestion
-    val timeSeries = Partitioner.initializeTimeSeries(configuration, h2storage.getMaxTid)
-    val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, h2storage.getMaxGid)
-    h2storage.storeMetadataAndInitializeCaches(configuration, timeSeriesGroups)
+    val timeSeries = Partitioner.initializeTimeSeries(config, maxTid)
+    val timeSeriesGroups = Partitioner.groupTimeSeries(correlations, dimensions, timeSeries, maxGid)
+    val gidCount = timeSeriesGroups.length
+    val gidOffset = arrowFlightClient.getGidOffset(gidCount)
+    if (maxGid == 0) { // We know the DB is empty so add offset
+      timeSeriesGroups.foreach { group =>
+      group.setGid(group.gid + gidOffset)
+      }
+    }
+    arrowFlightClient.putTimeseries(timeSeriesGroups.toSeq)
+    h2storage.storeMetadataAndInitializeCaches(config, timeSeriesGroups, gidOffset)
 
     val mtidCache = h2storage.mtidCache.asJava
-    val ingestors = configuration.getIngestors
-    val executor = configuration.getExecutorService
+    val ingestors = config.ingestors
     this.numberOfRunningIngestors = new CountDownLatch(ingestors)
-    this.workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, mtidCache, ingestors)
+    this.workingSets = Partitioner.partitionTimeSeries(config, timeSeriesGroups, mtidCache, ingestors)
 
     //Start Ingestion
     Static.info("ModelarDB: waiting for all ingestors to finnish")
     println(WorkingSet.toString(workingSets))
     for (workingSet <- workingSets) {
-      executor.execute(() => ingest(workingSet))
+      executor.execute(() => ingest(workingSet, queue))
     }
   }
 
-  private def ingest(workingSet: WorkingSet): Unit = {
+  private def ingest(workingSet: WorkingSet, queue: SourceQueueWithComplete[SegmentGroup]): Unit = {
     //Creates a method that stores temporary segments in memory and finalized segments in batches to be written to disk
     val consumeTemporary = new SegmentFunction {
       override def emit(gid: Int, startTime: Long, endTime: Long, mtid: Int, model: Array[Byte], gaps: Array[Byte]): Unit = {
@@ -132,8 +155,8 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
         //Batch the finalized segment
         finalizedSegments(finalizedSegmentsIndex) = newFinalizedSegment
         finalizedSegmentsIndex += 1
-        if (finalizedSegmentsIndex == configuration.getBatchSize) {
-          h2storage.storeSegmentGroups(finalizedSegments, finalizedSegmentsIndex)
+        if (finalizedSegmentsIndex == config.batchSize) {
+          finalizedSegments.foreach(queue.offer)
           finalizedSegmentsIndex = 0
         }
         cacheLock.writeLock().unlock()
@@ -149,7 +172,7 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
 
     //Write remaining finalized segments
     cacheLock.writeLock().lock()
-    h2storage.storeSegmentGroups(finalizedSegments, finalizedSegmentsIndex)
+    finalizedSegments.foreach(queue.offer)
     finalizedSegmentsIndex = 0
 
     //The CountDownLatch is decremented in the lock to ensure countDown and getCount is atomic
@@ -171,8 +194,8 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
 
     //Extracts the metadata for the group of time series being updated
     val groupMetadataCache = h2storage.groupMetadataCache
-    val group = groupMetadataCache(inputSegmentGroup.gid).drop(1)
-    val samplingInterval = groupMetadataCache(inputSegmentGroup.gid)(0)
+    val group = groupMetadataCache.get(inputSegmentGroup.gid).drop(1)
+    val samplingInterval = groupMetadataCache.get(inputSegmentGroup.gid)(0)
     val inputIngested = group.toSet.diff(inputGaps.toSet)
     var updatedExistingSegment = false
 
@@ -212,16 +235,25 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
     }
   }
 
-  private def waitUntilIngestionIsDone(): Unit = {
+  private def waitUntilIngestionIsDone(queue: SourceQueueWithComplete[SegmentGroup]): Unit = {
     if (this.numberOfRunningIngestors != null) {
       this.numberOfRunningIngestors.await()
     }
+    queue.complete()
+  }
+
+  def execute(query: String): VectorSchemaRoot = {
+    val stmt = connection.createStatement()
+    stmt.execute(query)
+    val rs = stmt.getResultSet
+    val root = ArrowUtil.jdbcToArrow(rs)
+    stmt.close()
+    root
   }
 
   //Query Processing
   private def executeQuery(query: String): Array[String] = {
     //Execute Query
-    val connection = DriverManager.getConnection(H2.h2ConnectionString)
     val stmt = connection.createStatement()
     stmt.execute(query)
     val rs = stmt.getResultSet
@@ -261,7 +293,7 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
       output.append(value)
     } else if (value.isInstanceOf[Timestamp]) {
       output.append('"')
-      output.append(ISO8601Utils.format(value.asInstanceOf[Timestamp], true, TimeZone.getDefault))
+      output.append(ISO8601Utils.format(value.asInstanceOf[Timestamp], true, H2.timeZone))
       output.append('"')
     } else if (value.isInstanceOf[Array[Byte]]) {
       output.append('"')
@@ -281,6 +313,7 @@ object H2 {
   var h2: H2 = _ //Provides access to the h2 and h2storage instances from the views
   var h2storage: H2Storage =  _
   private val h2ConnectionString: String = "jdbc:h2:mem:modelardb"
+  private var timeZone: TimeZone = _
   private val compareTypeField = classOf[Comparison].getDeclaredField("compareType")
   this.compareTypeField.setAccessible(true)
   private val compareTypeMethod = classOf[Comparison].getDeclaredMethod("getCompareOperator", classOf[Int])
@@ -292,6 +325,7 @@ object H2 {
   def initialize(h2: H2, h2Storage: H2Storage): Unit = {
     this.h2 = h2
     this.h2storage = h2Storage
+    this.timeZone = TimeZone.getDefault
   }
 
   //Data Point View
@@ -309,7 +343,7 @@ object H2 {
        |""".stripMargin
   }
 
-  def expressionToSQLPredicates(expression: Expression, tsgc: Array[Int],
+  def expressionToSQLPredicates(expression: Expression, tsgc: ArrayCache[Int],
                                 idc: mutable.HashMap[String, mutable.HashMap[Object, Array[Integer]]],
                                 supportsOr: Boolean): String = { //HACK: supportsOR ensures Cassandra does not receive an OR operator
     expression match {
@@ -326,13 +360,13 @@ object H2 {
           case ("TID", "=") => val tid = ve.getValue(null).asInstanceOf[ValueInt].getInt
             "GID = " + EngineUtilities.tidPointToGidPoint(tid, tsgc)
           //TIMESTAMP
-          case ("TIMESTAMP", ">") => "END_TIME > " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
-          case ("TIMESTAMP", ">=") => "END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
-          case ("TIMESTAMP", "<") => "START_TIME < " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
-          case ("TIMESTAMP", "<=") => "START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
+          case ("TIMESTAMP", ">") => "END_TIME > " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(timeZone).getTime
+          case ("TIMESTAMP", ">=") => "END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(timeZone).getTime
+          case ("TIMESTAMP", "<") => "START_TIME < " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(timeZone).getTime
+          case ("TIMESTAMP", "<=") => "START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(timeZone).getTime
           case ("TIMESTAMP", "=") =>
-            "(START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime +
-              " AND END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime + ")"
+            "(START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(timeZone).getTime +
+              " AND END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(timeZone).getTime + ")"
           //DIMENSIONS
           case (columnName, "=") if idc.contains(columnName) =>
             EngineUtilities.dimensionEqualToGidIn(columnName, ve.getValue(null).getObject, idc).mkString("GID IN (", ",", ")")

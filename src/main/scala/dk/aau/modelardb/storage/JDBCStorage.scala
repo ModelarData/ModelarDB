@@ -14,6 +14,7 @@
  */
 package dk.aau.modelardb.storage
 
+import dk.aau.modelardb.OffsetType
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.engines.h2.{H2, H2Storage}
@@ -25,36 +26,85 @@ import org.h2.table.TableFilter
 import java.sql.{Array => _, _}
 import scala.collection.mutable
 
-class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Storage with SparkStorage {
+class JDBCStorage(connectionStringAndTypes: String, tidOffset: Int) extends Storage(tidOffset) with H2Storage with SparkStorage {
+
   /** Instance Variables **/
   private var connection: Connection = _
   private var insertStmt: PreparedStatement = _
   private var getMaxTidStmt: PreparedStatement = _
   private var getMaxGidStmt: PreparedStatement = _
   private val (connectionString, textType, blobType) = splitConnectionStringAndTypes(connectionStringAndTypes)
+  private var tableExist: Boolean = _
+
+  private def checkTableExist(tableName: String): Boolean = {
+    val metadata = this.connection.getMetaData
+    val tableType = Array("TABLE")
+    val tables = metadata.getTables(null, null, tableName, tableType)
+    tables.next()
+  }
+
+  override def storeOffset(edgeId: String, offset: Int, offsetType: OffsetType): Unit = ???
+  override protected def readOffset(edgeId: String, offsetType: OffsetType): Option[Int] = ???
+  override def initializeOffsetCache(): Unit = {
+    ???
+//    val statement = connection.createStatement()
+//    val rs = statement.executeQuery("SELECT edge_id, tid_offset, gid_offset FROM offsets")
+//    while (rs.next()) {
+//      val edgeId = rs.getString("edge_id")
+//      val tidOffset = rs.getInt("tid_offset")
+//      val gidOffset = rs.getInt("gid_offset")
+//      offsetCache.put(edgeId, Map(("tid", tidOffset)))
+//      offsetCache.put(edgeId, Map(("gid", gidOffset)))
+//    }
+//    val maxTid = getMaxTid
+//    tidCounter.set(maxTid)
+//    val maxGid = getMaxGid
+//    gidCounter.set(maxGid)
+//    statement.close()
+  }
 
   /** Public Methods **/
   //Storage
   override def open(dimensions: Dimensions): Unit = {
+    tidCounter.set(tidOffset)
     //Initializes the RDBMS connection
-    this.connection = DriverManager.getConnection(connectionString)
-    this.connection.setAutoCommit(false)
+    connection = DriverManager.getConnection(connectionString)
+    connection.setAutoCommit(false)
 
     //Checks if the tables and indexes exist and create them if necessary
-    val metadata = this.connection.getMetaData
-    val tableType = Array("TABLE")
-    val tables = metadata.getTables(null, null, "SEGMENT", tableType)
+    tableExist = checkTableExist("SEGMENT")
 
-    if ( ! tables.next()) {
+    if ( ! tableExist) {
       val stmt = this.connection.createStatement()
-      stmt.executeUpdate(s"CREATE TABLE model_type(mtid INTEGER, name ${this.textType})")
-      stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mtid INTEGER, model ${this.blobType}, gaps ${this.blobType})")
-      stmt.executeUpdate(s"CREATE TABLE time_series(tid INTEGER, scaling_factor REAL, sampling_interval INTEGER, gid INTEGER${getDimensionsSQL(dimensions, this.textType)})")
+      stmt.executeUpdate(s"CREATE TABLE model_type(mtid INTEGER, name ${textType})")
+      stmt.executeUpdate(s"CREATE TABLE segment(gid INTEGER, start_time BIGINT, end_time BIGINT, mtid INTEGER, model ${blobType}, gaps ${blobType})")
+      stmt.executeUpdate(s"CREATE TABLE time_series(tid INTEGER, scaling_factor REAL, sampling_interval INTEGER, gid INTEGER${getDimensionsSQL(dimensions, textType)})")
+//      stmt.executeUpdate(s"CREATE TABLE offsets(edge_id TEXT, tid_offset INT, gid_offset INT, PRIMARY KEY (edge_id))")
 
       stmt.executeUpdate("CREATE INDEX segment_gid ON segment(gid)")
       stmt.executeUpdate("CREATE INDEX segment_start_time ON segment(start_time)")
       stmt.executeUpdate("CREATE INDEX segment_end_time ON segment(end_time)")
     }
+
+//    FIXME: Make a check that ensures the tid from the server corresponds to the one in the db.
+//    if (tableExist) {
+//      val minTid = {
+//        val rs = connection.createStatement()
+//          .executeQuery("SELECT MIN(tid) FROM time_series")
+//        rs.next()
+//        rs.getInt(1)
+//      }
+//
+//      val minGid = {
+//        val rs = connection.createStatement()
+//          .executeQuery("SELECT MIN(gid) FROM time_series")
+//        rs.next()
+//        rs.getInt(1)
+//      }
+//      FIXME: tidCounter is not initialized at this point. So it is 0
+//      if (minTid != tidCounter.get()) throw new Exception("Offset does not match min TID in database")
+//      if (minGid != gidCounter.get()) throw new Exception("Offset does not match min GID in database")
+//    }
 
     //Prepares the necessary statements
     this.insertStmt = this.connection.prepareStatement("INSERT INTO segment VALUES(?, ?, ?, ?, ?, ?)")
@@ -62,7 +112,20 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     this.getMaxGidStmt = this.connection.prepareStatement("SELECT MAX(gid) FROM time_series")
   }
 
-  def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
+  override def storeTimeseries(timeseries: Seq[(Int, Float, Int, Int)]): Unit = {
+    val insertSourceStmt = connection.prepareStatement("INSERT INTO time_series VALUES(?, ?, ?, ?)")
+    timeseries.foreach { case (tid, scalingFactor, samplingInterval, gid) =>
+      insertSourceStmt.clearParameters()
+      insertSourceStmt.setInt(1, tid)
+      insertSourceStmt.setFloat(2, scalingFactor)
+      insertSourceStmt.setInt(3, samplingInterval)
+      insertSourceStmt.setInt(4, gid)
+
+      insertSourceStmt.executeUpdate()
+    }
+  }
+
+  def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup], tidOffset: Int): Unit = {
     val columnsInNormalizedDimensions = dimensions.getColumns.length
     val columns = "?, " * (columnsInNormalizedDimensions + 3) + "?"
     val insertSourceStmt = connection.prepareStatement("INSERT INTO time_series VALUES(" + columns + ")")
@@ -143,11 +206,15 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
   }
 
   override def getMaxTid: Int = {
-    getFirstInteger(this.getMaxTidStmt)
+//    val offset = if (tableExist) {0} else {tidCounter.get()}
+//    getFirstInteger(getMaxTidStmt) + offset
+    getFirstInteger(getMaxTidStmt)
   }
 
   override def getMaxGid: Int = {
-    getFirstInteger(this.getMaxGidStmt)
+//    val offset = if (tableExist) {0} else {gidCounter.get()}
+//    getFirstInteger(getMaxGidStmt) + offset
+    getFirstInteger(getMaxGidStmt)
   }
 
   override def close(): Unit = {
@@ -156,20 +223,25 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     this.connection.close()
   }
 
+  def getSegmentGroups: ResultSet = {
+    val stmt = connection.createStatement()
+    stmt.executeQuery("SELECT * FROM segment")
+  }
+
   //H2Storage
   override def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
     try {
       for (segmentGroup <- segmentGroups.take(size)) {
-        this.insertStmt.setInt(1, segmentGroup.gid)
-        this.insertStmt.setLong(2, segmentGroup.startTime)
-        this.insertStmt.setLong(3, segmentGroup.endTime)
-        this.insertStmt.setInt(4, segmentGroup.mtid)
-        this.insertStmt.setBytes(5, segmentGroup.model)
-        this.insertStmt.setBytes(6, segmentGroup.offsets)
-        this.insertStmt.addBatch()
+        insertStmt.setInt(1, segmentGroup.gid)
+        insertStmt.setLong(2, segmentGroup.startTime)
+        insertStmt.setLong(3, segmentGroup.endTime)
+        insertStmt.setInt(4, segmentGroup.mtid)
+        insertStmt.setBytes(5, segmentGroup.model)
+        insertStmt.setBytes(6, segmentGroup.offsets)
+        insertStmt.addBatch()
       }
-      this.insertStmt.executeBatch()
-      this.connection.commit()
+      insertStmt.executeBatch()
+      connection.commit()
     } catch {
       case se: java.sql.SQLException =>
         close()
@@ -179,7 +251,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
 
   override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
     getSegmentGroups(H2.expressionToSQLPredicates(filter.getSelect.getCondition,
-      this.timeSeriesGroupCache, this.memberTimeSeriesCache, supportsOr = true))
+      timeSeriesGroupCache, memberTimeSeriesCache, supportsOr = true))
   }
 
   //SparkStorage
@@ -244,7 +316,7 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     }
   }
 
-  private def resultSetToSegmentGroup(resultSet: ResultSet): SegmentGroup = {
+  def resultSetToSegmentGroup(resultSet: ResultSet): SegmentGroup = {
     val gid = resultSet.getInt(1)
     val startTime = resultSet.getLong(2)
     val endTime = resultSet.getLong(3)
@@ -264,5 +336,19 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
         close()
         throw new java.lang.RuntimeException(se)
     }
+  }
+
+  override def getMinTid: Int = {
+    val rs = connection.createStatement()
+      .executeQuery("SELECT MIN(tid) FROM time_series")
+    rs.next()
+    rs.getInt(1)
+  }
+
+  override def getMinGid: Int = {
+    val rs = connection.createStatement()
+      .executeQuery("SELECT MIN(gid) FROM time_series")
+    rs.next()
+    rs.getInt(1)
   }
 }

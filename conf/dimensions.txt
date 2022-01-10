@@ -1,0 +1,12 @@
+Location, house string, channel string
+
+house_1-channel_1.dat, 1, 1
+house_1-channel_2.dat, 1, 2
+house_2-channel_1.dat, 2, 1
+house_2-channel_2.dat, 2, 2
+house_3-channel_1.dat, 3, 1
+house_3-channel_2.dat, 3, 2
+house_4-channel_1.dat, 4, 1
+house_4-channel_2.dat, 4, 2
+house_5-channel_1.dat, 5, 1
+house_5-channel_2.dat, 5, 2
