@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 ### Fixed
 - Some numbers being quoted in the JSON output from the H2-based engine.
+- The Apache Spark-based engine swapping tid and mtid for one projection.
 
 ### Security
 
