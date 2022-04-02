@@ -254,7 +254,8 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
     output.append(':')
 
     //Numbers should not be quoted
-    if (value.isInstanceOf[Int] || value.isInstanceOf[Float]) {
+    if (value.isInstanceOf[Int] || value.isInstanceOf[Long]
+      || value.isInstanceOf[Float] || value.isInstanceOf[Double]) {
       output.append(value)
     } else if (value.isInstanceOf[Array[Byte]]) {
       output.append('"')

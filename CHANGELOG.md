@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 ### Removed
 ### Fixed
+- Some numbers being quoted in the JSON output from the H2-based engine.
+
 ### Security
 
 ## [0.1.0] - 2021-07-07
