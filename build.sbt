@@ -31,9 +31,6 @@ Compile / run := Defaults.runTask(
   Compile / run / mainClass,
   Compile / run / runner).evaluated
 
-/* Make SBT fork for all tasks so the JDBC is always available */
-fork := true
-
 /* Disables log buffering when running tests for nicer output */
 Test / logBuffered := false
 

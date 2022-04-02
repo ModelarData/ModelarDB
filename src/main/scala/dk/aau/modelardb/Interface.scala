@@ -32,9 +32,10 @@ object Interface {
     }
 
     this.sql = sql
-    configuration.getString("modelardb.interface") match {
-      case "socket" => socket(configuration.getExecutorService)
-      case "http" => http(configuration.getExecutorService)
+    val (interface, port) = getInterfaceAndPort(configuration)
+    interface match {
+      case "socket" => socket(configuration.getExecutorService, port)
+      case "http" => http(configuration.getExecutorService, port)
       case "repl" => repl(configuration.getStorage)
       case path if Files.exists(Paths.get(path)) => file(path)
       case _ => throw new java.lang.UnsupportedOperationException("unknown value for modelardb.interface in the config file")
@@ -42,12 +43,22 @@ object Interface {
   }
 
   /** Private Methods **/
-  private def socket(executor: Executor): Unit = {
+  private def getInterfaceAndPort(configuration: Configuration): (String, Int) = {
+    val interface = configuration.getString("modelardb.interface")
+    val startOfPort = interface.lastIndexOf(':')
+    if (startOfPort == -1) {
+      (interface, 9999)
+    } else {
+      (interface.substring(0, startOfPort), interface.substring(startOfPort + 1).toInt)
+    }
+  }
+
+  private def socket(executor: Executor, port: Int): Unit = {
     //Setup
-    val serverSocket = new java.net.ServerSocket(9999)
+    val serverSocket = new java.net.ServerSocket(port)
 
     while (true) {
-      Static.info("ModelarDB: socket end-point is ready (Port: 9999)")
+      Static.info(f"ModelarDB: socket end-point is ready (Port: $port)")
       val clientSocket = serverSocket.accept()
       executor.execute(() => {
         val in = new java.io.BufferedReader(new java.io.InputStreamReader(clientSocket.getInputStream))
@@ -85,9 +96,9 @@ object Interface {
     serverSocket.close()
   }
 
-  private def http(executor: Executor): Unit = {
+  private def http(executor: Executor, port: Int): Unit = {
     //Setup
-    val server = HttpServer.create(new java.net.InetSocketAddress(9999), 0)
+    val server = HttpServer.create(new java.net.InetSocketAddress(port), 0)
 
     //Query
     class QueryHandler extends HttpHandler {
@@ -110,7 +121,7 @@ object Interface {
     server.createContext("/", new QueryHandler())
     server.setExecutor(executor)
     server.start()
-    Static.info("ModelarDB: HTTP end-point is ready (Port: 9999)")
+    Static.info(f"ModelarDB: HTTP end-point is ready (Port: $port)")
     scala.io.StdIn.readLine() //Prevents the method from returning to keep the server running
 
     //Cleanup
