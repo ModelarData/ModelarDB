@@ -24,13 +24,15 @@ import org.h2.expression.{Expression, ExpressionColumn, ValueExpression}
 import org.h2.table.TableFilter
 import org.h2.value.{ValueInt, ValueTimestamp}
 
-import java.sql.DriverManager
+import java.sql.{DriverManager, Timestamp}
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.function.BooleanSupplier
 import java.util.{Base64, TimeZone}
 import scala.collection.mutable
 import collection.JavaConverters._
+
+import org.codehaus.jackson.map.util.ISO8601Utils
 
 class H2(configuration: Configuration, h2storage: H2Storage) {
   /** Instance Variables **/
@@ -257,6 +259,10 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
     if (value.isInstanceOf[Int] || value.isInstanceOf[Long]
       || value.isInstanceOf[Float] || value.isInstanceOf[Double]) {
       output.append(value)
+    } else if (value.isInstanceOf[Timestamp]) {
+      output.append('"')
+      output.append(ISO8601Utils.format(value.asInstanceOf[Timestamp], true, TimeZone.getDefault))
+      output.append('"')
     } else if (value.isInstanceOf[Array[Byte]]) {
       output.append('"')
       output.append(this.base64Encoder.encodeToString(value.asInstanceOf[Array[Byte]]))
