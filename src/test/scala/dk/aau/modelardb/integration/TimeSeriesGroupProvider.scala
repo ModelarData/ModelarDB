@@ -34,16 +34,21 @@ trait TimeSeriesGroupProvider  extends Assertions {
 
   /** Public Methods  **/
   def newTimeSeriesGroups: Array[TimeSeriesGroup] = {
-    newTimeSeriesGroups(sys.env(orcTestDataKey))
+    getTimeSeriesFiles.zipWithIndex.map(pair => newTimeSeriesGroup(pair._1, pair._2 + 1))
+  }
+
+  def getTimeSeriesFiles: Array[File] = {
+    new File(sys.env(orcTestDataKey)).listFiles().filter(f => f.isFile && f.getName.endsWith(".orc"))
+  }
+
+  def getSamplingInterval() = {
+    if (this.samplingInterval == -1) {
+     newTimeSeriesGroups
+    }
+    samplingInterval
   }
 
   /** Private Methods **/
-  private def newTimeSeriesGroups(folderPath: String): Array[TimeSeriesGroup] = {
-    val testDataFolder = new File(folderPath)
-    val testDataFiles = testDataFolder.listFiles().filter(f => f.isFile && f.getName.endsWith(".orc"))
-    testDataFiles.zipWithIndex.map(pair => newTimeSeriesGroup(pair._1, pair._2 + 1))
-  }
-
   private def newTimeSeriesGroup(orcTestFile: File, id: Int): TimeSeriesGroup = {
     val orcTestFileAbsolutePath = orcTestFile.getAbsolutePath
     val path = new Path(orcTestFileAbsolutePath)

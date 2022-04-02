@@ -94,7 +94,7 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
         rs.getTimestamp("start_time").toInstant should equal(startTime)
         rs.getTimestamp(3).toInstant should equal(endTime)
         rs.getTimestamp("end_time").toInstant should equal(endTime)
-        rs.getInt(1) should equal (mtid)
+        rs.getInt(4) should equal (mtid)
         rs.getInt("mtid") should equal (mtid)
 
         an [JdbcSQLDataException] should be thrownBy rs.getInt(2)

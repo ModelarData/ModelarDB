@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A storage layer that use Apache Parquet or Apache ORC as the on-disk format.
 - Support for specifying a different port for the HTTP and Socket interfaces
   using the syntax `interface:port`. The port 9999 is still used by default.
+- Integration tests that ensure engines and data stores return the same result.
 
 ### Changed
 - The Apache Spark-based engine now uses INT64 to represent timestamps when
