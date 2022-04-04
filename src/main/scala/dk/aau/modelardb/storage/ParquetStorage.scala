@@ -14,7 +14,6 @@
  */
 package dk.aau.modelardb.storage
 
-import dk.aau.modelardb.OffsetType
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
 import dk.aau.modelardb.engines.spark.Spark
@@ -41,7 +40,7 @@ import java.io.FileNotFoundException
 import java.util
 import scala.collection.mutable
 
-class ParquetStorage(rootFolder: String, tidOffset: Int) extends FileStorage(rootFolder, tidOffset) {
+class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   /** Instance Variables **/
   private val segmentGroupSchema = new MessageType("segment",
     new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "gid" ),
@@ -108,7 +107,7 @@ class ParquetStorage(rootFolder: String, tidOffset: Int) extends FileStorage(roo
     writer.close()
   }
 
-  override protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path, tidOffset: Int): Unit = {
+  override protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path): Unit = {
     val columns = new util.ArrayList[Type]()
     columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "tid"))
     columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.FLOAT, "scaling_factor"))
@@ -130,7 +129,7 @@ class ParquetStorage(rootFolder: String, tidOffset: Int) extends FileStorage(roo
     for (tsg <- timeSeriesGroups) {
       for (ts <- tsg.getTimeSeries) {
         val group = new SimpleGroup(schema)
-        group.add(0, ts.tid + tidOffset)
+        group.add(0, ts.tid)
         group.add(1, ts.scalingFactor)
         group.add(2, ts.samplingInterval)
         group.add(3, tsg.gid)
@@ -330,14 +329,6 @@ class ParquetStorage(rootFolder: String, tidOffset: Int) extends FileStorage(roo
     new ParquetWriterBuilder(parquetFilePath)
       .withType(schema).withCompressionCodec(CompressionCodecName.SNAPPY).build()
   }
-
-  override protected def storeOffset(edgeId: String, offset: Int, offsetType: OffsetType): Unit = ???
-  override protected def readOffset(edgeId: String, offsetType: OffsetType): Option[Int] = ???
-  override protected def initializeOffsetCache(): Unit = ???
-
-  override def getMinTid: Int = ???
-
-  override def getMinGid: Int = ???
 }
 
 private class ParquetWriterBuilder(parquetFilePath: Path) extends ParquetWriter.Builder[Group, ParquetWriterBuilder](parquetFilePath) {

@@ -1,4 +1,4 @@
-/* Copyright 2018-2020 Aalborg University
+/* Copyright 2018 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,27 +25,28 @@ public class ModelTypeFactory {
         return getModel("dk.aau.modelardb.core.models.UncompressedModelType", 1, errorBound, lengthBound);
     }
 
-    public static ModelType[] getModelTypes(String[] modelTypes, int[] mtids, float error, int limit) {
+    public static ModelType[] getModelTypes(String[] modelTypes, int[] mtids, float errorBound, int lengthBound) {
         for (String modelTypeName : modelTypes) {
             //The fallback model type is purposely designed without any limits to ensure that progress can always be made
             if (modelTypeName.equals("dk.aau.modelardb.core.models.UncompressedModelType")) {
                 throw new IllegalArgumentException("CORE: the fallback model type cannot be used as a normal model type");
             }
         }
-        return IntStream.range(0, modelTypes.length).mapToObj(i-> getModel(modelTypes[i], mtids[i], error, limit)).toArray(ModelType[]::new);
+        return IntStream.range(0, modelTypes.length).mapToObj(i ->
+                getModel(modelTypes[i], mtids[i], errorBound, lengthBound)).toArray(ModelType[]::new);
     }
 
     public static ModelType getModel(String modelTypeName, int mtid, float error, int limit) {
         try {
-            Constructor constructor = Class.forName(modelTypeName).getDeclaredConstructor(int.class, float.class, int.class);
+            Constructor<?> constructor = Class.forName(modelTypeName).getDeclaredConstructor(int.class, float.class, int.class);
             constructor.setAccessible(true);
             return (ModelType) constructor.newInstance(mtid, error, limit);
         } catch (ClassNotFoundException e) {
-            throw new UnsupportedOperationException("CORE: model type \"" + modelTypeName + "\" could not be found in CLASSPATH");
+            throw new UnsupportedOperationException("CORE: model type \"" + modelTypeName + "\" could not be found in CLASSPATH", e);
         } catch (NoSuchMethodException e) {
-            throw new UnsupportedOperationException("CORE: model type \"" + modelTypeName + "\" require a \"int, float, int\" constructor");
+            throw new UnsupportedOperationException("CORE: model type \"" + modelTypeName + "\" require a \"int, float, int\" constructor", e);
         } catch (Exception e) {
-            throw new UnsupportedOperationException("CORE: construction of \"" + modelTypeName + "\" is not possible");
+            throw new UnsupportedOperationException("CORE: construction of \"" + modelTypeName + "\" is not possible", e);
         }
     }
 }

@@ -14,7 +14,6 @@
  */
 package dk.aau.modelardb.core;
 
-import dk.aau.modelardb.config.ModelarConfig;
 import dk.aau.modelardb.core.timeseries.*;
 import dk.aau.modelardb.core.utility.Pair;
 import dk.aau.modelardb.core.utility.Static;
@@ -26,26 +25,27 @@ import java.util.stream.IntStream;
 public class Partitioner {
 
     /** Public Methods **/
-    public static TimeSeries[] initializeTimeSeries(ModelarConfig config, int currentMaximumTid) {
+    public static TimeSeries[] initializeTimeSeries(Configuration configuration, int currentMaximumTid) {
         int cms = currentMaximumTid;
-        String[] sources = config.sources();
+        String[] sources = configuration.getSources();
         ArrayList<TimeSeries> tss = new ArrayList<>();
 
-        String separator = config.csv().separator();
-        boolean header = config.csv().header();
-        int timestampColumnIndex = config.timestampColumn();
-        String dateFormat = config.csv().dateformat();
-        String timeZone = config.timezone().getID();
-        int valueColumnIndex = config.valueColumn();
-        String locale = config.csv().locale();
+        String separator = configuration.getString("modelardb.csv.separator");
+        boolean header = configuration.getBoolean("modelardb.csv.header");
+        int timestampColumnIndex = configuration.getInteger("modelardb.timestamp_column");
+        String dateFormat = configuration.getString("modelardb.csv.date_format");
+        String timeZone = configuration.getString("modelardb.time_zone");
+        int valueColumnIndex = configuration.getInteger("modelardb.value_column");
+        String locale = configuration.getString("modelardb.csv.locale");
 
         //HACK: Sampling interval is one argument as all time series used for evaluation used the same sampling interval
-        int samplingInterval = config.samplingInterval();
+        int samplingInterval = configuration.getSamplingInterval();
 
         //Derived data sources are normalized so all use tids to simply the processing in Storage
         String derivedKey = "modelardb.sources.derived";
-        HashMap<String, Pair<String, ValueFunction>[]> derivedDataSources = config.derivedSources();
-        HashMap<Integer, Pair<String, ValueFunction>[]> derivedTimeSeries = config.derivedTimeSeries();
+        HashMap<String, Pair<String, ValueFunction>[]> derivedDataSources =
+                (HashMap<String, Pair<String, ValueFunction>[]>) configuration.remove(derivedKey)[0];
+        HashMap<Integer, Pair<String, ValueFunction>[]> derivedTimeSeries = new HashMap<>();
 
         //Initializes all time series, both bounded (files) and unbounded (sockets)
         for (String source : sources) {
@@ -85,17 +85,19 @@ public class Partitioner {
             String valueBeingParsed = nfe.getMessage().substring(18);
             throw new IllegalArgumentException("CORE: error parsing " + valueBeingParsed  + " specified in " + derivedKey, nfe);
         }
+        configuration.add(derivedKey, derivedTimeSeries);
 
         int dtsc = derivedTimeSeries.values().stream().mapToInt(pairs -> pairs.length).sum();
         Static.info(String.format("CORE: initialized %d time series and %d derived time series", tss.size(), dtsc));
         return tss.toArray(new TimeSeries[0]);
     }
 
-    public static TimeSeriesGroup[] groupTimeSeries(Correlation[] correlations, Dimensions dimensions, TimeSeries[] timeSeries, int currentMaximumGid) {
+    public static TimeSeriesGroup[] groupTimeSeries(Configuration configuration, TimeSeries[] timeSeries, int currentMaximumGid) {
         if (timeSeries.length == 0) {
             return new TimeSeriesGroup[0];
         }
 
+        Correlation[] correlations = configuration.getCorrelations();
         Iterator<Integer> gids = IntStream.range(currentMaximumGid + 1, Integer.MAX_VALUE).iterator();
         TimeSeriesGroup[] groups;
         if (correlations.length == 0) {
@@ -107,6 +109,7 @@ public class Partitioner {
             if (areAllDisjoint(correlations)) {
                 tss = Partitioner.groupTimeSeriesOnlyBySource(timeSeries, correlations);
             } else {
+                Dimensions dimensions = configuration.getDimensions();
                 tss = Partitioner.groupTimeSeriesByCorrelation(timeSeries, dimensions, correlations);
             }
 
@@ -120,21 +123,14 @@ public class Partitioner {
         return groups;
     }
 
-    public static WorkingSet[] partitionTimeSeries(ModelarConfig config, TimeSeriesGroup[] timeSeriesGroups,
+    public static WorkingSet[] partitionTimeSeries(Configuration configuration, TimeSeriesGroup[] timeSeriesGroups,
                                                    Map<String, Integer> mtidCache, int partitions) {
         TimeSeriesGroup[][] pts = Partitioner.partitionTimeSeriesByRate(timeSeriesGroups, partitions);
-        String[] models = config.models();
-        int[] mtids = Arrays.stream(models).mapToInt(mtidCache::get).toArray();
-        WorkingSet[] workingSets = Arrays.stream(pts).map(tss ->
-                new WorkingSet(tss,
-                        config.dynamicSplitFraction(),
-                        models,
-                        mtids,
-                        config.errorBound(),
-                        config.lengthBound(),
-                        config.maxLatency()
-                )
-        ).toArray(WorkingSet[]::new);
+        int[] mtids = Arrays.stream(configuration.getModelTypeNames()).mapToInt(mtidCache::get).toArray();
+        WorkingSet[] workingSets = Arrays.stream(pts).map(tss -> new WorkingSet(tss, configuration.getFloat(
+                "modelardb.dynamic_split_fraction"), configuration.getModelTypeNames(), mtids,
+                configuration.getErrorBound(), configuration.getLengthBound(), configuration.getMaximumLatency()))
+                .toArray(WorkingSet[]::new);
         Static.info(String.format("CORE: created %d working set(s)", workingSets.length));
         return workingSets;
     }

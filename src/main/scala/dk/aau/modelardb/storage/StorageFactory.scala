@@ -17,17 +17,17 @@ package dk.aau.modelardb.storage
 object StorageFactory {
 
   /** Public Methods **/
-  def getStorage(connectionString: String, tidOffset: Int): Storage = {
-    // Selects the correct storage backend based on the connection string provided
+  def getStorage(connectionString: String): Storage = {
+    //Selects the correct storage backend based on the connection string provided
     try {
       if (connectionString.startsWith("cassandra://")) {
-        new CassandraStorage(connectionString.substring(12), tidOffset)
+        new CassandraStorage(connectionString.substring(12))
       } else if (connectionString.startsWith("jdbc:")) {
-        new JDBCStorage(connectionString, tidOffset)
+        new JDBCStorage(connectionString)
       } else if (connectionString.startsWith("orc:")) {
-        new ORCStorage(connectionString.substring(4) + '/', tidOffset)
+        new ORCStorage(connectionString.substring(4) + '/')
       } else if (connectionString.startsWith("parquet:")) {
-        new ParquetStorage(connectionString.substring(8) + '/', tidOffset)
+        new ParquetStorage(connectionString.substring(8) + '/')
       } else {
         throw new java.lang.IllegalArgumentException("ModelarDB: unknown value for modelardb.storage in the config file")
       }

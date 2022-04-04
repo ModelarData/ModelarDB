@@ -15,7 +15,6 @@
 package dk.aau.modelardb.engines
 
 import dk.aau.modelardb.core.Dimensions
-import dk.aau.modelardb.storage.ArrayCache
 
 import java.sql.{SQLException, Timestamp}
 import scala.collection.mutable
@@ -63,16 +62,16 @@ object EngineUtilities {
 
   //Predicate Push-down
   //Tid => Gid
-  def tidPointToGidPoint(tid: Int, tsgc: ArrayCache[Int]): Int = {
-    if (0 < tid && tid < tsgc.size) {
-      tsgc.get(tid)
+  def tidPointToGidPoint(tid: Int, tsgc: Array[Int]): Int = {
+    if (0 < tid && tid < tsgc.length) {
+      tsgc(tid)
     } else {
       -1
     }
   }
 
-  def tidRangeToGidIn(startTid: Int, endTid: Int, tsgc: ArrayCache[Int]): Array[Any] = {
-    val maxTid = tsgc.size
+  def tidRangeToGidIn(startTid: Int, endTid: Int, tsgc: Array[Int]): Array[Any] = {
+    val maxTid = tsgc.length
     if (endTid <= 0 || startTid >= maxTid) {
       //All tids are outside the range of assigned tids, so a sentinel is used to ensure no gids match
       return Array(-1)
@@ -81,19 +80,19 @@ object EngineUtilities {
     //All tids within the range of assigned tids are translated with the set removing duplicates
     val gids = scala.collection.mutable.Set[Int]()
     for (tid <- Math.max(startTid, 1) to Math.min(endTid, maxTid)) {
-      gids.add(tsgc.get(tid))
+      gids.add(tsgc(tid))
     }
     gids.toArray
   }
 
-  def tidInToGidIn(tids: Array[Any], tsgc: ArrayCache[Int]): Array[Any] = {
-    val maxTid = tsgc.size
+  def tidInToGidIn(tids: Array[Any], tsgc: Array[Int]): Array[Any] = {
+    val maxTid = tsgc.length
 
     //All tids in the IN clause are translated with the set removing duplicates
     val gids = scala.collection.mutable.Set[Int]()
     tids.foreach(obj => {
       val tid = obj.asInstanceOf[Int]
-      gids.add(if (tid <= 0 || maxTid < tid) -1 else tsgc.get(tid))
+      gids.add(if (tid <= 0 || maxTid < tid) -1 else tsgc(tid))
     })
     gids.toArray
   }

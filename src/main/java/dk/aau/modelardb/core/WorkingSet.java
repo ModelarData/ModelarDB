@@ -16,7 +16,6 @@ package dk.aau.modelardb.core;
 
 import dk.aau.modelardb.core.models.ModelType;
 import dk.aau.modelardb.core.models.ModelTypeFactory;
-import dk.aau.modelardb.core.timeseries.TimeSeries;
 import dk.aau.modelardb.core.utility.Logger;
 import dk.aau.modelardb.core.utility.SegmentFunction;
 

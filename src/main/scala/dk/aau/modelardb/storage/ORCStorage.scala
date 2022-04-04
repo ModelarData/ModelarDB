@@ -14,7 +14,6 @@
  */
 package dk.aau.modelardb.storage
 
-import dk.aau.modelardb.OffsetType
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
 import dk.aau.modelardb.engines.spark.Spark
@@ -27,12 +26,10 @@ import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 import org.h2.table.TableFilter
 
 import java.io.FileNotFoundException
-import java.nio.charset.StandardCharsets.UTF_8
 import java.sql.Timestamp
 import scala.collection.mutable
 
-class ORCStorage(rootFolder: String, tidOffset: Int) extends FileStorage(rootFolder, tidOffset) {
-
+class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
   /** Instance Variables **/
   private val segmentGroupSchema = TypeDescription.createStruct()
     .addField("gid", TypeDescription.createInt())
@@ -62,16 +59,13 @@ class ORCStorage(rootFolder: String, tidOffset: Int) extends FileStorage(rootFol
 
     var id = 0L
     while (rows.nextBatch(batch)) {
-      val column = batch
-        .cols(fieldIndex)
-        .asInstanceOf[LongColumnVector]
-        .vector
+      val column = batch.cols(fieldIndex).asInstanceOf[LongColumnVector].vector
       for (i <- 0 until column.length) {
         id = math.max(column(i), id)
       }
     }
     rows.close()
-    id.toInt + tidOffset
+    id.toInt
   }
 
   protected override def mergeFiles(outputFilePath: Path, inputFilesPaths: mutable.ArrayBuffer[Path]): Unit = {
@@ -96,7 +90,7 @@ class ORCStorage(rootFolder: String, tidOffset: Int) extends FileStorage(rootFol
     writer.close()
   }
 
-  override protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path, tidOffset: Int): Unit = {
+  override protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path): Unit = {
     val schema = TypeDescription.createStruct()
       .addField("tid", TypeDescription.createInt())
       .addField("scaling_factor", TypeDescription.createFloat())
@@ -119,7 +113,7 @@ class ORCStorage(rootFolder: String, tidOffset: Int) extends FileStorage(rootFol
     for (tsg <- timeSeriesGroups) {
       for (ts <- tsg.getTimeSeries) {
         val row = { batch.size += 1; batch.size - 1 } //batch.size++
-        batch.cols(0).asInstanceOf[LongColumnVector].vector(row) = ts.tid + tidOffset
+        batch.cols(0).asInstanceOf[LongColumnVector].vector(row) = ts.tid
         batch.cols(1).asInstanceOf[DoubleColumnVector].vector(row) = ts.scalingFactor
         batch.cols(2).asInstanceOf[LongColumnVector].vector(row) = ts.samplingInterval
         batch.cols(3).asInstanceOf[LongColumnVector].vector(row) = tsg.gid
@@ -338,63 +332,4 @@ class ORCStorage(rootFolder: String, tidOffset: Int) extends FileStorage(rootFol
     System.arraycopy(source.vector(row), source.start(row), destination, 0, source.length(row))
     destination
   }
-
-  private val schemaOffsets = TypeDescription.createStruct()
-    .addField("edge_id", TypeDescription.createString())
-    .addField("tid_offset", TypeDescription.createInt())
-    .addField("gid_offset", TypeDescription.createInt())
-
-  private val pathOffsets = new Path(rootFolder + "offsets" + getFileSuffix)
-
-  override protected def initializeOffsetCache(): Unit = {
-    val reader = getReader(pathOffsets)
-    val rows = reader.rows()
-    val batch = reader.getSchema.createRowBatch()
-    while (rows.nextBatch(batch)) {
-      for (row <- 0 until batch.size) {
-        val edgeId = batch.cols(0).asInstanceOf[BytesColumnVector].vector(row).toString
-        val tidVector = batch.cols(1).asInstanceOf[LongColumnVector]
-        val gidVector = batch.cols(2).asInstanceOf[LongColumnVector]
-
-        if (tidVector.noNulls || !tidVector.isNull(row)) {
-          val tidOffset = tidVector.vector(row).toInt
-          updateOffsetCache(edgeId, tidOffset, OffsetType.TID)
-        }
-
-        if (gidVector.noNulls || !gidVector.isNull(row)) {
-          val gidOffset = gidVector.vector(row).toInt
-          updateOffsetCache(edgeId, gidOffset, OffsetType.GID)
-        }
-
-      }
-    }
-    rows.close()
-    reader.close()
-    val maxTid = getMaxTid
-    tidCounter.set(maxTid)
-    val maxGid = getMaxGid
-    gidCounter.set(maxGid)
-  }
-
-  override protected def storeOffset(edgeId: String, offset: Int, offsetType: OffsetType): Unit = {
-    val writer = getWriter(pathOffsets, schemaOffsets)
-    val batch = writer.getSchema.createRowBatch()
-    batch.size = 1
-    batch.cols(0).asInstanceOf[BytesColumnVector].vector(0) = edgeId.getBytes(UTF_8)
-    offsetType match {
-      case OffsetType.TID =>
-        batch.cols(1).asInstanceOf[LongColumnVector].vector(0) = offset
-      case OffsetType.GID =>
-        batch.cols(2).asInstanceOf[LongColumnVector].vector(0) = offset
-      case _ @ unknown => throw new Exception(s"Unknown OffsetType: $unknown")
-    }
-    writer.addRowBatch(batch)
-    writer.close()
-  }
-
-  override protected def readOffset(edgeId: String, offsetType: OffsetType): Option[Int] = ???
-
-  override def getMinTid: Int = ???
-
-  override def getMinGid: Int = ???
 }

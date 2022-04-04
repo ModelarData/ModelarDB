@@ -18,8 +18,6 @@ import com.datastax.oss.driver.api.core.CqlSession
 import com.datastax.oss.driver.api.core.cql._
 import com.datastax.spark.connector._
 import com.datastax.spark.connector.cql.CassandraConnector
-import dk.aau.modelardb.InternalTypes._
-import dk.aau.modelardb.OffsetType
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
 import dk.aau.modelardb.engines.h2.{H2, H2Storage}
@@ -32,54 +30,13 @@ import org.h2.table.TableFilter
 import java.nio.ByteBuffer
 import java.time.Instant
 import java.util
-import scala.+:
 import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
-import scala.util.{Failure, Try}
 
-class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage(tidOffset) with H2Storage with SparkStorage {
+class CassandraStorage(connectionString: String) extends Storage with H2Storage with SparkStorage {
   /** Instance Variables **/
   private var keyspace: String = _
   private var connector: CassandraConnector = _
   private var insertStmt: PreparedStatement = _
-
-  override protected def readOffset(edgeId: String, offsetType: OffsetType): Option[Int] = {
-    val offsetColumn = offsetType match {
-      case OffsetType.TID => "tid_offset"
-      case OffsetType.GID => "gid_offset"
-      case _ @ unknown => throw new Exception(s"Unknown OffsetType: $unknown")
-    }
-
-    val session = connector.openSession()
-    val stmt = session
-      .prepare(s"SELECT $offsetColumn FROM $keyspace.offsets WHERE edge_id = ?")
-      .bind().setString(0, edgeId)
-    val rs = session.execute(stmt).iterator()
-
-    Try(rs.next())
-      .flatMap{ row =>
-        if (row.isNull(offsetColumn)) { Failure(new NoSuchElementException(s"No $offsetColumn for edgeID: $edgeId")) }
-        else { Try(row.getInt(offsetColumn)) }
-      }.toOption
-
-  }
-
-  override def initializeOffsetCache(): Unit = {
-    val session = connector.openSession()
-    val rs = session.execute(SimpleStatement.newInstance(s"SELECT edge_id, tid_offset, gid_offset FROM $keyspace.offsets"))
-    rs.forEach{ row =>
-      val edgeId = row.getString("edge_id")
-      val tidOffset = row.getInt("tid_offset")
-      val gidOffset = row.getInt("gid_offset")
-      updateOffsetCache(edgeId, tidOffset, OffsetType.TID)
-      updateOffsetCache(edgeId, gidOffset, OffsetType.GID)
-    }
-    val maxTid = getMaxTid
-    tidCounter.set(maxTid)
-    val maxGid = getMaxGid
-    gidCounter.set(maxGid)
-    session.close()
-  }
 
   /** Public Methods **/
   //Storage
@@ -90,34 +47,9 @@ class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage
       .set("spark.cassandra.auth.username", user)
       .set("spark.cassandra.auth.password", pass))
     createTables(dimensions)
-    initializeOffsetCache()
   }
 
-  override def storeTimeseries(timeseries: Seq[(TID, ScalingFactor, SamplingInterval, GID)]): Unit = {
-    val session = this.connector.openSession()
-    // TODO: Add support for dimensions
-    val tids = ArrayBuffer(timeseries.length)
-    val insertString = s"INSERT INTO ${keyspace}.time_series(tid, scaling_factor, sampling_interval, gid) VALUES(?, ?, ?, ?)"
-    timeseries.foreach { case (tid, scalingFactor, samplingInterval, gid) =>
-      val stmt = SimpleStatement.builder(insertString)
-        .addPositionalValues(
-          (tid + tidOffset).asInstanceOf[Object],
-          scalingFactor.asInstanceOf[Object],
-          samplingInterval.asInstanceOf[Object],
-          gid.asInstanceOf[Object]
-        )
-      tids += tid
-      session.execute(stmt.build())
-    }
-    session.close()
-    //Group Metadata Cache: Maps the gid of a group to the groups sampling interval and the tids that are part of that group
-    val gid = timeseries.head._1
-    val samplingInterval = timeseries.head._3
-//    val tids = timeseries.map(_._1).toArray
-    groupMetadataCache.set(gid, (samplingInterval +: tids).toArray)
-  }
-
-  def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup], tidOffset: Int): Unit = {
+  def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
     val session = this.connector.openSession()
     val columnsInNormalizedDimensions = dimensions.getColumns.length
     val columns = if (columnsInNormalizedDimensions  == 0) "" else dimensions.getColumns.mkString(", ", ", ", "")
@@ -127,11 +59,10 @@ class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage
       for (ts <- tsg.getTimeSeries) {
         var stmt = SimpleStatement.builder(insertString)
           .addPositionalValues(
-            (ts.tid + tidOffset).asInstanceOf[Object],
+            ts.tid.asInstanceOf[Object],
             ts.scalingFactor.asInstanceOf[Object],
             ts.samplingInterval.asInstanceOf[Object],
-            tsg.gid.asInstanceOf[Object]
-          )
+            tsg.gid.asInstanceOf[Object])
 
         val members = dimensions.get(ts.source)
         if (members.nonEmpty) {
@@ -178,8 +109,8 @@ class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage
   }
 
   def getModelTypes: mutable.HashMap[String, Integer] = {
-    val session = connector.openSession()
-    val stmt = SimpleStatement.newInstance(s"SELECT * FROM ${keyspace}.model_type")
+    val session = this.connector.openSession()
+    val stmt = SimpleStatement.newInstance(s"SELECT * FROM ${this.keyspace}.model_type")
     val results = session.execute(stmt)
     val modelsInStorage = mutable.HashMap[String, Integer]()
 
@@ -194,19 +125,11 @@ class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage
   }
 
   override def getMaxTid: Int = {
-    getMaxID(s"SELECT DISTINCT tid FROM ${keyspace}.time_series")
+    getMaxID(s"SELECT DISTINCT tid FROM ${this.keyspace}.time_series")
   }
 
   override def getMaxGid: Int = {
-    getMaxID(s"SELECT gid FROM ${keyspace}.time_series")
-  }
-
-  override def getMinTid: Int = {
-    getMinID(s"SELECT DISTINCT tid FROM ${keyspace}.time_series")
-  }
-
-  override def getMinGid: Int = {
-    getMinID(s"SELECT DISTINCT gid FROM ${keyspace}.time_series")
+    getMaxID(s"SELECT gid FROM ${this.keyspace}.time_series")
   }
 
   override def close(): Unit = {
@@ -238,7 +161,7 @@ class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage
 
   def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
     val predicates = H2.expressionToSQLPredicates(filter.getSelect.getCondition,
-      timeSeriesGroupCache, memberTimeSeriesCache, supportsOr = false)
+      this.timeSeriesGroupCache, this.memberTimeSeriesCache, supportsOr = false)
     Static.info(s"ModelarDB: constructed predicates ($predicates)")
     val session = this.connector.openSession()
     val results = if (predicates.isEmpty) {
@@ -306,35 +229,32 @@ class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage
         parsed.put(na(0), na(1))
       }
     }
-    keyspace = parsed.getOrDefault("keyspace", "modelardb")
+    this.keyspace = parsed.getOrDefault("keyspace", "modelardb")
     (elems(0), parsed.getOrDefault("username", "cassandra"), parsed.getOrDefault("password", "cassandra"))
   }
 
   private def createTables(dimensions: Dimensions): Unit = {
-    val session = connector.openSession()
+    val session = this.connector.openSession()
     var createTable: SimpleStatement = null
-    createTable = SimpleStatement.newInstance(s"CREATE KEYSPACE IF NOT EXISTS ${keyspace} WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };")
+    createTable = SimpleStatement.newInstance(s"CREATE KEYSPACE IF NOT EXISTS ${this.keyspace} WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };")
     session.execute(createTable)
 
-    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${keyspace}.segment(gid INT, start_time TIMESTAMP, end_time TIMESTAMP, mtid INT, model BLOB, gaps BLOB, PRIMARY KEY (gid, start_time, gaps));")
+    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.segment(gid INT, start_time TIMESTAMP, end_time TIMESTAMP, mtid INT, model BLOB, gaps BLOB, PRIMARY KEY (gid, start_time, gaps));")
     session.execute(createTable)
 
-    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${keyspace}.model_type(mtid INT, name TEXT, PRIMARY KEY (mtid));")
+    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.model_type(mtid INT, name TEXT, PRIMARY KEY (mtid));")
     session.execute(createTable)
 
-    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${keyspace}.time_series(tid INT, scaling_factor FLOAT, sampling_interval INT, gid INT${getDimensionsSQL(dimensions, "TEXT")}, PRIMARY KEY (tid));")
-    session.execute(createTable)
-
-    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${keyspace}.offsets(edge_id TEXT, tid_offset INT, gid_offset INT, PRIMARY KEY (edge_id));")
+    createTable = SimpleStatement.newInstance(s"CREATE TABLE IF NOT EXISTS ${this.keyspace}.time_series(tid INT, scaling_factor FLOAT, sampling_interval INT, gid INT${getDimensionsSQL(dimensions, "TEXT")}, PRIMARY KEY (tid));")
     session.execute(createTable)
 
     //The insert statement will be used for every batch of segment groups
-    insertStmt = session.prepare(s"INSERT INTO ${keyspace}.segment(gid, start_time, end_time, mtid, model, gaps) VALUES(?, ?, ?, ?, ?, ?)")
+    this.insertStmt = session.prepare(s"INSERT INTO ${this.keyspace}.segment(gid, start_time, end_time, mtid, model, gaps) VALUES(?, ?, ?, ?, ?, ?)")
     session.close()
   }
 
   private def getMaxID(query: String): Int = {
-    val rows = connector.openSession().execute(query)
+    val rows = this.connector.openSession().execute(query)
 
     //Extracts the maximum id manually as Cassandra does not like aggregate queries
     var maxID = 0
@@ -348,41 +268,10 @@ class CassandraStorage(connectionString: String, tidOffset: Int) extends Storage
     maxID
   }
 
-  private def getMinID(query: String): Int = {
-    val rows = connector.openSession().execute(query)
-
-    // Extracts the minimum id manually as Cassandra does not like aggregate queries
-    var minID = Int.MaxValue
-    val it = rows.iterator()
-    while (it.hasNext) {
-      val currentID = it.next.getInt(0)
-      if (currentID < minID) {
-        minID = currentID
-      }
-    }
-    minID
-  }
-
   private def storeSegmentGroups(session: CqlSession, batch: util.ArrayList[BoundStatement]): Unit = {
     val batchStatement = BatchStatement.newInstance(BatchType.LOGGED)
     batchStatement.setIdempotent(true)
     session.execute(batchStatement.addAll(batch))
     batch.clear()
-  }
-
-  override protected def storeOffset(edgeId: String, offset: Int, offsetType: OffsetType): Unit = {
-    val offsetColumn = offsetType match {
-      case OffsetType.TID => "tid_offset"
-      case OffsetType.GID => "gid_offset"
-      case _ @ unknown => throw new Exception(s"Unknown OffsetType: $unknown")
-    }
-    connector.withSessionDo { session =>
-      val statement = session
-        .prepare(s"INSERT INTO ${keyspace}.offsets(edge_id, $offsetColumn) VALUES(?, ?)")
-        .bind()
-        .setString(0, edgeId)
-        .setInt(1, offset)
-      session.execute(statement)
-    }
   }
 }
