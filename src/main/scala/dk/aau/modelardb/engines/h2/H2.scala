@@ -14,27 +14,34 @@
  */
 package dk.aau.modelardb.engines.h2
 
-import dk.aau.modelardb.Interface
 import dk.aau.modelardb.core.Dimensions.Types
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Logger, SegmentFunction, Static}
-import dk.aau.modelardb.engines.EngineUtilities
+import dk.aau.modelardb.engines.{EngineUtilities, QueryEngine}
+import dk.aau.modelardb.remote.QueryInterface
+
 import org.h2.expression.condition.{Comparison, ConditionAndOr, ConditionInConstantSet}
 import org.h2.expression.{Expression, ExpressionColumn, ValueExpression}
 import org.h2.table.TableFilter
 import org.h2.value.{ValueInt, ValueTimestamp}
+
+import org.apache.arrow.vector.VectorSchemaRoot
+import org.apache.arrow.adapter.jdbc.{JdbcToArrowConfig, JdbcToArrowConfigBuilder, JdbcToArrowUtils}
+import org.apache.arrow.memory.RootAllocator
+
+import org.codehaus.jackson.map.util.ISO8601Utils
 
 import java.sql.{DriverManager, Timestamp}
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.function.BooleanSupplier
 import java.util.{Base64, TimeZone}
+
 import scala.collection.mutable
+
 import collection.JavaConverters._
 
-import org.codehaus.jackson.map.util.ISO8601Utils
-
-class H2(configuration: Configuration, h2storage: H2Storage) {
+class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine {
   /** Instance Variables **/
   private var finalizedSegmentsIndex = 0
   private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](configuration.getBatchSize)
@@ -61,11 +68,65 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
     startIngestion(dimensions)
 
     //Interface
-    Interface.start(configuration, q => this.executeQuery(q))
+    QueryInterface.start(configuration, this)
 
     //Shutdown
     connection.close()
     waitUntilIngestionIsDone()
+  }
+
+  def executeToJSON(query: String): Array[String] = {
+    //Execute Query
+    val connection = DriverManager.getConnection(H2.h2ConnectionString)
+    val stmt = connection.createStatement()
+    stmt.execute(query)
+    val rs = stmt.getResultSet
+    val md = rs.getMetaData
+
+    //Format Result
+    val result = mutable.ArrayBuffer[String]()
+    val line = new StringBuilder()
+    val columnSeparators = md.getColumnCount
+    while (rs.next()) {
+      var columnIndex = 1
+      line.append('{')
+      while (columnIndex < columnSeparators) {
+        addColumnToOutput(md.getColumnName(columnIndex), rs.getObject(columnIndex), ',', line)
+        columnIndex += 1
+      }
+      addColumnToOutput(md.getColumnName(columnIndex), rs.getObject(columnIndex), '}', line)
+      result.append(line.mkString)
+      line.clear()
+    }
+
+    //Close and Return
+    rs.close()
+    stmt.close()
+    connection.close()
+    result.toArray
+  }
+
+  def executeToArrow(query: String): VectorSchemaRoot = {
+    //Execute Query
+    val connection = DriverManager.getConnection(H2.h2ConnectionString)
+    val stmt = connection.createStatement()
+    stmt.execute(query)
+    val rs = stmt.getResultSet
+
+    //Format Result
+    val arrowJdbcConfig = new JdbcToArrowConfigBuilder()
+      .setAllocator(new RootAllocator())
+      .setTargetBatchSize(JdbcToArrowConfig.NO_LIMIT_BATCH_SIZE)
+      .build()
+    val schema = JdbcToArrowUtils.jdbcToArrowSchema(rs.getMetaData, arrowJdbcConfig)
+    val vsr = VectorSchemaRoot.create(schema, new RootAllocator())
+    JdbcToArrowUtils.jdbcToArrowVectors(rs, vsr, arrowJdbcConfig)
+
+    //Close and Return
+    rs.close()
+    stmt.close()
+    connection.close()
+    vsr
   }
 
   def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
@@ -219,36 +280,6 @@ class H2(configuration: Configuration, h2storage: H2Storage) {
   }
 
   //Query Processing
-  private def executeQuery(query: String): Array[String] = {
-    //Execute Query
-    val connection = DriverManager.getConnection(H2.h2ConnectionString)
-    val stmt = connection.createStatement()
-    stmt.execute(query)
-    val rs = stmt.getResultSet
-    val md = rs.getMetaData
-
-    //Format Result
-    val result = mutable.ArrayBuffer[String]()
-    val line = new StringBuilder()
-    val columnSeparators = md.getColumnCount
-    while (rs.next()) {
-      var columnIndex = 1
-      line.append('{')
-      while (columnIndex < columnSeparators) {
-        addColumnToOutput(md.getColumnName(columnIndex), rs.getObject(columnIndex), ',', line)
-        columnIndex += 1
-      }
-      addColumnToOutput(md.getColumnName(columnIndex), rs.getObject(columnIndex), '}', line)
-      result.append(line.mkString)
-      line.clear()
-    }
-
-    //Close and Return
-    rs.close()
-    stmt.close()
-    result.toArray
-  }
-
   private def addColumnToOutput(columnName: String, value: AnyRef, end: Char, output: StringBuilder): Unit = {
     output.append('"')
     output.append(columnName)

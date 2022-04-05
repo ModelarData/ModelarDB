@@ -17,6 +17,7 @@ package dk.aau.modelardb.engines
 import dk.aau.modelardb.core.Dimensions
 
 import java.sql.{SQLException, Timestamp}
+
 import scala.collection.mutable
 
 object EngineUtilities {
@@ -25,6 +26,12 @@ object EngineUtilities {
   var dataPointViewNameToIndex: Map[String, Int] = _
 
   /** Public Methods **/
+  //Query Rewrite
+  def rewriteQuery(query: String): String = {
+    query.replace("COUNT_S(#)", "COUNT_S(tid, start_time, end_time)")
+      .replace("#", "tid, start_time, end_time, mtid, model, gaps")
+  }
+
   //Projection
   def initialize(dimensions: Dimensions): Unit = {
     //Segment View

@@ -6,6 +6,10 @@ libraryDependencies ++= Seq(
   /* Code Generation */
   "org.scala-lang" % "scala-compiler" % scalaVersion.value,
 
+  /* Query Interface */
+  "org.apache.arrow" % "flight-core" % "6.0.1",
+  "org.apache.arrow" % "arrow-jdbc" % "6.0.1",
+
   /* Query Engine */
   "com.h2database" % "h2" % "1.4.200",
   "org.apache.spark" %% "spark-core" % "3.1.2" % "provided",
@@ -25,6 +29,9 @@ libraryDependencies ++= Seq(
   "org.scalamock" %% "scalamock" % "5.1.0" % Test
 )
 
+/* Apache Spark raises ExceptionInInitializerError on startup if an incorrect version is used*/
+dependencyOverrides += "com.fasterxml.jackson.core" % "jackson-databind" % "2.10.0"
+
 /* Makes SBT include the dependencies marked as provided when run */
 Compile / run := Defaults.runTask(
   Compile / fullClasspath,
@@ -33,6 +40,9 @@ Compile / run := Defaults.runTask(
 
 /* Disables log buffering when running tests for nicer output */
 Test / logBuffered := false
+
+/* Use Ivy instead of Coursier due to Coursier GitHub Issue #2016 */
+ThisBuild / useCoursier := false
 
 /* Creates a code coverage report in HTML using Jacoco */
 jacocoReportSettings := JacocoReportSettings(formats = Seq(JacocoReportFormats.ScalaHTML))
