@@ -85,8 +85,22 @@ public class Configuration {
         return (String) getObject(name);
     }
 
+    public String getString(String name, String defaultValue) {
+        if ( ! this.values.containsKey(name)) {
+            return defaultValue;
+        }
+        return getString(name);
+    }
+
     public boolean getBoolean(String name) {
         return (boolean) getObject(name);
+    }
+
+    public boolean getBoolean(String name, boolean defaultValue) {
+        if ( ! this.values.containsKey(name)) {
+            return defaultValue;
+        }
+        return getBoolean(name);
     }
 
     public int getInteger(String name) {
