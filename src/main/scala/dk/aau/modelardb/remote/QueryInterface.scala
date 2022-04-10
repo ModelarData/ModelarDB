@@ -181,7 +181,7 @@ object QueryInterface {
       result = this.queryEngine.executeToJSON(query_rewritten)
     } catch {
       case e: Exception =>
-        e.printStackTrace()
+        Static.warn("ModelarDB: query failed due to " + e)
         result = Array(e.toString)
     }
     val et = System.currentTimeMillis() - st

@@ -1,4 +1,4 @@
-/* Copyright 2021 The ModelarDB Contributors
+/* Copyright 2022 The ModelarDB Contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,9 @@
  */
 package dk.aau.modelardb.remote
 
+import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.engines.{EngineUtilities, QueryEngine}
+
 import org.apache.arrow.flight.{Action, ActionType, Criteria, FlightDescriptor, FlightEndpoint, FlightInfo, FlightProducer, FlightStream, Location, PutResult, Result, Ticket}
 import org.apache.arrow.vector.ipc.message.IpcOption
 import org.apache.arrow.vector.types.pojo.{Field, Schema}
@@ -27,30 +29,42 @@ class QueryFlightProducer(queryEngine: QueryEngine) extends FlightProducer {
 
   /** Public Methods **/
   override def getStream(context: FlightProducer.CallContext, ticket: Ticket, listener: FlightProducer.ServerStreamListener): Unit = {
-    //Assumes that the ticket contains a SQL query
-    val query = new String(ticket.getBytes, UTF_8)
-    val query_rewritten = EngineUtilities.rewriteQuery(query)
-    val vsr = queryEngine.executeToArrow(query_rewritten)
-    listener.start(vsr, null, this.defaultIpcOption)
-    listener.putNext()
-    listener.completed()
-    vsr.close()
+    try {
+      //Assumes that the ticket contains a SQL query
+      val query = new String(ticket.getBytes, UTF_8)
+      val query_rewritten = EngineUtilities.rewriteQuery(query)
+      val vsr = queryEngine.executeToArrow(query_rewritten)
+      listener.start(vsr, null, this.defaultIpcOption)
+      listener.putNext()
+      listener.completed()
+      vsr.close()
+    } catch {
+      case t: Throwable =>
+        Static.warn("ModelarDB: query failed due to " + t)
+        listener.error(t)
+    }
   }
 
   override def listFlights(context: FlightProducer.CallContext, criteria: Criteria, listener: FlightProducer.StreamListener[FlightInfo]): Unit = {
-    val schema = new Schema(new util.ArrayList[Field]())
+    try {
+      val schema = new Schema(new util.ArrayList[Field]())
 
-    val flightDescriptor = FlightDescriptor.path("DATAPOINT", "SEGMENT")
+      val flightDescriptor = FlightDescriptor.path("DATAPOINT", "SEGMENT")
 
-    val ticket = new Ticket(Array())
-    val ip = InetAddress.getLocalHost().getHostAddress()
-    val flightEndPoint = new FlightEndpoint(ticket, new Location(ip))
-    val endPoints = new util.ArrayList[FlightEndpoint]()
-    endPoints.add(flightEndPoint)
+      val ticket = new Ticket(Array())
+      val ip = InetAddress.getLocalHost().getHostAddress()
+      val flightEndPoint = new FlightEndpoint(ticket, new Location(ip))
+      val endPoints = new util.ArrayList[FlightEndpoint]()
+      endPoints.add(flightEndPoint)
 
-    val flightInfo = new FlightInfo(schema, flightDescriptor, endPoints, -1, -1, this.defaultIpcOption)
-    listener.onNext(flightInfo)
-    listener.onCompleted()
+      val flightInfo = new FlightInfo(schema, flightDescriptor, endPoints, -1, -1, this.defaultIpcOption)
+      listener.onNext(flightInfo)
+      listener.onCompleted()
+    } catch {
+      case t: Throwable =>
+        Static.warn("ModelarDB: list flights due to " + t)
+        listener.onError(t)
+    }
   }
 
   override def getFlightInfo(context: FlightProducer.CallContext, descriptor: FlightDescriptor): FlightInfo = ???
