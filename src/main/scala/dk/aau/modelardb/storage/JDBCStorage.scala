@@ -178,8 +178,8 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
   }
 
   override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
-    getSegmentGroups(H2.expressionToSQLPredicates(filter.getSelect.getCondition,
-      this.timeSeriesGroupCache, this.memberTimeSeriesCache, supportsOr = true))
+    getSegmentGroups(H2.expressionToSQLLikePredicates(filter.getSelect.getCondition,
+      this.timeSeriesGroupCache, this.memberTimeSeriesCache, sql = true))
   }
 
   //SparkStorage

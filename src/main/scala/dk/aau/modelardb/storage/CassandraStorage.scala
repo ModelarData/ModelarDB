@@ -160,14 +160,14 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
   }
 
   def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
-    val predicates = H2.expressionToSQLPredicates(filter.getSelect.getCondition,
-      this.timeSeriesGroupCache, this.memberTimeSeriesCache, supportsOr = false)
+    val predicates = H2.expressionToSQLLikePredicates(filter.getSelect.getCondition,
+      this.timeSeriesGroupCache, this.memberTimeSeriesCache, sql = false)
     Static.info(s"ModelarDB: constructed predicates ($predicates)")
     val session = this.connector.openSession()
     val results = if (predicates.isEmpty) {
       session.execute(s"SELECT gid, start_time, end_time, mtid, model, gaps FROM ${this.keyspace}.segment").iterator()
     } else {
-      session.execute(s"SELECT gid, start_time, end_time, mtid, model, gaps FROM ${this.keyspace}.segment WHERE " + predicates).iterator()
+      session.execute(s"SELECT gid, start_time, end_time, mtid, model, gaps FROM ${this.keyspace}.segment WHERE $predicates ALLOW FILTERING").iterator()
     }
     session.close()
 

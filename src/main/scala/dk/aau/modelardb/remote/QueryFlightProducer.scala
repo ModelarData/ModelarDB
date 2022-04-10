@@ -32,6 +32,10 @@ class QueryFlightProducer(queryEngine: QueryEngine) extends FlightProducer {
     try {
       //Assumes that the ticket contains a SQL query
       val query = new String(ticket.getBytes, UTF_8)
+      if (query.isEmpty || query.startsWith("--")) {
+        listener.completed()
+        return
+      }
       val query_rewritten = EngineUtilities.rewriteQuery(query)
       val vsr = queryEngine.executeToArrow(query_rewritten)
       listener.start(vsr, null, this.defaultIpcOption)

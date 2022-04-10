@@ -340,9 +340,9 @@ object H2 {
        |""".stripMargin
   }
 
-  def expressionToSQLPredicates(expression: Expression, tsgc: Array[Int],
-                                idc: mutable.HashMap[String, mutable.HashMap[Object, Array[Integer]]],
-                                supportsOr: Boolean): String = { //HACK: supportsOR ensures Cassandra does not receive an OR operator
+  def expressionToSQLLikePredicates(expression: Expression, tsgc: Array[Int],
+                                    idc: mutable.HashMap[String, mutable.HashMap[Object, Array[Integer]]],
+                                    sql: Boolean): String = { //CQL is SQL-like but does not support OR and () in WHERE
     expression match {
       //NO PREDICATES
       case null => ""
@@ -362,8 +362,9 @@ object H2 {
           case ("TIMESTAMP", "<") => "START_TIME < " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
           case ("TIMESTAMP", "<=") => "START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
           case ("TIMESTAMP", "=") =>
-            "(START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime +
-              " AND END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime + ")"
+            val predicate = "START_TIME <= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime +
+              " AND END_TIME >= " + ve.getValue(null).asInstanceOf[ValueTimestamp].getTimestamp(TimeZone.getDefault).getTime
+            if (sql) "(" + predicate + ")" else predicate
           //DIMENSIONS
           case (columnName, "=") if idc.contains(columnName) =>
             EngineUtilities.dimensionEqualToGidIn(columnName, ve.getValue(null).getObject, idc).mkString("GID IN (", ",", ")")
@@ -382,13 +383,16 @@ object H2 {
         }
       //AND
       case cao: ConditionAndOr if this.andOrTypeField.getInt(cao) == ConditionAndOr.AND =>
-        val left = expressionToSQLPredicates(cao.getSubexpression(0), tsgc, idc, supportsOr)
-        val right = expressionToSQLPredicates(cao.getSubexpression(1), tsgc, idc, supportsOr)
-        if (left == "" || right == "") "" else "(" + left + " AND " + right + ")"
+        val left = expressionToSQLLikePredicates(cao.getSubexpression(0), tsgc, idc, sql)
+        val right = expressionToSQLLikePredicates(cao.getSubexpression(1), tsgc, idc, sql)
+        if (left == "" || right == "") "" else sql match {
+          case true => "(" + left + " AND " + right + ")" //SQL
+          case false => left + " AND " + right            //CQL
+        }
       //OR
-      case cao: ConditionAndOr if this.andOrTypeField.getInt(cao) == ConditionAndOr.OR && supportsOr =>
-        val left = expressionToSQLPredicates(cao.getSubexpression(0), tsgc, idc, supportsOr)
-        val right = expressionToSQLPredicates(cao.getSubexpression(1), tsgc, idc, supportsOr)
+      case cao: ConditionAndOr if this.andOrTypeField.getInt(cao) == ConditionAndOr.OR && sql =>
+        val left = expressionToSQLLikePredicates(cao.getSubexpression(0), tsgc, idc, sql)
+        val right = expressionToSQLLikePredicates(cao.getSubexpression(1), tsgc, idc, sql)
         if (left == "" || right == "") "" else "(" + left + " OR " + right + ")"
       case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
     }

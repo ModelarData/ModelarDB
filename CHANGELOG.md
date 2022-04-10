@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 ### Removed
 ### Fixed
+- H2 adding parentheses to CQL WHERE clauses and not appending ALLOW FILTERING.
+
 ### Security
 
 ## [0.2.0] - 2021-12-21
