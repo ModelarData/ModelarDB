@@ -62,7 +62,7 @@ object QueryInterface {
 
   private def arrow(executor: ExecutorService, port: Int): Unit = {
     val allocator = new RootAllocator()
-    val location = new Location("grpc://127.0.0.1:" + port)
+    val location = new Location("grpc://0.0.0.0:" + port)
     val producer = new QueryFlightProducer(this.queryEngine)
     val flightServer = FlightServer.builder(allocator, location, producer).executor(executor).build()
     flightServer.start()
