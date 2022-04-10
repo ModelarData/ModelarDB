@@ -15,8 +15,8 @@
 package dk.aau.modelardb.remote
 
 import dk.aau.modelardb.engines.{EngineUtilities, QueryEngine}
-
 import org.apache.arrow.flight.{Action, ActionType, Criteria, FlightDescriptor, FlightEndpoint, FlightInfo, FlightProducer, FlightStream, Location, PutResult, Result, Ticket}
+import org.apache.arrow.vector.ipc.message.IpcOption
 import org.apache.arrow.vector.types.pojo.{Field, Schema}
 
 import java.net.InetAddress
@@ -25,13 +25,13 @@ import java.util
 
 class QueryFlightProducer(queryEngine: QueryEngine) extends FlightProducer {
 
-  /* Public Methods */
+  /** Public Methods **/
   override def getStream(context: FlightProducer.CallContext, ticket: Ticket, listener: FlightProducer.ServerStreamListener): Unit = {
     //Assumes that the ticket contains a SQL query
     val query = new String(ticket.getBytes, UTF_8)
     val query_rewritten = EngineUtilities.rewriteQuery(query)
     val vsr = queryEngine.executeToArrow(query_rewritten)
-    listener.start(vsr)
+    listener.start(vsr, null, this.defaultIpcOption)
     listener.putNext()
     listener.completed()
     vsr.close()
@@ -48,7 +48,7 @@ class QueryFlightProducer(queryEngine: QueryEngine) extends FlightProducer {
     val endPoints = new util.ArrayList[FlightEndpoint]()
     endPoints.add(flightEndPoint)
 
-    val flightInfo = new FlightInfo(schema, flightDescriptor, endPoints, -1, -1)
+    val flightInfo = new FlightInfo(schema, flightDescriptor, endPoints, -1, -1, this.defaultIpcOption)
     listener.onNext(flightInfo)
     listener.onCompleted()
   }
@@ -60,4 +60,8 @@ class QueryFlightProducer(queryEngine: QueryEngine) extends FlightProducer {
   override def doAction(context: FlightProducer.CallContext, action: Action, listener: FlightProducer.StreamListener[Result]): Unit = ???
 
   override def listActions(context: FlightProducer.CallContext, listener: FlightProducer.StreamListener[ActionType]): Unit = ???
+
+  /** Instance Variable **/
+  //Replacement for org.apache.arrow.vector.ipc.message.IpcOption.DEFAULT to not conflict with Apache Spark
+  private val defaultIpcOption = new IpcOption()
 }
