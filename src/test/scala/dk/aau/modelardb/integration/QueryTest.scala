@@ -23,36 +23,27 @@ import dk.aau.modelardb.engines.spark.Spark
 import dk.aau.modelardb.engines.spark.SparkStorage
 
 import java.lang.reflect.Field
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 import java.nio.file.Files
-import java.time.Duration
 import java.util
 import java.util.concurrent.Executors
 
 import scala.collection.mutable
 
-import com.fasterxml.jackson.module.scala.DefaultScalaModule
-import com.fasterxml.jackson.databind.ObjectMapper
-
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
-class QueryTest extends AnyFlatSpec with Matchers {
+abstract class QueryTest extends AnyFlatSpec with Matchers {
 
   /** Instance Variables **/
-  private val h2Port = 9991
+  private val (h2Port, sparkPort) = this.getPorts
   private var h2Engine: H2 = null
-  private val sparkPort = 9992
   private var sparkEngine: Spark = null
   private var sparkStorageField: Field = null
   private val storageDirectory = Files.createTempDirectory("").toFile
   private val storages = List(
-    StorageFactory.getStorage("jdbc:h2:" + storageDirectory + "/h"),
-    StorageFactory.getStorage("orc:" + storageDirectory + "/orc"),
-    StorageFactory.getStorage("parquet:" + storageDirectory + "/parquet")
+    StorageFactory.getStorage("jdbc:h2:" + this.storageDirectory + "/h2"),
+    StorageFactory.getStorage("orc:" + this.storageDirectory + "/orc"),
+    StorageFactory.getStorage("parquet:" + this.storageDirectory + "/parquet")
   )
   private val modelTypeNames = Array(
     "dk.aau.modelardb.core.models.PMC_MeanModelType",
@@ -80,7 +71,7 @@ class QueryTest extends AnyFlatSpec with Matchers {
     val h2ConfigurationValues = Map(
       "modelardb.model_types" -> Array(),
       "modelardb.sampling_interval" -> -1,
-      "modelardb.interface" -> s"http:$h2Port"
+      "modelardb.interface" -> this.getInterface(this.h2Port)
     )
     val h2configuration = createConfiguration(h2ConfigurationValues)
     this.h2Engine = new H2(h2configuration, storages(0).asInstanceOf[H2Storage])
@@ -89,7 +80,7 @@ class QueryTest extends AnyFlatSpec with Matchers {
     val sparkConfigurationValues =  Map(
       "modelardb.model_types" -> Array(),
       "modelardb.sampling_interval" -> -1,
-      "modelardb.interface" -> s"http:$sparkPort",
+      "modelardb.interface" -> this.getInterface(this.sparkPort),
       "modelardb.engine" -> "spark"
     )
     val sparkConfiguration = createConfiguration(sparkConfigurationValues)
@@ -161,6 +152,14 @@ class QueryTest extends AnyFlatSpec with Matchers {
   }
 
   //Point and Range Queries
+  it should "support querying all columns from Segment with LIMIT 10" in {
+    executeQueries("SELECT * FROM Segment LIMIT 10")
+  }
+
+  it should "support querying all columns from DataPoint with LIMIT 10" in {
+    executeQueries("SELECT * FROM DataPoint LIMIT 10")
+  }
+
   it should "return same result from DataPoint WHERE tid = 1 ORDER BY timestamp LIMIT 10" in {
     assertEnginesAndStorageAreEquivalent(
       "SELECT tid, timestamp, value FROM DataPoint WHERE tid = 1 ORDER BY timestamp LIMIT 10")
@@ -171,6 +170,10 @@ class QueryTest extends AnyFlatSpec with Matchers {
     new scala.reflect.io.Directory(this.storageDirectory).deleteRecursively()
   }
 
+  /** Protected Methods **/
+  protected def getPorts: (Int, Int)
+  protected def getInterface(port: Int): String
+  protected def executeQuery(query: String, port: Int): List[Map[String, Object]]
 
   /** Private Methods **/
   private def createConfiguration(configurationValues: Map[String, Any]): Configuration = {
@@ -198,18 +201,9 @@ class QueryTest extends AnyFlatSpec with Matchers {
     configuration
   }
 
-  private def assertEnginesAndStorageAreEquivalent(queries: String *) = {
+  private def assertEnginesAndStorageAreEquivalent(queries: String *): Unit = {
     //Execute queries
-    val results = mutable.ArrayBuffer[List[Map[String, Object]]]()
-    for (storage <- storages) {
-      //HACK: Spark's storage is set using reflection as a SparkSession is not available
-      H2.initialize(h2Engine, storage.asInstanceOf[H2Storage])
-      this.sparkStorageField.set(sparkEngine, storage.asInstanceOf[SparkStorage])
-      for (query <- queries) {
-        results.append(executeQuery(query, h2Port))
-        results.append(executeQuery(query, sparkPort))
-      }
-    }
+    val results = executeQueries(queries:_*)
 
     //Compare the size of all result sets
     val sizeOfFirstResult = results(0).size
@@ -228,19 +222,18 @@ class QueryTest extends AnyFlatSpec with Matchers {
     }
   }
 
-  private def executeQuery(query: String, port: Int): List[Map[String, Object]] = {
-    val client = HttpClient.newBuilder().build()
-    val request = HttpRequest.newBuilder()
-      .uri(URI.create("http://127.0.0.1:" + port))
-      .timeout(Duration.ofMinutes(1))
-      .POST(HttpRequest.BodyPublishers.ofString(query))
-      .build()
-    val response = client.send(request, HttpResponse.BodyHandlers.ofString())
-
-    val mapper = new ObjectMapper
-    mapper.registerModule(DefaultScalaModule)
-    val result = mapper.readValue(response.body, classOf[Map[String, Object]])
-    result("result").asInstanceOf[List[Map[String,Object]]]
+  private def executeQueries(queries: String*): mutable.ArrayBuffer[List[Map[String, Object]]] = {
+    val results = mutable.ArrayBuffer[List[Map[String, Object]]]()
+    for (storage <- this.storages) {
+      //HACK: Spark's storage is set using reflection as a SparkSession is not available
+      H2.initialize(this.h2Engine, storage.asInstanceOf[H2Storage])
+      this.sparkStorageField.set(this.sparkEngine, storage.asInstanceOf[SparkStorage])
+      for (query <- queries) {
+        results.append(executeQuery(query, this.h2Port))
+        results.append(executeQuery(query, this.sparkPort))
+      }
+    }
+    results
   }
 
   private def isEqualEnough(v1: Object, v2: Object): Unit = {

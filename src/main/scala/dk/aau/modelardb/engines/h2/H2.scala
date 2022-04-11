@@ -38,6 +38,7 @@ import java.util.function.BooleanSupplier
 import java.util.{Base64, TimeZone}
 
 import scala.collection.mutable
+import scala.util.Random
 
 import collection.JavaConverters._
 
@@ -51,10 +52,13 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
   private val temporarySegments = mutable.HashMap[Int, Array[SegmentGroup]]()
   private val base64Encoder = Base64.getEncoder
 
+  //A random letter is appended so multiple H2 in-memory databases can be constructed in parallel by tests
+  private val h2ConnectionString: String = "jdbc:h2:mem:modelardb" + new Random().nextPrintableChar()
+
   /** Public Methods **/
   def start(): Unit = {
     //Initialize
-    val connection = DriverManager.getConnection(H2.h2ConnectionString)
+    val connection = DriverManager.getConnection(this.h2ConnectionString)
     val stmt = connection.createStatement()
     stmt.execute(H2.getCreateDataPointViewSQL(configuration.getDimensions))
     stmt.execute(H2.getCreateSegmentViewSQL(configuration.getDimensions))
@@ -77,7 +81,7 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
 
   def executeToJSON(query: String): Array[String] = {
     //Execute Query
-    val connection = DriverManager.getConnection(H2.h2ConnectionString)
+    val connection = DriverManager.getConnection(this.h2ConnectionString)
     val stmt = connection.createStatement()
     stmt.execute(query)
     val rs = stmt.getResultSet
@@ -108,7 +112,7 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
 
   def executeToArrow(query: String): VectorSchemaRoot = {
     //Execute Query
-    val connection = DriverManager.getConnection(H2.h2ConnectionString)
+    val connection = DriverManager.getConnection(this.h2ConnectionString)
     val stmt = connection.createStatement()
     stmt.execute(query)
     val rs = stmt.getResultSet
@@ -311,7 +315,6 @@ object H2 {
   /** Instance Variables * */
   var h2: H2 = _ //Provides access to the h2 and h2storage instances from the views
   var h2storage: H2Storage =  _
-  private val h2ConnectionString: String = "jdbc:h2:mem:modelardb"
   private val compareTypeField = classOf[Comparison].getDeclaredField("compareType")
   this.compareTypeField.setAccessible(true)
   private val compareTypeMethod = classOf[Comparison].getDeclaredMethod("getCompareOperator", classOf[Int])

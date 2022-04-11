@@ -16,6 +16,7 @@ package dk.aau.modelardb.integration
 
 import dk.aau.modelardb.core.TimeSeriesGroup
 import dk.aau.modelardb.core.timeseries.TimeSeriesORC
+
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.ql.exec.vector.TimestampColumnVector
@@ -23,14 +24,10 @@ import org.apache.orc.OrcFile
 import org.scalatest.Assertions
 
 import java.io.File
+
 import scala.collection.mutable
 
 trait TimeSeriesGroupProvider  extends Assertions {
-  /** Instance Variables **/
-  private val orcTestDataKey: String = "MODELARDB_TEST_DATA_ORC"
-  private val isOrcTestDataFolderSet = sys.env.contains(orcTestDataKey)
-  assume(isOrcTestDataFolderSet, ", so skipped test as MODELARDB_TEST_DATA_ORC is not set")
-  var samplingInterval: Int = -1
 
   /** Public Methods  **/
   def newTimeSeriesGroups: Array[TimeSeriesGroup] = {
@@ -43,9 +40,9 @@ trait TimeSeriesGroupProvider  extends Assertions {
 
   def getSamplingInterval() = {
     if (this.samplingInterval == -1) {
-     newTimeSeriesGroups
+      newTimeSeriesGroups
     }
-    samplingInterval
+    this.samplingInterval
   }
 
   /** Private Methods **/
@@ -87,4 +84,10 @@ trait TimeSeriesGroupProvider  extends Assertions {
     val tso = new TimeSeriesORC(orcTestFileAbsolutePath, id, this.samplingInterval, timestampColumnIndex, valueColumnIndex)
     new TimeSeriesGroup(id, Array(tso))
   }
+
+  /** Instance Variables **/
+  private val orcTestDataKey: String = "MODELARDB_TEST_DATA_ORC"
+  private val isOrcTestDataFolderSet = sys.env.contains(this.orcTestDataKey)
+  assume(this.isOrcTestDataFolderSet, ", so skipped test as MODELARDB_TEST_DATA_ORC is not set")
+  private var samplingInterval: Int = -1
 }

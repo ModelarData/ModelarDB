@@ -36,20 +36,17 @@ Compile / run := Defaults.runTask(
   Compile / run / runner).evaluated
 
 /* Prevents Apache Spark from overwriting dependencies with older incompatible versions */
-assembly/assemblyShadeRules := Seq(
+assembly / assemblyShadeRules := Seq(
   ShadeRule.rename("com.google.**" -> "com.google.shaded.@1").inAll,
 )
 
 /* Concats and discards duplicate metadata in the dependencies when creating an assembly */
-assembly/assemblyMergeStrategy := {
+assembly / assemblyMergeStrategy := {
   case "META-INF/io.netty.versions.properties" => MergeStrategy.concat
   case "git.properties" => MergeStrategy.discard
   case "module-info.class" => MergeStrategy.discard
   case x => (assembly/assemblyMergeStrategy).value(x)
 }
-
-/* Disables log buffering when running tests for nicer output */
-Test / logBuffered := false
 
 /* Use Ivy instead of Coursier due to Coursier GitHub Issue #2016 */
 ThisBuild / useCoursier := false
