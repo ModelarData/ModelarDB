@@ -22,17 +22,26 @@ import dk.aau.modelardb.core.Correlation
 import dk.aau.modelardb.engines.spark.Spark
 import dk.aau.modelardb.engines.spark.SparkStorage
 
+import java.io.{OutputStream, PrintStream}
 import java.lang.reflect.Field
 import java.nio.file.Files
 import java.util
+import java.util.TimeZone
 import java.util.concurrent.Executors
 
-import scala.collection.mutable
+import scala.collection.{SortedMap, mutable}
 
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
 abstract class QueryTest extends AnyFlatSpec with Matchers {
+
+  //HACK: Disable stdout during testing as some of the tests are very noisy
+  System.setOut(new PrintStream(OutputStream.nullOutputStream()))
+  System.setErr(new PrintStream(OutputStream.nullOutputStream()))
+
+  //Ensures the tests use the same time zone independent of the system's setting
+  TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
 
   /** Instance Variables **/
   private val (h2Port, sparkPort) = this.getPorts
@@ -173,7 +182,7 @@ abstract class QueryTest extends AnyFlatSpec with Matchers {
   /** Protected Methods **/
   protected def getPorts: (Int, Int)
   protected def getInterface(port: Int): String
-  protected def executeQuery(query: String, port: Int): List[Map[String, Object]]
+  protected def executeQuery(query: String, port: Int): List[SortedMap[String, Object]]
 
   /** Private Methods **/
   private def createConfiguration(configurationValues: Map[String, Any]): Configuration = {
@@ -222,8 +231,8 @@ abstract class QueryTest extends AnyFlatSpec with Matchers {
     }
   }
 
-  private def executeQueries(queries: String*): mutable.ArrayBuffer[List[Map[String, Object]]] = {
-    val results = mutable.ArrayBuffer[List[Map[String, Object]]]()
+  private def executeQueries(queries: String*): mutable.ArrayBuffer[List[SortedMap[String, Object]]] = {
+    val results = mutable.ArrayBuffer[List[SortedMap[String, Object]]]()
     for (storage <- this.storages) {
       //HACK: Spark's storage is set using reflection as a SparkSession is not available
       H2.initialize(this.h2Engine, storage.asInstanceOf[H2Storage])
@@ -237,13 +246,15 @@ abstract class QueryTest extends AnyFlatSpec with Matchers {
   }
 
   private def isEqualEnough(v1: Object, v2: Object): Unit = {
-    //Both are integers
-    if ((v1.isInstanceOf[Int] && v2.isInstanceOf[Int]) ||
-      (v1.isInstanceOf[String] && v2.isInstanceOf[String])) {
-      assert(v1 === v2)
-    } else if (v1.isInstanceOf[Double] && v2.isInstanceOf[Double]) {
-      //Values are provided with the accuracy of 32-bit floats but parsed to doubles
+    //The results have the accuracy of floats but the JSON values are parsed to doubles
+    if (v1.isInstanceOf[Double] && v2.isInstanceOf[Double]) {
       assert(v1.asInstanceOf[Double].floatValue === v2.asInstanceOf[Double].floatValue)
+    } else if (v1.isInstanceOf[Float] && v2.isInstanceOf[Double]) {
+      assert(v1.asInstanceOf[Float] === v2.asInstanceOf[Double].floatValue)
+    } else if (v1.isInstanceOf[Double] && v2.isInstanceOf[Float]) {
+      assert(v1.asInstanceOf[Double].floatValue === v2.asInstanceOf[Float])
+    } else if (v1.getClass == v2.getClass) {
+      assert(v1 === v2)
     } else {
       throw new IllegalArgumentException(v1.getClass + " " + v2.getClass)
     }

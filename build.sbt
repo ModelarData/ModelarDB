@@ -29,18 +29,18 @@ libraryDependencies ++= Seq(
   "org.scalamock" %% "scalamock" % "5.1.0" % Test
 )
 
-/* Makes SBT include the dependencies marked as provided when run */
+/* Make SBT include the dependencies marked as provided when executing sbt run */
 Compile / run := Defaults.runTask(
   Compile / fullClasspath,
   Compile / run / mainClass,
   Compile / run / runner).evaluated
 
-/* Prevents Apache Spark from overwriting dependencies with older incompatible versions */
+/* Prevent Apache Spark from overwriting dependencies with older incompatible versions */
 assembly / assemblyShadeRules := Seq(
   ShadeRule.rename("com.google.**" -> "com.google.shaded.@1").inAll,
 )
 
-/* Concats and discards duplicate metadata in the dependencies when creating an assembly */
+/* Concat and discard duplicate metadata in the dependencies when creating an assembly */
 assembly / assemblyMergeStrategy := {
   case "META-INF/io.netty.versions.properties" => MergeStrategy.concat
   case "git.properties" => MergeStrategy.discard
@@ -51,10 +51,16 @@ assembly / assemblyMergeStrategy := {
 /* Use Ivy instead of Coursier due to Coursier GitHub Issue #2016 */
 ThisBuild / useCoursier := false
 
-/* Creates a code coverage report in HTML using Jacoco */
+/* Show the duration of tests and complete stack traces with color */
+Test / testOptions += Tests.Argument("-oDF")
+
+/* Execute tests sequentially to reduce the amount of memory requred */
+Test / parallelExecution := false
+
+/* Create a code coverage report in HTML using Jacoco */
 jacocoReportSettings := JacocoReportSettings(formats = Seq(JacocoReportFormats.ScalaHTML))
 
-/* Github Package Repository */
+/* GitHub Package Repository */
 val owner = "ModelarData"
 val repo = "ModelarDB"
 publishMavenStyle := true

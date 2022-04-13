@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 ### Changed
+- The Apache Arrow Flight-based query interface now transfers data in batches.
+
 ### Deprecated
 ### Removed
 ### Fixed

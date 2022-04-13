@@ -67,7 +67,7 @@ object QueryInterface {
     val flightServer = FlightServer.builder(allocator, location, producer).executor(executor).build()
     flightServer.start()
     Static.info(f"ModelarDB: Arrow Flight end-point is ready (Port: $port)")
-    scala.io.StdIn.readLine() //Prevents the method from returning to keep the server running
+    readLine() //Prevents the method from returning to keep the server running
     flightServer.close()
     Static.info("ModelarDB: connection is closed")
   }
@@ -141,7 +141,7 @@ object QueryInterface {
     server.setExecutor(executor)
     server.start()
     Static.info(f"ModelarDB: HTTP end-point is ready (Port: $port)")
-    scala.io.StdIn.readLine() //Prevents the method from returning to keep the server running
+    readLine() //Prevents the method from returning to keep the server running
 
     //Cleanup
     server.stop(0)

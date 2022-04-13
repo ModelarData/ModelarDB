@@ -17,19 +17,17 @@ package dk.aau.modelardb.integration
 import dk.aau.modelardb.core.models.{ModelTypeFactory, Segment}
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{DataPoint, TimeSeriesGroup, WorkingSet}
+
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
-import java.io.{OutputStream, PrintStream}
 import java.nio.ByteBuffer
-import scala.collection.JavaConverters._
+
 import scala.collection.mutable
+import scala.collection.JavaConverters._
 
 //Integration Test
 class IngestionTest extends AnyFlatSpec with Matchers {
-  //HACK: Disable stdout during testing as some of the tests are very noisy
-  System.setOut(new PrintStream(OutputStream.nullOutputStream()))
-  System.setErr(new PrintStream(OutputStream.nullOutputStream()))
 
   behavior of "ModelarDB"
   it should "be able to ingest time series without any error" in new TimeSeriesGroupProvider {

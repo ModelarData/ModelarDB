@@ -20,13 +20,15 @@ import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import java.net.Socket
 import java.io.{BufferedReader, InputStreamReader, PrintWriter}
 
+import scala.collection.SortedMap
+
 class QueryTestSocket extends QueryTest {
 
-  override protected def getPorts: (Int, Int) = (9992, 9993)
+  override protected def getPorts: (Int, Int) = (9994, 9995)
 
   override protected def getInterface(port: Int): String = s"socket:$port"
 
-  override protected def executeQuery(query: String, port: Int): List[Map[String, Object]] = {
+  override protected def executeQuery(query: String, port: Int): List[SortedMap[String, Object]] = {
     val client = new Socket("127.0.0.1", port)
     val out = new PrintWriter(client.getOutputStream, true)
     val in = new BufferedReader(new InputStreamReader(client.getInputStream))
@@ -38,6 +40,6 @@ class QueryTestSocket extends QueryTest {
     out.close()
     in.close()
     client.close()
-    result("result").asInstanceOf[List[Map[String,Object]]]
+    result("result").asInstanceOf[List[Map[String,Object]]].map(elem => SortedMap[String,Object]() ++ elem)
   }
 }

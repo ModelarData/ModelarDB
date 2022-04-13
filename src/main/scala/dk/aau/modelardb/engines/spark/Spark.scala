@@ -17,29 +17,23 @@ package dk.aau.modelardb.engines.spark
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Static, ValueFunction}
 import dk.aau.modelardb.engines.{EngineUtilities, QueryEngine}
-import dk.aau.modelardb.remote.QueryInterface
+import dk.aau.modelardb.remote.{ArrowResultSet, QueryInterface}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.arrow.ArrowWriter
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{ArrowUtils, DataFrame, DataFrameReader, SparkSession, sources}
+import org.apache.spark.sql.{DataFrame, DataFrameReader, SparkSession, sources}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 
-import org.apache.arrow.memory.RootAllocator
-import org.apache.arrow.vector.VectorSchemaRoot
-
 import java.sql.Timestamp
-import java.util
 
 import scala.collection.mutable
-
-import collection.JavaConverters._
+import scala.collection.JavaConverters._
 
 class Spark(configuration: Configuration, sparkStorage: SparkStorage) extends QueryEngine {
+
   /** Instance Variable **/
   var sparkSession: SparkSession = _
 
@@ -65,29 +59,8 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) extends Qu
     this.sparkSession.sql(query).toJSON.collect()
   }
 
-  def executeToArrow(query: String): VectorSchemaRoot = {
-    //Converts the schema of the query result to Arrow
-    val df = sparkSession.sql(query)
-    val schema = ArrowUtils.toArrowSchema(df.schema, util.TimeZone.getDefault.getID)
-    val vsr = VectorSchemaRoot.create(schema, new RootAllocator())
-    val writer = ArrowWriter.create(vsr)
-    var count = 0
-
-    //ArrowWriter assumes that timestamps are Long and stored as microseconds while Java/Scala uses milliseconds
-    val timestampColumns = df.dtypes.filter(_._2 == "TimestampType").map(_._1)
-    val dfWithLongTimestamps = timestampColumns.foldLeft(df)({ case (df, columnName) =>
-      df.withColumn(columnName, df(columnName).cast("long") * 1000000) //ArrowWriter only supports microseconds
-    })
-
-    //Converts the rows in the query result to Arrow
-    dfWithLongTimestamps.collect().foreach(row => {
-      //Converted locally due to no Encoder[InternalRow]
-      writer.write(InternalRow.fromSeq(row.toSeq))
-      count += 1
-    })
-    writer.finish()
-    vsr.setRowCount(count)
-    vsr
+  def executeToArrow(query: String): ArrowResultSet = {
+    new SparkResultSet(this.sparkSession.sql(query))
   }
 
   /** Private Methods **/

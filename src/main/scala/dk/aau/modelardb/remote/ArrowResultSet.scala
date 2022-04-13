@@ -12,18 +12,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.spark.sql
+package dk.aau.modelardb.remote
 
-import org.apache.arrow.vector.types.pojo.Schema
+import org.apache.arrow.adapter.jdbc.JdbcToArrowConfig
+import org.apache.arrow.vector.VectorSchemaRoot
 
-import org.apache.spark.sql.types.StructType
+trait ArrowResultSet {
+  def get(): VectorSchemaRoot
+  def hasNext(): Boolean
+  def fillNext(): Unit
+  def close(): Unit
 
-//Exposes the methods used from util.ArrowUtils as it is defined as private[sql]
-object ArrowUtils {
-
-  val rootAllocator = util.ArrowUtils.rootAllocator
-
-  def toArrowSchema(schema: StructType, timeZoneId: String): Schema = {
-    util.ArrowUtils.toArrowSchema(schema, timeZoneId)
-  }
+  //The size is significantly increased as each rows only consists of tid, ts, value, and members
+  protected val DEFAULT_TARGET_BATCH_SIZE: Int = 1024 * JdbcToArrowConfig.DEFAULT_TARGET_BATCH_SIZE
 }

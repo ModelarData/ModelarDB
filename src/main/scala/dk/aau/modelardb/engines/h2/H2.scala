@@ -18,16 +18,12 @@ import dk.aau.modelardb.core.Dimensions.Types
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Logger, SegmentFunction, Static}
 import dk.aau.modelardb.engines.{EngineUtilities, QueryEngine}
-import dk.aau.modelardb.remote.QueryInterface
+import dk.aau.modelardb.remote.{ArrowResultSet, QueryInterface}
 
 import org.h2.expression.condition.{Comparison, ConditionAndOr, ConditionInConstantSet}
 import org.h2.expression.{Expression, ExpressionColumn, ValueExpression}
 import org.h2.table.TableFilter
 import org.h2.value.{ValueInt, ValueTimestamp}
-
-import org.apache.arrow.vector.VectorSchemaRoot
-import org.apache.arrow.adapter.jdbc.{JdbcToArrowConfig, JdbcToArrowConfigBuilder, JdbcToArrowUtils}
-import org.apache.arrow.memory.RootAllocator
 
 import org.codehaus.jackson.map.util.ISO8601Utils
 
@@ -35,14 +31,13 @@ import java.sql.{DriverManager, Timestamp}
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.function.BooleanSupplier
-import java.util.{Base64, TimeZone}
+import java.util.{Base64, TimeZone, UUID}
 
 import scala.collection.mutable
-import scala.util.Random
-
-import collection.JavaConverters._
+import scala.collection.JavaConverters._
 
 class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine {
+
   /** Instance Variables **/
   private var finalizedSegmentsIndex = 0
   private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](configuration.getBatchSize)
@@ -52,8 +47,8 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
   private val temporarySegments = mutable.HashMap[Int, Array[SegmentGroup]]()
   private val base64Encoder = Base64.getEncoder
 
-  //A random letter is appended so multiple H2 in-memory databases can be constructed in parallel by tests
-  private val h2ConnectionString: String = "jdbc:h2:mem:modelardb" + new Random().nextPrintableChar()
+  //The H2 in-memory databases is named by an UUID so multiple can be constructed in parallel by the tests
+  private val h2ConnectionString: String = "jdbc:h2:mem:" + UUID.randomUUID()
 
   /** Public Methods **/
   def start(): Unit = {
@@ -110,27 +105,8 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
     result.toArray
   }
 
-  def executeToArrow(query: String): VectorSchemaRoot = {
-    //Execute Query
-    val connection = DriverManager.getConnection(this.h2ConnectionString)
-    val stmt = connection.createStatement()
-    stmt.execute(query)
-    val rs = stmt.getResultSet
-
-    //Format Result
-    val arrowJdbcConfig = new JdbcToArrowConfigBuilder()
-      .setAllocator(new RootAllocator())
-      .setTargetBatchSize(JdbcToArrowConfig.NO_LIMIT_BATCH_SIZE)
-      .build()
-    val schema = JdbcToArrowUtils.jdbcToArrowSchema(rs.getMetaData, arrowJdbcConfig)
-    val vsr = VectorSchemaRoot.create(schema, new RootAllocator())
-    JdbcToArrowUtils.jdbcToArrowVectors(rs, vsr, arrowJdbcConfig)
-
-    //Close and Return
-    rs.close()
-    stmt.close()
-    connection.close()
-    vsr
+  def executeToArrow(query: String): ArrowResultSet = {
+    new H2ResultSet(this.h2ConnectionString, query)
   }
 
   def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
@@ -312,7 +288,8 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
 }
 
 object H2 {
-  /** Instance Variables * */
+
+  /** Instance Variables **/
   var h2: H2 = _ //Provides access to the h2 and h2storage instances from the views
   var h2storage: H2Storage =  _
   private val compareTypeField = classOf[Comparison].getDeclaredField("compareType")

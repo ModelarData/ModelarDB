@@ -14,9 +14,9 @@
  */
 package dk.aau.modelardb.engines
 
-import org.apache.arrow.vector.VectorSchemaRoot
+import dk.aau.modelardb.remote.ArrowResultSet
 
 trait QueryEngine {
   def executeToJSON(query: String): Array[String]
-  def executeToArrow(query: String): VectorSchemaRoot
+  def executeToArrow(query: String): ArrowResultSet
 }

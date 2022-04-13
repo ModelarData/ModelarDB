@@ -20,13 +20,15 @@ import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import java.net.URI
 import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 
+import scala.collection.SortedMap
+
 class QueryTestHTTP extends QueryTest {
 
-  override protected def getPorts: (Int, Int) = (9990, 9991)
+  override protected def getPorts: (Int, Int) = (9992, 9993)
 
   override protected def getInterface(port: Int): String = s"http:$port"
 
-  override protected def executeQuery(query: String, port: Int): List[Map[String, Object]] = {
+  override protected def executeQuery(query: String, port: Int): List[SortedMap[String, Object]] = {
     val client = HttpClient.newBuilder().build()
     val request = HttpRequest.newBuilder()
       .uri(URI.create("http://127.0.0.1:" + port))
@@ -37,6 +39,6 @@ class QueryTestHTTP extends QueryTest {
     val mapper = new ObjectMapper
     mapper.registerModule(DefaultScalaModule)
     val result = mapper.readValue(response.body, classOf[Map[String, Object]])
-    result("result").asInstanceOf[List[Map[String,Object]]]
+    result("result").asInstanceOf[List[Map[String,Object]]].map(elem => SortedMap[String,Object]() ++ elem)
   }
 }

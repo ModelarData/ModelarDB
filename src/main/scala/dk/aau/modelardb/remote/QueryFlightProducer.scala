@@ -17,13 +17,15 @@ package dk.aau.modelardb.remote
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.engines.{EngineUtilities, QueryEngine}
 
-import org.apache.arrow.flight.{Action, ActionType, Criteria, FlightDescriptor, FlightEndpoint, FlightInfo, FlightProducer, FlightStream, Location, PutResult, Result, Ticket}
+import org.apache.arrow.flight.{Action, ActionType, Criteria, FlightDescriptor, FlightEndpoint,
+  FlightInfo, FlightProducer, FlightStream, Location, PutResult, Result, Ticket}
 import org.apache.arrow.vector.ipc.message.IpcOption
 import org.apache.arrow.vector.types.pojo.{Field, Schema}
 
 import java.net.InetAddress
 import java.nio.charset.StandardCharsets.UTF_8
 import java.util
+import java.util.concurrent.TimeoutException
 
 class QueryFlightProducer(queryEngine: QueryEngine) extends FlightProducer {
 
@@ -36,12 +38,18 @@ class QueryFlightProducer(queryEngine: QueryEngine) extends FlightProducer {
         listener.completed()
         return
       }
+
+      //Executes the query and transmits the result
       val query_rewritten = EngineUtilities.rewriteQuery(query)
-      val vsr = queryEngine.executeToArrow(query_rewritten)
-      listener.start(vsr, null, this.defaultIpcOption)
-      listener.putNext()
+      val ars = queryEngine.executeToArrow(query_rewritten)
+      listener.start(ars.get(), null, this.defaultIpcOption)
+      while (ars.hasNext) {
+        ars.fillNext()
+        listener.putNext()
+        this.spinUntilReadyOrTimeout(context, listener)
+      }
       listener.completed()
-      vsr.close()
+      ars.close()
     } catch {
       case t: Throwable =>
         Static.warn("ModelarDB: query failed due to " + t)
@@ -78,6 +86,21 @@ class QueryFlightProducer(queryEngine: QueryEngine) extends FlightProducer {
   override def doAction(context: FlightProducer.CallContext, action: Action, listener: FlightProducer.StreamListener[Result]): Unit = ???
 
   override def listActions(context: FlightProducer.CallContext, listener: FlightProducer.StreamListener[ActionType]): Unit = ???
+
+  /** Private Methods **/
+  private def spinUntilReadyOrTimeout(context: FlightProducer.CallContext, listener: FlightProducer.ServerStreamListener): Unit = {
+    val start = System.currentTimeMillis()
+    while ( ! listener.isReady && ! context.isCancelled && ! listener.isCancelled &&
+      System.currentTimeMillis() - start < 5000) {}
+
+    if (context.isCancelled || listener.isCancelled) {
+      throw new InterruptedException("query was canceled")
+    }
+
+    if ( ! listener.isReady) {
+      throw new TimeoutException("timeout before connection became ready")
+    }
+  }
 
   /** Instance Variable **/
   //Replacement for org.apache.arrow.vector.ipc.message.IpcOption.DEFAULT to not conflict with Apache Spark
