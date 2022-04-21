@@ -14,16 +14,19 @@
  */
 package dk.aau.modelardb.engines.spark
 
+import dk.aau.modelardb.engines.{CodeGenerator, SparkDataFrameToArrow}
 import dk.aau.modelardb.remote.ArrowResultSet
 
 import org.apache.arrow.memory.RootAllocator
 import org.apache.arrow.vector.VectorSchemaRoot
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.{ArrowUtils, DataFrame}
-import org.apache.spark.sql.execution.arrow.ArrowWriter
-import org.apache.spark.unsafe.types.UTF8String
+import org.apache.arrow.vector.types.{FloatingPointPrecision, TimeUnit}
+import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType, Schema}
 
-import java.util
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.types.{BinaryType, DoubleType, FloatType, IntegerType, LongType, StringType, StructType, TimestampType}
+
+import java.util.concurrent.ConcurrentHashMap
+import scala.collection.JavaConverters._
 
 class SparkResultSet(df: DataFrame) extends ArrowResultSet {
 
@@ -37,41 +40,53 @@ class SparkResultSet(df: DataFrame) extends ArrowResultSet {
   }
 
   def fillNext(): Unit = {
-    var count = 0
-    this.writer.reset()
-    this.vsr.setRowCount(this.DEFAULT_TARGET_BATCH_SIZE)
-    while (this.rows.hasNext && count < this.DEFAULT_TARGET_BATCH_SIZE) {
-      //The rows are converted locally due to the lack of Encoder[InternalRow]
-      this.writer.write(InternalRow.fromSeq(this.rows.next().toSeq.map({
-        case s: String => UTF8String.fromString(s) //ArrowWriter assumes strings are UTF8String
-        case f => f
-      })))
-      count += 1
-    }
-    this.writer.finish()
+    this.sparkDataFrameToArrow.fillVectors(this.rows, this.vsr)
   }
 
-  def close(): Unit = {}
+  def close(): Unit = {
+    df.unpersist()
+  }
+
+  /** Private Methods **/
+  def convertSchema(schema: StructType): Schema = {
+    val fields = schema.map(sf => sf.dataType match {
+      case IntegerType => this.getField(sf.name, new ArrowType.Int(32, true))
+      case LongType => this.getField(sf.name, new ArrowType.Int(64, true))
+      case TimestampType => this.getField(sf.name, new ArrowType.Timestamp(TimeUnit.MILLISECOND, null))
+      case FloatType => this.getField(sf.name, new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE))
+      case DoubleType => this.getField(sf.name, new ArrowType.FloatingPoint(FloatingPointPrecision.DOUBLE))
+      case StringType => this.getField(sf.name, new ArrowType.Utf8())
+      case BinaryType => this.getField(sf.name, new ArrowType.Binary())
+    })
+    new Schema(fields.asJava)
+  }
+
+  def getField(name: String, at: ArrowType): Field = {
+    new Field(name, new FieldType(false, at, null), null)
+  }
 
   /** Instance Variables **/
   private val rows = {
-    //ArrowWriter assumes that timestamps are Long and stored as microseconds while Java/Scala uses milliseconds
-    val timestampColumns = df.dtypes.filter(_._2 == "TimestampType").map(_._1)
-    val dfWithLongTimestamps = timestampColumns.foldLeft(df)({ case (df, columnName) =>
-      df.withColumn(columnName, df(columnName).cast("long") * 1000000) //ArrowWriter only supports microseconds
-    })
-
-    //The check removes Spark's warnings about the data already being cached if the same query is executed
-    if ( ! dfWithLongTimestamps.storageLevel.useMemory) {
-      dfWithLongTimestamps.persist()
-    }
-    dfWithLongTimestamps.toLocalIterator
+    this.df.persist()
+    this.df.toLocalIterator()
   }
   private val vsr = {
-    val schema = ArrowUtils.toArrowSchema(df.schema, util.TimeZone.getDefault.getID)
+    val schema = this.convertSchema(df.schema)
     val vsr = VectorSchemaRoot.create(schema, new RootAllocator())
     vsr.setRowCount(this.DEFAULT_TARGET_BATCH_SIZE)
     vsr
   }
-  private val writer = ArrowWriter.create(this.vsr)
+  private val sparkDataFrameToArrow = {
+    val cacheKey = this.df.schema
+    if ( ! SparkResultSet.sparkDataFrameToArrow.containsKey(cacheKey)) {
+      //ContainsKey and put is not synchronized as the generated code for a specific key is always the same
+      SparkResultSet.sparkDataFrameToArrow.put(cacheKey,
+        CodeGenerator.getSparkDataFrameToArrow(this.df.schema, this.DEFAULT_TARGET_BATCH_SIZE))
+    }
+    SparkResultSet.sparkDataFrameToArrow.get(cacheKey)
+  }
+}
+
+object SparkResultSet {
+  private val sparkDataFrameToArrow = new ConcurrentHashMap[StructType, SparkDataFrameToArrow]()
 }

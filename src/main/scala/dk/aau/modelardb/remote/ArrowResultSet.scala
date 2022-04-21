@@ -14,7 +14,6 @@
  */
 package dk.aau.modelardb.remote
 
-import org.apache.arrow.adapter.jdbc.JdbcToArrowConfig
 import org.apache.arrow.vector.VectorSchemaRoot
 
 trait ArrowResultSet {
@@ -23,6 +22,6 @@ trait ArrowResultSet {
   def fillNext(): Unit
   def close(): Unit
 
-  //The size is significantly increased as each rows only consists of tid, ts, value, and members
-  protected val DEFAULT_TARGET_BATCH_SIZE: Int = 1024 * JdbcToArrowConfig.DEFAULT_TARGET_BATCH_SIZE
+  //Purposely high as each rows only consists of tid, timestamp, value, and members
+  protected val DEFAULT_TARGET_BATCH_SIZE: Int = 1048576
 }

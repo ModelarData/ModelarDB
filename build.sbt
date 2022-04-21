@@ -7,8 +7,7 @@ libraryDependencies ++= Seq(
   "org.scala-lang" % "scala-compiler" % scalaVersion.value,
 
   /* Query Interface */
-  "org.apache.arrow" % "flight-core" % "6.0.1",
-  "org.apache.arrow" % "arrow-jdbc" % "6.0.1",
+  "org.apache.arrow" % "flight-core" % "7.0.0",
 
   /* Query Engine */
   "com.h2database" % "h2" % "1.4.200",
@@ -21,7 +20,7 @@ libraryDependencies ++= Seq(
   "com.datastax.spark" %% "spark-cassandra-connector" % "3.1.0" % "provided", //Requires Spark
   "org.apache.hadoop" % "hadoop-client" % "3.2.0", //Same as Apache Spark 3.1.2 due to javax.xml.bind conflicts
   "org.apache.parquet" % "parquet-hadoop" % "1.12.2", //Same as Apache Spark
-  "org.apache.orc" % "orc-core" % "1.6.13", //Same as Apache Spark
+  "org.apache.orc" % "orc-core" % "1.6.14", //Same as Apache Spark
 
   /* Testing */
   "org.scalatest" %% "scalatest" % "3.2.9" % Test,
@@ -54,7 +53,7 @@ ThisBuild / useCoursier := false
 /* Show the duration of tests and complete stack traces with color */
 Test / testOptions += Tests.Argument("-oDF")
 
-/* Execute tests sequentially to reduce the amount of memory requred */
+/* Execute tests sequentially to reduce the amount of memory required */
 Test / parallelExecution := false
 
 /* Create a code coverage report in HTML using Jacoco */
