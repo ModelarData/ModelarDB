@@ -49,11 +49,19 @@ abstract class QueryTest extends AnyFlatSpec with Matchers {
   private var sparkEngine: Spark = null
   private var sparkStorageField: Field = null
   private val storageDirectory = Files.createTempDirectory("").toFile
-  private val storages = List(
-    StorageFactory.getStorage("jdbc:h2:" + this.storageDirectory + "/h2"),
-    StorageFactory.getStorage("orc:" + this.storageDirectory + "/orc"),
-    StorageFactory.getStorage("parquet:" + this.storageDirectory + "/parquet")
-  )
+  private val storages = {
+    val h2Configuration = new Configuration()
+    h2Configuration.add("modelardb.storage", "jdbc:h2:" + storageDirectory + "/h2")
+    val orcConfiguration = new Configuration()
+    orcConfiguration.add("modelardb.storage", "orc:" + storageDirectory + "/orc")
+    val parquetConfiguration = new Configuration()
+    parquetConfiguration.add("modelardb.storage","parquet:" + storageDirectory + "/parquet")
+    List(
+      StorageFactory.getStorage(h2Configuration),
+      StorageFactory.getStorage(orcConfiguration),
+      StorageFactory.getStorage(parquetConfiguration)
+    )
+  }
   private val modelTypeNames = Array(
     "dk.aau.modelardb.core.models.PMC_MeanModelType",
     "dk.aau.modelardb.core.models.SwingFilterModelType",

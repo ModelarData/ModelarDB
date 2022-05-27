@@ -18,20 +18,17 @@ import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.engines.h2.{H2, H2Storage}
 import dk.aau.modelardb.engines.spark.{Spark, SparkStorage}
+
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.h2.table.TableFilter
 
 import java.sql.{Array => _, _}
+import java.lang
+
 import scala.collection.mutable
 
 class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Storage with SparkStorage {
-  /** Instance Variables **/
-  private var connection: Connection = _
-  private var insertStmt: PreparedStatement = _
-  private var getMaxTidStmt: PreparedStatement = _
-  private var getMaxGidStmt: PreparedStatement = _
-  private val (connectionString, textType, blobType) = splitConnectionStringAndTypes(connectionStringAndTypes)
 
   /** Public Methods **/
   //Storage
@@ -62,32 +59,23 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
     this.getMaxGidStmt = this.connection.prepareStatement("SELECT MAX(gid) FROM time_series")
   }
 
-  def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
-    val columnsInNormalizedDimensions = dimensions.getColumns.length
+  def storeTimeSeries(timeSeriesGroupRows: Array[Array[Object]]): Unit = {
+    val columnsInNormalizedDimensions = this.dimensions.getColumns.length
     val columns = "?, " * (columnsInNormalizedDimensions + 3) + "?"
-    val insertSourceStmt = connection.prepareStatement("INSERT INTO time_series VALUES(" + columns + ")")
-    val dimensionTypes = dimensions.getTypes
-    for (tsg <- timeSeriesGroups) {
-      for (ts <- tsg.getTimeSeries) {
-        insertSourceStmt.clearParameters()
-        insertSourceStmt.setInt(1, ts.tid)
-        insertSourceStmt.setFloat(2, ts.scalingFactor)
-        insertSourceStmt.setInt(3, ts.samplingInterval)
-        insertSourceStmt.setInt(4, tsg.gid)
-
-        var column = 5
-        for (dim <- dimensions.get(ts.source)) {
-          dimensionTypes(column - 5) match {
-            case Dimensions.Types.TEXT => insertSourceStmt.setString(column, dim.asInstanceOf[String])
-            case Dimensions.Types.INT => insertSourceStmt.setInt(column, dim.asInstanceOf[Int])
-            case Dimensions.Types.LONG => insertSourceStmt.setLong(column, dim.asInstanceOf[Long])
-            case Dimensions.Types.FLOAT => insertSourceStmt.setFloat(column, dim.asInstanceOf[Float])
-            case Dimensions.Types.DOUBLE => insertSourceStmt.setDouble(column, dim.asInstanceOf[Double])
-          }
-          column += 1
+    val insertSourceStmt = this.connection.prepareStatement("INSERT INTO time_series VALUES(" + columns + ")")
+    for (row <- timeSeriesGroupRows) {
+      insertSourceStmt.clearParameters()
+      for (elementAndIndex <- row.zipWithIndex) {
+        val jdbcIndex = elementAndIndex._2 + 1
+        elementAndIndex._1 match {
+          case elem: lang.String => insertSourceStmt.setString(jdbcIndex, elem)
+          case elem: lang.Integer => insertSourceStmt.setInt(jdbcIndex, elem)
+          case elem: lang.Long => insertSourceStmt.setLong(jdbcIndex, elem)
+          case elem: lang.Float => insertSourceStmt.setFloat(jdbcIndex, elem)
+          case elem: lang.Double => insertSourceStmt.setDouble(jdbcIndex, elem)
         }
-        insertSourceStmt.executeUpdate()
       }
+      insertSourceStmt.executeUpdate()
     }
   }
 
@@ -157,9 +145,10 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
   }
 
   //H2Storage
-  override def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
+  override def storeSegmentGroups(segmentGroups: Array[SegmentGroup]): Unit = {
+    this.storageSegmentGroupLock.writeLock().lock()
     try {
-      for (segmentGroup <- segmentGroups.take(size)) {
+      for (segmentGroup <- segmentGroups) {
         this.insertStmt.setInt(1, segmentGroup.gid)
         this.insertStmt.setLong(2, segmentGroup.startTime)
         this.insertStmt.setLong(3, segmentGroup.endTime)
@@ -175,31 +164,40 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
         close()
         throw new java.lang.RuntimeException(se)
     }
+    this.storageSegmentGroupLock.writeLock().unlock()
   }
 
   override def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
-    getSegmentGroups(H2.expressionToSQLLikePredicates(filter.getSelect.getCondition,
+    this.storageSegmentGroupLock.readLock().lock()
+    val rs = this.getSegmentGroups(H2.expressionToSQLLikePredicates(filter.getSelect.getCondition,
       this.timeSeriesGroupCache, this.memberTimeSeriesCache, sql = true))
+    this.storageSegmentGroupLock.readLock().unlock()
+    rs
   }
 
   //SparkStorage
   override def open(ssb: SparkSession.Builder, dimensions: Dimensions): SparkSession = {
-    open(dimensions)
+    this.open(dimensions)
     ssb.getOrCreate()
   }
 
   override def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit = {
-    val groups = df.collect().map(row => new SegmentGroup(row.getInt(0), row.getTimestamp(1).getTime,
+    this.storageSegmentGroupLock.writeLock().lock()
+    val segmentGroups = df.collect().map(row => new SegmentGroup(row.getInt(0), row.getTimestamp(1).getTime,
       row.getTimestamp(2).getTime, row.getInt(3), row.getAs[Array[Byte]](4), row.getAs[Array[Byte]](5)))
-    storeSegmentGroups(groups, groups.length)
+    this.storeSegmentGroups(segmentGroups)
+    this.storageSegmentGroupLock.writeLock().unlock()
   }
 
   override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame = {
+    this.storageSegmentGroupLock.readLock().lock()
     Static.warn("ModelarDB: projection and predicate push-down is not yet implemented")
     val rows = getSegmentGroups("").map(sg => {
       Row(sg.gid, new Timestamp(sg.startTime), new Timestamp(sg.endTime), sg.mtid, sg.model, sg.offsets)
     })
-    sparkSession.createDataFrame(sparkSession.sparkContext.parallelize(rows.toSeq), Spark.getStorageSegmentGroupsSchema)
+    val df = sparkSession.createDataFrame(sparkSession.sparkContext.parallelize(rows.toSeq), Spark.getStorageSegmentGroupsSchema)
+    this.storageSegmentGroupLock.readLock().unlock()
+    df
   }
 
   /** Private Methods **/
@@ -265,4 +263,11 @@ class JDBCStorage(connectionStringAndTypes: String) extends Storage with H2Stora
         throw new java.lang.RuntimeException(se)
     }
   }
+
+  /** Instance Variables **/
+  private var connection: Connection = _
+  private var insertStmt: PreparedStatement = _
+  private var getMaxTidStmt: PreparedStatement = _
+  private var getMaxGidStmt: PreparedStatement = _
+  private val (connectionString, textType, blobType) = splitConnectionStringAndTypes(connectionStringAndTypes)
 }

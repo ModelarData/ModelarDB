@@ -118,6 +118,10 @@ public class Static {
         return result * 100.0;
     }
 
+    public static int dataPointsPerMinute(int samplingInterval, int timeSeriesGroupSize) {
+        return 60000 / samplingInterval / timeSeriesGroupSize;
+    }
+
     public static boolean isInteger(String s) {
         try {
             Integer.parseInt(s);

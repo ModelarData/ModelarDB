@@ -16,8 +16,9 @@ package dk.aau.modelardb.integration
 
 import org.apache.arrow.flight.{FlightClient, Location, Ticket}
 import org.apache.arrow.memory.RootAllocator
-import org.apache.arrow.vector.{BigIntVector, FieldVector, Float4Vector, Float8Vector, IntVector,
-  TimeStampMicroTZVector, TimeStampMilliVector, VarBinaryVector}
+import org.apache.arrow.vector.{BigIntVector, FieldVector, Float4Vector, Float8Vector, IntVector, TimeStampMicroTZVector, TimeStampMilliVector, VarBinaryVector}
+
+import java.nio.charset.StandardCharsets
 
 import scala.collection.{SortedMap, mutable}
 import scala.collection.JavaConverters._
@@ -32,7 +33,7 @@ class QueryTestArrow extends QueryTest {
     val client = FlightClient.builder().allocator(new RootAllocator())
       .location(Location.forGrpcInsecure("127.0.0.1", port)).build()
 
-    val fs = client.getStream(new Ticket(query.getBytes))
+    val fs = client.getStream(new Ticket(query.getBytes(StandardCharsets.UTF_8)))
     val result = mutable.Buffer[SortedMap[String, Object]]()
     while (fs.next()) {
       val vsr = fs.getRoot

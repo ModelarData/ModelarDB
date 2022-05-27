@@ -16,26 +16,29 @@ package dk.aau.modelardb.engines.spark
 
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Static, ValueFunction}
+import dk.aau.modelardb.engines.h2.H2Storage
 import dk.aau.modelardb.engines.{EngineUtilities, QueryEngine}
-import dk.aau.modelardb.remote.{ArrowResultSet, QueryInterface}
+import dk.aau.modelardb.remote.{ArrowResultSet, QueryInterface, RemoteStorageFlightProducer, RemoteUtilities}
+
+import org.apache.arrow.flight.{FlightServer, Location}
+import org.apache.arrow.memory.RootAllocator
 
 import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, DataFrameReader, SparkSession, sources}
+import org.apache.spark.sql.{DataFrame, DataFrameReader, Row, SparkSession, sources}
+import org.apache.spark.streaming.receiver.Receiver
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 
+import java.net.InetAddress
 import java.sql.Timestamp
 
 import scala.collection.mutable
 import scala.collection.JavaConverters._
 
 class Spark(configuration: Configuration, sparkStorage: SparkStorage) extends QueryEngine {
-
-  /** Instance Variable **/
-  var sparkSession: SparkSession = _
 
   /** Public Methods **/
   def start(): Unit = {
@@ -52,6 +55,9 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) extends Qu
       ssc.awaitTermination()
       Spark.getCache.flush()
     }
+    if (this.flightServer != null) { // null unless modelardb.transfer server
+      this.flightServer.close()
+    }
     ss.stop()
   }
 
@@ -65,7 +71,6 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) extends Qu
 
   /** Private Methods **/
   private def initialize(): (SparkSession, StreamingContext) = {
-
     //Constructs the necessary Spark Conf and Spark Session Builder
     val engine = configuration.getString("modelardb.engine")
     val master = if (engine == "spark") "local[*]" else engine
@@ -81,21 +86,49 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) extends Qu
 
     //Initializes storage and Spark with any new time series that the system must ingest
     configuration.containsOrThrow("modelardb.batch_size")
-    val ssc = if (configuration.getIngestors == 0) {
+    val ingestors = configuration.getIngestors
+    val ssc = if (ingestors == 0) {
       if ( ! configuration.getDerivedTimeSeries.isEmpty) { //Initializes derived time series
         Partitioner.initializeTimeSeries(configuration, sparkStorage.getMaxTid)
       }
-      sparkStorage.storeMetadataAndInitializeCaches(configuration, Array())
+      sparkStorage.storeMetadataAndInitializeCaches(configuration, Array[TimeSeriesGroup]())
       Spark.initialize(spark, configuration, sparkStorage, Range(0,0))
       null
     } else {
       configuration.containsOrThrow("modelardb.spark.streaming")
-      val newGid = sparkStorage.getMaxGid + 1
-      val timeSeries = Partitioner.initializeTimeSeries(configuration, sparkStorage.getMaxTid)
-      val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, sparkStorage.getMaxGid)
-      sparkStorage.storeMetadataAndInitializeCaches(configuration, timeSeriesGroups)
-      Spark.initialize(spark, configuration, sparkStorage, Range(newGid, newGid + timeSeriesGroups.size))
-      setupStream(spark, timeSeriesGroups)
+      val transfer = configuration.getString("modelardb.transfer", "None")
+      val (mode, port) = RemoteUtilities.getInterfaceAndPort(transfer, 10000)
+
+      mode match {
+        case "server" =>
+          //Initialize Data Transfer Server (Master)
+          sparkStorage.storeMetadataAndInitializeCaches(configuration, Array[TimeSeriesGroup]())
+          val location = new Location("grpc://0.0.0.0:" + port)
+          val producer = new RemoteStorageFlightProducer(configuration, sparkStorage.asInstanceOf[H2Storage], port)
+          val executor = configuration.getExecutorService
+          this.flightServer = FlightServer.builder(new RootAllocator(), location, producer).executor(executor).build()
+          this.flightServer.start()
+          Static.info(f"ModelarDB: Arrow Flight transfer end-point is ready (Port: $port)")
+
+          //Initialize Data Transfer Server (Workers)
+          Spark.initialize(spark, configuration, sparkStorage, Range(0, 0)) //Temporary segments are not transferred
+          val master = InetAddress.getLocalHost().getHostAddress() + ":" + port
+          setupStream(spark, Range(0, ingestors).map(_=> new RemoteStorageReceiver(master, port)).toArray, true)
+        case _ => //If data transfer is enabled to StorageFactory have wrapped SparkStorage with a RemoteStorage instance
+          //Initialize Local Ingestion to SparkStorage (Possible RemoteStorage)
+          val firstGid = sparkStorage.getMaxGid + 1
+          val timeSeries = Partitioner.initializeTimeSeries(configuration, sparkStorage.getMaxTid)
+          val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, sparkStorage.getMaxGid)
+          sparkStorage.storeMetadataAndInitializeCaches(configuration, timeSeriesGroups)
+          Spark.initialize(spark, configuration, sparkStorage, Range(firstGid, firstGid + timeSeriesGroups.size))
+
+          val mtidCache = Spark.getSparkStorage.mtidCache.asJava
+          val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, mtidCache, ingestors)
+          if (workingSets.length != ingestors) {
+            throw new java.lang.RuntimeException("ModelarDB: the Spark engine did not receive a workings sets for each receiver")
+          }
+          setupStream(spark, workingSets.map(ws => new WorkingSetReceiver(ws)), false)
+      }
     }
 
     //Creates Spark SQL tables that can be queried using SQL
@@ -111,24 +144,27 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) extends Qu
     (spark, ssc)
   }
 
-  private def setupStream(spark: SparkSession, timeSeriesGroups: Array[TimeSeriesGroup]): StreamingContext = {
-    //Creates a receiver per ingestor with each receiving a working set created by Partitioner.partitionTimeSeries
+  private def setupStream(spark: SparkSession, receivers: Array[Receiver[Row]], dataTransferServer: Boolean): StreamingContext = {
+    //Creates a receiver per ingestor with each receiving a working set or clients to ingest from
     val ssc = new StreamingContext(spark.sparkContext, Seconds(configuration.getInteger("modelardb.spark.streaming")))
-    val mtidCache = Spark.getSparkStorage.mtidCache.asJava
-    val workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, mtidCache,
-      configuration.getInteger("modelardb.ingestors"))
-    if (workingSets.length != configuration.getInteger("modelardb.ingestors")) {
-      throw new java.lang.RuntimeException("ModelarDB: the Spark engine did not receive a workings sets for each receiver")
-    }
-
-    val modelReceivers = workingSets.map(ws => new WorkingSetReceiver(ws))
-    val streams = modelReceivers.map(ssc.receiverStream(_))
+    val streams = receivers.map(ssc.receiverStream(_))
     val stream = ssc.union(streams.toSeq)
 
-    //If querying and temporary segments are disabled, segments can be written directly to disk without being cached
-    if ( ! configuration.contains("modelardb.interface") && ! configuration.contains("modelardb.latency")) {
+
+    if ( ! configuration.contains("modelardb.interface")) {
+      //If querying is disabled, segments can be written directly to disk without being cached
       stream.foreachRDD(Spark.getCache.write(_))
       Static.info("ModelarDB: Spark Streaming initialized in bulk-loading mode")
+    } else if (dataTransferServer) {
+      //Temporary segments are never transferred so segments can be written directly to disk if the cache is invalidated
+      stream.foreachRDD(rdd => {
+        val cache = Spark.getCache
+        if ( ! rdd.isEmpty()) {
+          cache.invalidate()
+        }
+        cache.write(rdd)
+      })
+      Static.info("ModelarDB: Spark Streaming initialized in flushing bulk-loading mode")
     } else {
       stream.foreachRDD(Spark.getCache.update(_))
       Static.info("ModelarDB: Spark Streaming initialized in online-analytics mode")
@@ -138,28 +174,20 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) extends Qu
     ssc.start()
     ssc
   }
+
+  /** Instance Variable **/
+  private var sparkSession: SparkSession = _
+  private var flightServer: FlightServer = _
 }
 
 object Spark {
-  /** Instance Variables **/
-  private var parallelism: Int = _
-  private var cache: SparkCache = _
-  private var viewProvider: DataFrameReader = _
-  private var sparkStorage: SparkStorage = _
-  private var broadcastedTimeSeriesTransformationCache: Broadcast[Array[ValueFunction]] = _
-  private val storageSegmentGroupsSchema: StructType = StructType(Seq(
-    StructField("gid", IntegerType, nullable = false),
-    StructField("start_time", TimestampType, nullable = false),
-    StructField("end_time", TimestampType, nullable = false),
-    StructField("mtid", IntegerType, nullable = false),
-    StructField("model", BinaryType, nullable = false),
-    StructField("gaps", BinaryType, nullable = false)))
 
   /** Constructors **/
   def initialize(spark: SparkSession, configuration: Configuration, sparkStorage: SparkStorage, newGids: Range): Unit = {
+    this.sparkSession = spark
     this.parallelism = spark.sparkContext.defaultParallelism
     this.viewProvider = spark.read.format("dk.aau.modelardb.engines.spark.ViewProvider")
-    this.sparkStorage = null
+    this.timeSeriesTransformationCache = sparkStorage.timeSeriesTransformationCache
     this.broadcastedTimeSeriesTransformationCache = spark.sparkContext.broadcast(sparkStorage.timeSeriesTransformationCache)
     this.sparkStorage = sparkStorage
     this.cache = new SparkCache(spark, configuration.getInteger("modelardb.batch_size"), newGids)
@@ -169,7 +197,15 @@ object Spark {
   def getCache: SparkCache = Spark.cache
   def getViewProvider: DataFrameReader = Spark.viewProvider
   def getSparkStorage: SparkStorage = Spark.sparkStorage
-  def getBroadcastedTimeSeriesTransformationCache: Broadcast[Array[ValueFunction]] = Spark.broadcastedTimeSeriesTransformationCache
+  def getBroadcastedTimeSeriesTransformationCache: Broadcast[Array[ValueFunction]] = {
+    if (this.timeSeriesTransformationCache != this.sparkStorage.timeSeriesTransformationCache) {
+      //The TimeSeriesTransformationCache was updated due to a new client registering
+      this.broadcastedTimeSeriesTransformationCache =
+        this.sparkSession.sparkContext.broadcast(this.sparkStorage.timeSeriesTransformationCache)
+      this.timeSeriesTransformationCache = this.sparkStorage.timeSeriesTransformationCache
+    }
+    this.broadcastedTimeSeriesTransformationCache
+  }
   def getStorageSegmentGroupsSchema: StructType = this.storageSegmentGroupsSchema
   def isDataSetSmall(rows: RDD[_]): Boolean = rows.partitions.length <= parallelism
 
@@ -209,4 +245,20 @@ object Spark {
       df.where(predicate)
     }
   }
+
+  /** Instance Variables **/
+  private var sparkSession: SparkSession = _
+  private var parallelism: Int = _
+  private var cache: SparkCache = _
+  private var viewProvider: DataFrameReader = _
+  private var sparkStorage: SparkStorage = _
+  private var timeSeriesTransformationCache: Array[ValueFunction] = _
+  private var broadcastedTimeSeriesTransformationCache: Broadcast[Array[ValueFunction]] = _
+  private val storageSegmentGroupsSchema: StructType = StructType(Seq(
+    StructField("gid", IntegerType, nullable = false),
+    StructField("start_time", TimestampType, nullable = false),
+    StructField("end_time", TimestampType, nullable = false),
+    StructField("mtid", IntegerType, nullable = false),
+    StructField("model", BinaryType, nullable = false),
+    StructField("gaps", BinaryType, nullable = false)))
 }

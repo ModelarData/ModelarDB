@@ -15,7 +15,7 @@
 package dk.aau.modelardb.remote
 
 import dk.aau.modelardb.core.Configuration
-import dk.aau.modelardb.engines.{EngineUtilities, QueryEngine}
+import dk.aau.modelardb.engines.QueryEngine
 import dk.aau.modelardb.core.utility.Static
 
 import org.apache.arrow.flight.{FlightServer, Location}
@@ -23,6 +23,7 @@ import org.apache.arrow.memory.RootAllocator
 
 import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
 
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.ExecutorService
 import java.nio.file.{Files, Paths}
 
@@ -38,7 +39,8 @@ object QueryInterface {
     }
 
     this.queryEngine = queryEngine
-    val (interface, port) = getInterfaceAndPort(configuration)
+    val (interface, port) = RemoteUtilities.getInterfaceAndPort(
+      configuration.getString("modelardb.interface"), 9999)
     interface match {
       case "arrow" => arrow(configuration.getExecutorService, port)
       case "socket" => socket(configuration.getExecutorService, port)
@@ -50,24 +52,14 @@ object QueryInterface {
   }
 
   /** Private Methods * */
-  private def getInterfaceAndPort(configuration: Configuration): (String, Int) = {
-    val interfaceAndMaybePort = configuration.getString("modelardb.interface")
-    val startOfPort = interfaceAndMaybePort.lastIndexOf(':')
-    if (startOfPort == -1) {
-      (interfaceAndMaybePort, 9999)
-    } else {
-      (interfaceAndMaybePort.substring(0, startOfPort), interfaceAndMaybePort.substring(startOfPort + 1).toInt)
-    }
-  }
-
   private def arrow(executor: ExecutorService, port: Int): Unit = {
     val allocator = new RootAllocator()
     val location = new Location("grpc://0.0.0.0:" + port)
-    val producer = new QueryFlightProducer(this.queryEngine)
+    val producer = new QueryInterfaceFlightProducer(this.queryEngine)
     val flightServer = FlightServer.builder(allocator, location, producer).executor(executor).build()
     flightServer.start()
-    Static.info(f"ModelarDB: Arrow Flight end-point is ready (Port: $port)")
-    readLine() //Prevents the method from returning to keep the server running
+    Static.info(f"ModelarDB: Arrow Flight query end-point is ready (Port: $port)")
+    readLine() //Prevents the method from returning to keep the Arrow Flight query end-point running
     flightServer.close()
     Static.info("ModelarDB: connection is closed")
   }
@@ -77,7 +69,7 @@ object QueryInterface {
     val serverSocket = new java.net.ServerSocket(port)
 
     while (true) {
-      Static.info(f"ModelarDB: socket end-point is ready (Port: $port)")
+      Static.info(f"ModelarDB: socket query end-point is ready (Port: $port)")
       val clientSocket = serverSocket.accept()
       executor.execute(() => {
         val in = new java.io.BufferedReader(new java.io.InputStreamReader(clientSocket.getInputStream))
@@ -131,7 +123,7 @@ object QueryInterface {
         val out = results.mkString("")
         httpExchange.sendResponseHeaders(200, out.length)
         val response = httpExchange.getResponseBody
-        response.write(out.getBytes)
+        response.write(out.getBytes(StandardCharsets.UTF_8))
         response.close()
       }
     }
@@ -140,8 +132,8 @@ object QueryInterface {
     server.createContext("/", new QueryHandler())
     server.setExecutor(executor)
     server.start()
-    Static.info(f"ModelarDB: HTTP end-point is ready (Port: $port)")
-    readLine() //Prevents the method from returning to keep the server running
+    Static.info(f"ModelarDB: HTTP query end-point is ready (Port: $port)")
+    readLine() //Prevents the method from returning to keep the HTTP server and query end-point running
 
     //Cleanup
     server.stop(0)
@@ -177,7 +169,7 @@ object QueryInterface {
     val st = System.currentTimeMillis()
     var result: Array[String] = null
     try {
-      val query_rewritten = EngineUtilities.rewriteQuery(query)
+      val query_rewritten = RemoteUtilities.rewriteQuery(query)
       result = this.queryEngine.executeToJSON(query_rewritten)
     } catch {
       case e: Exception =>

@@ -239,7 +239,7 @@ public class Partitioner {
         Arrays.sort(timeSeriesGroups, Comparator.comparingLong(tsg -> tsg.samplingInterval / tsg.size()));
         for (TimeSeriesGroup tsg : timeSeriesGroups) {
             Pair<Long, ArrayList<TimeSeriesGroup>> min = sets.poll();
-            min._1 = min._1 + (60000 / (tsg.samplingInterval / tsg.size())); //Data Points per Minute
+            min._1 = min._1 + Static.dataPointsPerMinute(tsg.samplingInterval, tsg.size());
             min._2.add(tsg);
             sets.add(min);
         }

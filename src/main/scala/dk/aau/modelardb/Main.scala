@@ -52,7 +52,7 @@ object Main {
     TimeZone.setDefault(configuration.getTimeZone) //Ensures all components use the same time zone
 
     /* Storage */
-    val storage = StorageFactory.getStorage(configuration.getString("modelardb.storage"))
+    val storage = StorageFactory.getStorage(configuration)
 
     /* Engine */
     EngineFactory.startEngine(configuration, storage)
@@ -112,8 +112,8 @@ object Main {
           } else {
             correlations.append(parseCorrelation(tls, dimensions))
           }
-        case "modelardb.engine" | "modelardb.storage" | "modelardb.interface" | "modelardb.time_zone" |
-             "modelardb.ingestors" | "modelardb.timestamp_column" | "modelardb.value_column" |
+        case "modelardb.engine" | "modelardb.storage" | "modelardb.interface" | "modelardb.transfer" |
+             "modelardb.time_zone" | "modelardb.ingestors" | "modelardb.timestamp_column" | "modelardb.value_column" |
              "modelardb.error_bound" | "modelardb.length_bound" | "modelardb.maximum_latency" |
              "modelardb.sampling_interval" | "modelardb.batch_size" | "modelardb.dynamic_split_fraction"  |
              "modelardb.csv.separator" | "modelardb.csv.header" | "modelardb.csv.date_format" | "modelardb.csv.locale" |

@@ -18,10 +18,12 @@ import com.datastax.oss.driver.api.core.CqlSession
 import com.datastax.oss.driver.api.core.cql._
 import com.datastax.spark.connector._
 import com.datastax.spark.connector.cql.CassandraConnector
+
 import dk.aau.modelardb.core.utility.Static
-import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
+import dk.aau.modelardb.core.{Dimensions, SegmentGroup}
 import dk.aau.modelardb.engines.h2.{H2, H2Storage}
 import dk.aau.modelardb.engines.spark.{Spark, SparkStorage}
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
@@ -30,13 +32,10 @@ import org.h2.table.TableFilter
 import java.nio.ByteBuffer
 import java.time.Instant
 import java.util
+
 import scala.collection.mutable
 
 class CassandraStorage(connectionString: String) extends Storage with H2Storage with SparkStorage {
-  /** Instance Variables **/
-  private var keyspace: String = _
-  private var connector: CassandraConnector = _
-  private var insertStmt: PreparedStatement = _
 
   /** Public Methods **/
   //Storage
@@ -49,27 +48,14 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     createTables(dimensions)
   }
 
-  def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup]): Unit = {
+  def storeTimeSeries(timeSeriesGroupRows: Array[Array[Object]]): Unit = {
     val session = this.connector.openSession()
     val columnsInNormalizedDimensions = dimensions.getColumns.length
     val columns = if (columnsInNormalizedDimensions  == 0) "" else dimensions.getColumns.mkString(", ", ", ", "")
     val placeholders = "?, " * (columnsInNormalizedDimensions + 3) + "?"
     val insertString = s"INSERT INTO ${this.keyspace}.time_series(tid, scaling_factor, sampling_interval, gid $columns) VALUES($placeholders)"
-    for (tsg <- timeSeriesGroups) {
-      for (ts <- tsg.getTimeSeries) {
-        var stmt = SimpleStatement.builder(insertString)
-          .addPositionalValues(
-            ts.tid.asInstanceOf[Object],
-            ts.scalingFactor.asInstanceOf[Object],
-            ts.samplingInterval.asInstanceOf[Object],
-            tsg.gid.asInstanceOf[Object])
-
-        val members = dimensions.get(ts.source)
-        if (members.nonEmpty) {
-          stmt = stmt.addPositionalValues(members: _*) //Dimensions
-        }
-        session.execute(stmt.build())
-      }
+    for (row <- timeSeriesGroupRows) {
+      session.execute(SimpleStatement.builder(insertString).addPositionalValues(row:_*).build())
     }
     session.close()
   }
@@ -138,10 +124,11 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
   }
 
   //H2Storage
-  override def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
+  override def storeSegmentGroups(segmentGroups: Array[SegmentGroup]): Unit = {
+    this.storageSegmentGroupLock.writeLock().lock()
     val session = this.connector.openSession()
-    val batch = new util.ArrayList[BoundStatement](size min 65535)
-    for (segmentGroup <- segmentGroups.take(size)) {
+    val batch = new util.ArrayList[BoundStatement](Math.min(segmentGroups.length, 65535))
+    for (segmentGroup <- segmentGroups) {
       batch.add(insertStmt.bind()
         .setInt(0, segmentGroup.gid)
         .setInstant(1, Instant.ofEpochMilli(segmentGroup.startTime))
@@ -157,9 +144,11 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     }
     storeSegmentGroups(session, batch)
     session.close()
+    this.storageSegmentGroupLock.writeLock().unlock()
   }
 
   def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
+    this.storageSegmentGroupLock.readLock().lock()
     val predicates = H2.expressionToSQLLikePredicates(filter.getSelect.getCondition,
       this.timeSeriesGroupCache, this.memberTimeSeriesCache, sql = false)
     Static.info(s"ModelarDB: constructed predicates ($predicates)")
@@ -171,7 +160,7 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     }
     session.close()
 
-    new Iterator[SegmentGroup] {
+    val rs = new Iterator[SegmentGroup] {
       override def hasNext: Boolean = results.hasNext
 
       override def next(): SegmentGroup = {
@@ -185,6 +174,8 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
         new SegmentGroup(gid, startTime, endTime, mtid, model.array, gaps.array)
       }
     }
+    this.storageSegmentGroupLock.readLock().unlock()
+    rs
   }
 
   //SparkStorage
@@ -203,14 +194,19 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
   }
 
   override def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit = {
+    this.storageSegmentGroupLock.writeLock().lock()
     df.write.format("org.apache.spark.sql.cassandra")
       .option("keyspace", this.keyspace).option("table", "segment")
       .mode(SaveMode.Append).save()
+    this.storageSegmentGroupLock.writeLock().unlock()
   }
 
   override def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame = {
-    Spark.applyFiltersToDataFrame(sparkSession.read.table(s"cassandra.${this.keyspace}.segment")
+    this.storageSegmentGroupLock.readLock().lock()
+    val df = Spark.applyFiltersToDataFrame(sparkSession.read.table(s"cassandra.${this.keyspace}.segment")
       .select("gid", "start_time", "end_time", "mtid", "model", "gaps"), filters)
+    this.storageSegmentGroupLock.readLock().unlock()
+    df
   }
 
   /** Private Methods **/
@@ -274,4 +270,9 @@ class CassandraStorage(connectionString: String) extends Storage with H2Storage 
     session.execute(batchStatement.addAll(batch))
     batch.clear()
   }
+
+  /** Instance Variables **/
+  private var keyspace: String = _
+  private var connector: CassandraConnector = _
+  private var insertStmt: PreparedStatement = _
 }

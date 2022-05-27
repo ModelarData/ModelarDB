@@ -14,12 +14,16 @@
  */
 package dk.aau.modelardb.storage
 
+import dk.aau.modelardb.core.Configuration
+import dk.aau.modelardb.remote.{RemoteStorage, RemoteUtilities}
+
 object StorageFactory {
 
   /** Public Methods **/
-  def getStorage(connectionString: String): Storage = {
+  def getStorage(configuration: Configuration): Storage = {
     //Selects the correct storage backend based on the connection string provided
-    try {
+    val connectionString = configuration.getString("modelardb.storage")
+    val storage = try {
       if (connectionString.startsWith("cassandra://")) {
         new CassandraStorage(connectionString.substring(12))
       } else if (connectionString.startsWith("jdbc:")) {
@@ -34,6 +38,14 @@ object StorageFactory {
     } catch {
       case e: Exception =>
         throw new java.lang.IllegalArgumentException("ModelarDB: failed to initialize modelardb.storage from the config file", e)
+    }
+
+    //Local storage is only used as a temporary buffer if transfer of segmentGroups to a remote instance is enabled
+    val transfer = configuration.getString("modelardb.transfer", "server")
+    val (mode, port) = RemoteUtilities.getInterfaceAndPort(transfer, 10000)
+    mode match {
+      case "server" => storage
+      case ip => new RemoteStorage(ip, port, storage)
     }
   }
 }

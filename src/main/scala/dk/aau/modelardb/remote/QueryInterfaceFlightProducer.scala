@@ -15,7 +15,7 @@
 package dk.aau.modelardb.remote
 
 import dk.aau.modelardb.core.utility.Static
-import dk.aau.modelardb.engines.{EngineUtilities, QueryEngine}
+import dk.aau.modelardb.engines.QueryEngine
 
 import org.apache.arrow.flight.{Action, ActionType, Criteria, FlightDescriptor, FlightEndpoint,
   FlightInfo, FlightProducer, FlightStream, Location, PutResult, Result, Ticket}
@@ -25,9 +25,8 @@ import org.apache.arrow.vector.types.pojo.{Field, Schema}
 import java.net.InetAddress
 import java.nio.charset.StandardCharsets.UTF_8
 import java.util
-import java.util.concurrent.TimeoutException
 
-class QueryFlightProducer(queryEngine: QueryEngine) extends FlightProducer {
+class QueryInterfaceFlightProducer(queryEngine: QueryEngine) extends FlightProducer {
 
   /** Public Methods **/
   override def getStream(context: FlightProducer.CallContext, ticket: Ticket, listener: FlightProducer.ServerStreamListener): Unit = {
@@ -40,7 +39,7 @@ class QueryFlightProducer(queryEngine: QueryEngine) extends FlightProducer {
       }
 
       //Executes the query and transmits the result
-      val query_rewritten = EngineUtilities.rewriteQuery(query)
+      val query_rewritten = RemoteUtilities.rewriteQuery(query)
       val ars = queryEngine.executeToArrow(query_rewritten)
       listener.start(ars.get(), null, this.defaultIpcOption)
       while (ars.hasNext) {
@@ -98,7 +97,7 @@ class QueryFlightProducer(queryEngine: QueryEngine) extends FlightProducer {
     }
 
     if ( ! listener.isReady) {
-      throw new TimeoutException("timeout before connection became ready")
+      throw new util.concurrent.TimeoutException("timeout before connection became ready")
     }
   }
 

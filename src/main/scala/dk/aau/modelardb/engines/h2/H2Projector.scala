@@ -28,11 +28,6 @@ import scala.annotation.switch
 import scala.collection.mutable
 
 object H2Projector {
-  /** Instance Variable **/
-  private val segmentProjectorCache = mutable.HashMap[Integer, H2SegmentProjector]()
-  private val dataPointProjectorCache = mutable.HashMap[Integer, H2DataPointProjector]()
-  private val argsField = classOf[AbstractAggregate].getDeclaredField("args")
-  this.argsField.setAccessible(true)
 
   /** Public Methods * */
   def segmentProjection(segments: Iterator[SegmentGroup], filter: TableFilter): Iterator[Array[Value]] = {
@@ -182,4 +177,10 @@ object H2Projector {
         throw new IllegalArgumentException() //Used to unwind the call stack as all columns must be returned
     }
   }
+
+  /** Instance Variable **/
+  private val segmentProjectorCache = mutable.HashMap[Integer, H2SegmentProjector]()
+  private val dataPointProjectorCache = mutable.HashMap[Integer, H2DataPointProjector]()
+  private val argsField = classOf[AbstractAggregate].getDeclaredField("args")
+  this.argsField.setAccessible(true)
 }

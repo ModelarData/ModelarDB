@@ -17,15 +17,16 @@ libraryDependencies ++= Seq(
 
   /* Storage Layer */
   //H2 is a full RDBMS with both a query engine and a storage layer
-  "com.datastax.spark" %% "spark-cassandra-connector" % "3.1.0" % "provided", //Requires Spark
+  "com.datastax.spark" %% "spark-cassandra-connector" % "3.2.0" % "provided", //Requires Spark
+  "joda-time" % "joda-time" % "2.10.14" % "provided", //Required by spark-cassandra-connector
   "org.apache.hadoop" % "hadoop-client" % "3.2.0", //Same as Apache Spark 3.1.2 due to javax.xml.bind conflicts
   "org.apache.parquet" % "parquet-hadoop" % "1.12.2", //Same as Apache Spark
   "org.apache.orc" % "orc-core" % "1.6.14", //Same as Apache Spark
 
   /* Testing */
-  "org.scalatest" %% "scalatest" % "3.2.9" % Test,
-  "org.scalacheck" %% "scalacheck" % "1.15.4" % Test,
-  "org.scalamock" %% "scalamock" % "5.1.0" % Test
+  "org.scalatest" %% "scalatest" % "3.2.12" % Test,
+  "org.scalacheck" %% "scalacheck" % "1.16.0" % Test,
+  "org.scalamock" %% "scalamock" % "5.2.0" % Test
 )
 
 /* Make SBT include the dependencies marked as provided when executing sbt run */

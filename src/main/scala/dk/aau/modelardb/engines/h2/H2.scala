@@ -18,17 +18,19 @@ import dk.aau.modelardb.core.Dimensions.Types
 import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.utility.{Logger, SegmentFunction, Static}
 import dk.aau.modelardb.engines.{EngineUtilities, QueryEngine}
-import dk.aau.modelardb.remote.{ArrowResultSet, QueryInterface}
+import dk.aau.modelardb.remote.{ArrowResultSet, QueryInterface, RemoteStorageFlightProducer, RemoteUtilities}
 
 import org.h2.expression.condition.{Comparison, ConditionAndOr, ConditionInConstantSet}
 import org.h2.expression.{Expression, ExpressionColumn, ValueExpression}
 import org.h2.table.TableFilter
 import org.h2.value.{ValueInt, ValueTimestamp}
 
+import org.apache.arrow.flight.{FlightServer, Location}
+import org.apache.arrow.memory.RootAllocator
 import org.codehaus.jackson.map.util.ISO8601Utils
 
 import java.sql.{DriverManager, Timestamp}
-import java.util.concurrent.CountDownLatch
+import java.util.concurrent.{CountDownLatch, Executors}
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.function.BooleanSupplier
 import java.util.{Base64, TimeZone, UUID}
@@ -37,18 +39,6 @@ import scala.collection.mutable
 import scala.collection.JavaConverters._
 
 class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine {
-
-  /** Instance Variables **/
-  private var finalizedSegmentsIndex = 0
-  private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](configuration.getBatchSize)
-  private var workingSets: Array[WorkingSet] = _
-  private var numberOfRunningIngestors: CountDownLatch = _
-  private val cacheLock = new ReentrantReadWriteLock()
-  private val temporarySegments = mutable.HashMap[Int, Array[SegmentGroup]]()
-  private val base64Encoder = Base64.getEncoder
-
-  //The H2 in-memory databases is named by an UUID so multiple can be constructed in parallel by the tests
-  private val h2ConnectionString: String = "jdbc:h2:mem:" + UUID.randomUUID()
 
   /** Public Methods **/
   def start(): Unit = {
@@ -70,8 +60,11 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
     QueryInterface.start(configuration, this)
 
     //Shutdown
-    connection.close()
     waitUntilIngestionIsDone()
+    if (this.flightServer != null) { // null unless modelardb.transfer server
+      this.flightServer.close()
+    }
+    connection.close()
   }
 
   def executeToJSON(query: String): Array[String] = {
@@ -121,32 +114,45 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
   /** Private Methods **/
   //Ingestion
   private def startIngestion(dimensions: Dimensions): Unit = {
-    //Initialize Storage
     h2storage.open(dimensions)
-    if (configuration.getIngestors == 0) {
+    val ingestors = configuration.getIngestors
+    if (ingestors == 0) {
       if ( ! configuration.getDerivedTimeSeries.isEmpty) { //Initializes derived time series
         Partitioner.initializeTimeSeries(configuration, h2storage.getMaxTid)
       }
-      h2storage.storeMetadataAndInitializeCaches(configuration, Array())
-      return
-    }
+      h2storage.storeMetadataAndInitializeCaches(configuration, Array[TimeSeriesGroup]())
+    } else {
+      val transfer = configuration.getString("modelardb.transfer", "None")
+      val (mode, port) = RemoteUtilities.getInterfaceAndPort(transfer, 10000)
 
-    //Initialize Ingestion
-    val timeSeries = Partitioner.initializeTimeSeries(configuration, h2storage.getMaxTid)
-    val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, h2storage.getMaxGid)
-    h2storage.storeMetadataAndInitializeCaches(configuration, timeSeriesGroups)
+      mode match {
+        case "server" =>
+          //Initialize Data Transfer Server
+          h2storage.storeMetadataAndInitializeCaches(configuration, Array[TimeSeriesGroup]())
+          val location = new Location("grpc://0.0.0.0:" + port)
+          val producer = new RemoteStorageFlightProducer(configuration, h2storage, port)
+          val executor = Executors.newFixedThreadPool(ingestors)
+          this.flightServer = FlightServer.builder(new RootAllocator(), location, producer).executor(executor).build()
+          this.flightServer.start()
+          Static.info(f"ModelarDB: Arrow Flight transfer end-point is ready (Port: $port)")
+        case _ => //If data transfer is enabled to StorageFactory have wrapped H2Storage with a RemoteStorage instance
+          //Initialize Local Ingestion to H2Storage (Possible RemoteStorage)
+          val timeSeries = Partitioner.initializeTimeSeries(configuration, h2storage.getMaxTid)
+          val timeSeriesGroups = Partitioner.groupTimeSeries(configuration, timeSeries, h2storage.getMaxGid)
+          h2storage.storeMetadataAndInitializeCaches(configuration, timeSeriesGroups)
 
-    val mtidCache = h2storage.mtidCache.asJava
-    val ingestors = configuration.getIngestors
-    val executor = configuration.getExecutorService
-    this.numberOfRunningIngestors = new CountDownLatch(ingestors)
-    this.workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, mtidCache, ingestors)
+          val mtidCache = h2storage.mtidCache.asJava
+          this.numberOfRunningIngestors = new CountDownLatch(ingestors)
+          this.workingSets = Partitioner.partitionTimeSeries(configuration, timeSeriesGroups, mtidCache, ingestors)
 
-    //Start Ingestion
-    Static.info("ModelarDB: waiting for all ingestors to finnish")
-    println(WorkingSet.toString(workingSets))
-    for (workingSet <- workingSets) {
-      executor.execute(() => ingest(workingSet))
+          //Start Ingestion
+          Static.info("ModelarDB: waiting for all ingestors to finnish")
+          println(WorkingSet.toString(this.workingSets))
+          val executor = configuration.getExecutorService
+          for (workingSet <- this.workingSets) {
+            executor.execute(() => ingest(workingSet))
+          }
+      }
     }
   }
 
@@ -174,7 +180,7 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
         finalizedSegments(finalizedSegmentsIndex) = newFinalizedSegment
         finalizedSegmentsIndex += 1
         if (finalizedSegmentsIndex == configuration.getBatchSize) {
-          h2storage.storeSegmentGroups(finalizedSegments, finalizedSegmentsIndex)
+          h2storage.storeSegmentGroups(finalizedSegments)
           finalizedSegmentsIndex = 0
         }
         cacheLock.writeLock().unlock()
@@ -189,9 +195,9 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
     workingSet.process(consumeTemporary, consumeFinalized, isTerminated)
 
     //Write remaining finalized segments
-    cacheLock.writeLock().lock()
-    h2storage.storeSegmentGroups(finalizedSegments, finalizedSegmentsIndex)
-    finalizedSegmentsIndex = 0
+    this.cacheLock.writeLock().lock()
+    h2storage.storeSegmentGroups(this.finalizedSegments.take(this.finalizedSegmentsIndex))
+    this.finalizedSegmentsIndex = 0
 
     //The CountDownLatch is decremented in the lock to ensure countDown and getCount is atomic
     this.numberOfRunningIngestors.countDown()
@@ -202,7 +208,7 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
       if (this.numberOfRunningIngestors != null) {
       }
     }
-    cacheLock.writeLock().unlock()
+    this.cacheLock.writeLock().unlock()
   }
 
   private def updateTemporarySegment(cache: Array[SegmentGroup], inputSegmentGroup: SegmentGroup,
@@ -285,19 +291,22 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
     }
     output.append(end)
   }
+
+  /** Instance Variables **/
+  private var finalizedSegmentsIndex = 0
+  private val finalizedSegments: Array[SegmentGroup] = new Array[SegmentGroup](configuration.getBatchSize)
+  private var workingSets: Array[WorkingSet] = _
+  private var numberOfRunningIngestors: CountDownLatch = _
+  private val cacheLock = new ReentrantReadWriteLock()
+  private val temporarySegments = mutable.HashMap[Int, Array[SegmentGroup]]()
+  private val base64Encoder = Base64.getEncoder
+  private var flightServer: FlightServer = _
+
+  //The H2 in-memory databases is named by an UUID so multiple can be constructed in parallel by the tests
+  private val h2ConnectionString: String = "jdbc:h2:mem:" + UUID.randomUUID()
 }
 
 object H2 {
-
-  /** Instance Variables **/
-  var h2: H2 = _ //Provides access to the h2 and h2storage instances from the views
-  var h2storage: H2Storage =  _
-  private val compareTypeField = classOf[Comparison].getDeclaredField("compareType")
-  this.compareTypeField.setAccessible(true)
-  private val compareTypeMethod = classOf[Comparison].getDeclaredMethod("getCompareOperator", classOf[Int])
-  this.compareTypeMethod.setAccessible(true)
-  private val andOrTypeField = classOf[ConditionAndOr].getDeclaredField("andOrType")
-  this.andOrTypeField.setAccessible(true)
 
   /** Public Methods **/
   def initialize(h2: H2, h2Storage: H2Storage): Unit = {
@@ -392,4 +401,14 @@ object H2 {
       }.mkString(", ", ", ", "")
     }
   }
+
+  /** Instance Variables **/
+  var h2: H2 = _ //Provides access to the h2 and h2storage instances from the views
+  var h2storage: H2Storage =  _
+  private val compareTypeField = classOf[Comparison].getDeclaredField("compareType")
+  this.compareTypeField.setAccessible(true)
+  private val compareTypeMethod = classOf[Comparison].getDeclaredMethod("getCompareOperator", classOf[Int])
+  this.compareTypeMethod.setAccessible(true)
+  private val andOrTypeField = classOf[ConditionAndOr].getDeclaredField("andOrType")
+  this.andOrTypeField.setAccessible(true)
 }
