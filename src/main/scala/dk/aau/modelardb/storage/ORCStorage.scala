@@ -163,7 +163,7 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
 
   override protected def writeModelTypeFile(modelsToInsert: mutable.HashMap[String,Integer], modelTypeFilePath: Path): Unit = {
     val schema = TypeDescription.createStruct()
-      .addField("mid", TypeDescription.createInt())
+      .addField("mtid", TypeDescription.createInt())
       .addField("name", TypeDescription.createString())
     val modelTypes = getWriter(modelTypeFilePath, schema)
     val batch = modelTypes.getSchema.createRowBatch()
@@ -190,9 +190,9 @@ class ORCStorage(rootFolder: String) extends FileStorage(rootFolder) {
     val batch = modelTypes.getSchema.createRowBatch()
     while (rows.nextBatch(batch)) {
       for (row <- 0 until batch.size) {
-        val mid = batch.cols(0).asInstanceOf[LongColumnVector].vector(row).toInt
+        val mtid = batch.cols(0).asInstanceOf[LongColumnVector].vector(row).toInt
         val cp = batch.cols(1).asInstanceOf[BytesColumnVector].toString(row)
-        modelsInStorage.put(cp, mid)
+        modelsInStorage.put(cp, mtid)
       }
     }
     modelsInStorage

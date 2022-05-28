@@ -181,7 +181,7 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
   override protected def writeModelTypeFile(modelsToInsert: mutable.HashMap[String,Integer],
                                             modelTypeFilePath: Path): Unit = {
     val schema = new MessageType("model_type",
-      new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "mid"),
+      new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "mtid"),
       new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "name"))
 
     val writer = getWriter(modelTypeFilePath, schema)
@@ -204,9 +204,9 @@ class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
       val recordReader = columnIO.getRecordReader(pages, new GroupRecordConverter(schema))
       for (_ <- 0 until pages.getRowCount.toInt) {
         val group = recordReader.read()
-        val mid = group.getInteger(0, 0)
+        val mtid = group.getInteger(0, 0)
         val name = group.getString(1, 0)
-        modelsInStorage.put(name, mid)
+        modelsInStorage.put(name, mtid)
       }
       pages = modelTypes.readNextRowGroup()
     }
