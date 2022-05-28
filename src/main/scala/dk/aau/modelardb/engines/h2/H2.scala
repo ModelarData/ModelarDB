@@ -131,7 +131,7 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
           h2storage.storeMetadataAndInitializeCaches(configuration, Array[TimeSeriesGroup]())
           val location = new Location("grpc://0.0.0.0:" + port)
           val producer = new RemoteStorageFlightProducer(configuration, h2storage, port)
-          val executor = Executors.newFixedThreadPool(ingestors)
+          val executor = Executors.newFixedThreadPool(ingestors + 1) //Plus one so ingestors threads perform ingestion
           this.flightServer = FlightServer.builder(new RootAllocator(), location, producer).executor(executor).build()
           this.flightServer.start()
           Static.info(f"ModelarDB: Arrow Flight transfer end-point is ready (Port: $port)")
