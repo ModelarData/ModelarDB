@@ -20,6 +20,7 @@ domain.
 - `package` compiles ModelarDB to a Jar file.
 - `assembly` compiles ModelarDB to an uber Jar file.\*\*
 - `run` executes ModelarDB's main method.\*\*\*
+- `test` executes ModelarDB's unit and integration tests.\*\*\*\*
 
 \* OpenJDK 11 and Oracle's Java SE Development Kit 11 have been tested.
 
@@ -30,6 +31,12 @@ file.
 \*\*\* If `sbt run` is executed directly from the command-line, then the run
 command and the arguments must be surrounded by quotes to pass the arguments to
 ModelarDB: `sbt 'run arguments'`
+
+\*\*\*\* The data for the integration tests are read from Apache ORC
+files. The folder containing these files is retrieved from the
+environment variable `MODELARDB_TEST_DATA_ORC`. The integration tests
+may require additional memory which can be set through `SBT_OPTS`,
+e.g., `SBT_OPTS="-Xmx8G" sbt test`.
 
 ## Configuration
 ModelarDB requires that a configuration file is available at
