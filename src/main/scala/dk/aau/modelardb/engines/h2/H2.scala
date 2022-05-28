@@ -324,7 +324,7 @@ object H2 {
   //Segment View
   def getCreateSegmentViewSQL(dimensions: Dimensions): String = {
     s"""CREATE TABLE Segment
-       |(tid INT, start_time TIMESTAMP, end_time TIMESTAMP, mtid INT, model BINARY, gaps BINARY${H2.getDimensionColumns(dimensions)})
+       |(tid INT, start_time TIMESTAMP, end_time TIMESTAMP, mtid INT, model BINARY, offsets BINARY${H2.getDimensionColumns(dimensions)})
        |ENGINE "dk.aau.modelardb.engines.h2.ViewSegment";
        |""".stripMargin
   }

@@ -142,6 +142,7 @@ class RemoteStorage(ip: String, port: Int, storage: Storage) extends H2Storage w
     streamListener.putNext()
     while ( ! streamListener.isReady) {}
     streamListener.completed()
+    streamListener.getResult()
     vsr.close()
     timeSeriesInStorage
   }
@@ -252,7 +253,7 @@ class RemoteStorage(ip: String, port: Int, storage: Storage) extends H2Storage w
     vsr.getVector("END_TIME").asInstanceOf[BigIntVector].setSafe(index, sg.endTime)
     vsr.getVector("MTID").asInstanceOf[IntVector].setSafe(index, sg.mtid)
     vsr.getVector("MODEL").asInstanceOf[VarBinaryVector].setSafe(index, sg.model)
-    vsr.getVector("GAPS").asInstanceOf[VarBinaryVector].setSafe(index, sg.offsets)
+    vsr.getVector("OFFSETS").asInstanceOf[VarBinaryVector].setSafe(index, sg.offsets)
   }
 
   /** Instance Variables **/
@@ -269,7 +270,7 @@ class RemoteStorage(ip: String, port: Int, storage: Storage) extends H2Storage w
     fields.add(new Field("END_TIME", new FieldType(false, new ArrowType.Int(64, true), null), children))
     fields.add(new Field("MTID", new FieldType(false, new ArrowType.Int(32, true), null), children))
     fields.add(new Field("MODEL", new FieldType(false, new ArrowType.Binary(), null), children))
-    fields.add(new Field("GAPS", new FieldType(false, new ArrowType.Binary(), null), children))
+    fields.add(new Field("OFFSETS", new FieldType(false, new ArrowType.Binary(), null), children))
     val metadata = new util.HashMap[String, String]()
     metadata.put("name", "segment")
     new Schema(fields, metadata)

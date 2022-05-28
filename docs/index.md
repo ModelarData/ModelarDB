@@ -295,7 +295,7 @@ create table SEGMENT
     end_time TIMESTAMP, 
     mtid INT, 
     model BINARY, 
-    gaps BINARY
+    offsets BINARY
 );
 ```
 
@@ -305,7 +305,7 @@ create table SEGMENT
 
 **Example Data**
 
-| TID  | START_TIME    | END_TIME      | MTID | MODEL       | GAPS             |
+| TID  | START_TIME    | END_TIME      | MTID | MODEL       | OFFSETS          |
 | ---- | ------------- | ------------- | ---- | ----------- | ---------------- |
 | 1    | 1303132929000 | 1303133980000 | 2    | Q1yWLA==    | AAAAAQAAAAE...   |
 | 1    | 1303133981000 | 1303134030000 | 4    | RABT19qd... | AAAAAQAAAAE...   |
@@ -446,7 +446,7 @@ Here is the result of a simple `select` query directly on the `segment` table
       "END_TIME": "2011-04-18 13:39:40.0",
       "MTID": 2,
       "MODEL": "Q1yWLA==",
-      "GAPS": "AAAAAQAAAAEAAAAA"
+      "OFFSETS": "AAAAAQAAAAEAAAAA"
     },
     {
       "TID": 1,
@@ -454,7 +454,7 @@ Here is the result of a simple `select` query directly on the `segment` table
       "END_TIME": "2011-04-18 13:40:30.0",
       "MTID": 4,
       "MODEL": "RABT19qdUjvQxwSW/AM09wPdPcApFtAPoVwAki0AlrfACeNQAGHcAWprAELhwHOj8BwYXACbhwB1wsARORAdg7QAlHcBy1NAc2LwCfl0ApsLADHjwACHMASW/ANbiwCiFMAJmbADIdwBYjUAZuLABysQHoN0B0t3AErdwGUN0AMyFADxyQHEAEAbR3AHdYQA4K0AR4VACY9wBZuMB1I9AdFswBsWwA==",
-      "GAPS": "AAAAAQAAAAEAAAAA"
+      "OFFSETS": "AAAAAQAAAAEAAAAA"
     },
     {
       "TID": 1,
@@ -462,7 +462,7 @@ Here is the result of a simple `select` query directly on the `segment` table
       "END_TIME": "2011-04-18 13:43:07.0",
       "MTID": 2,
       "MODEL": "ROD8kQ==",
-      "GAPS": "AAAAAQAAAAEAAAAA"
+      "OFFSETS": "AAAAAQAAAAEAAAAA"
     },
     {
       "TID": 1,
@@ -470,7 +470,7 @@ Here is the result of a simple `select` query directly on the `segment` table
       "END_TIME": "2011-04-18 13:43:57.0",
       "MTID": 4,
       "MODEL": "RFuVw8rXCKizABFvUAAhub0bIUxuFL1wsmyGjZDXpp2o4R72pZZm8ELIfshSsshvyN3o4WXi9YbkpyLbd0yOG4lN44hbGOFYlxvJ8byTG82p6dJ643FL//LkhzZnSInkbE//Jg3NIWQo0ORZpOrIABMAAJJunBjx4OpnHpCp2RbKesIIABEAAJr1hDyLQA==",
-      "GAPS": "AAAAAQAAAAEAAAAA"
+      "OFFSETS": "AAAAAQAAAAEAAAAA"
     },
     {
       "TID": 1,
@@ -478,7 +478,7 @@ Here is the result of a simple `select` query directly on the `segment` table
       "END_TIME": "2011-04-18 14:17:43.0",
       "MTID": 2,
       "MODEL": "Q00mAg==",
-      "GAPS": "AAAAAQAAAAEAAAAA"
+      "OFFSETS": "AAAAAQAAAAEAAAAA"
     }
   ]
 }
@@ -509,7 +509,7 @@ There isn't much value in querying the `segment` view using just a simple SQL `s
 * `avg_s`
 
 Examples of using these aggregate query operators are given below.
-(Note: instead of providing all the column names [`tid`, `start_time`, `end_time`, `mtid`, `model`, `gaps`] you can just use the hashtag / pound sign `#`)
+(Note: instead of providing all the column names [`tid`, `start_time`, `end_time`, `mtid`, `model`, `offsets`] you can just use the hashtag / pound sign `#`)
 
 **Count_S**
 
@@ -530,7 +530,7 @@ Examples of using these aggregate query operators are given below.
   "time": "PT0.046S",
   "query": "SELECT MIN_S(#) FROM segment WHERE tid = 1",
   "result":  [
-    {"MIN_S(TID, START_TIME, END_TIME, MTID, MODEL, GAPS)":49.80843}
+    {"MIN_S(TID, START_TIME, END_TIME, MTID, MODEL, OFFSETS)":49.80843}
   ]
 }
 ```
@@ -542,7 +542,7 @@ Examples of using these aggregate query operators are given below.
   "time": "PT0.039S",
   "query": "SELECT MAX_S(#) FROM segment WHERE tid = 1",
   "result":  [
-    {"MAX_S(TID, START_TIME, END_TIME, MTID, MODEL, GAPS)":6081.36}
+    {"MAX_S(TID, START_TIME, END_TIME, MTID, MODEL, OFFSETS)":6081.36}
   ]
 }
 ```
@@ -554,7 +554,7 @@ Examples of using these aggregate query operators are given below.
   "time": "PT0.051S",
   "query": "SELECT SUM_S(#) FROM segment WHERE tid = 1",
   "result":  [
-    {"SUM_S(TID, START_TIME, END_TIME, MTID, MODEL, GAPS)":3.54920928E8}
+    {"SUM_S(TID, START_TIME, END_TIME, MTID, MODEL, OFFSETS)":3.54920928E8}
   ]
 }
 ```
@@ -566,7 +566,7 @@ Examples of using these aggregate query operators are given below.
   "time": "PT0.164S",
   "query": "SELECT AVG_S(#) FROM segment WHERE tid = 1",
   "result":  [
-    {"AVG_S(TID, START_TIME, END_TIME, MTID, MODEL, GAPS)":227.27156}
+    {"AVG_S(TID, START_TIME, END_TIME, MTID, MODEL, OFFSETS)":227.27156}
   ]
 }
 ```

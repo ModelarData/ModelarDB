@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reverted to the key-value configuration file format and removed PureConfig.
   The data transfer module is configured with the `modelardb.transfer` setting.
 - The value of `modelardb.dynamic_split_fraction` is now used directly as set.
+- Renamed `gaps` in the Segment View to `offsets` for both Apache Spark and H2.
 
 ### Deprecated
 ### Removed

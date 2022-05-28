@@ -34,7 +34,7 @@ class ViewSegment(dimensions: Array[StructField]) (@transient val sqlContext: SQ
     StructField("end_time", TimestampType, nullable = false),
     StructField("mtid", IntegerType, nullable = false),
     StructField("model", BinaryType, nullable = false),
-    StructField("gaps", BinaryType, nullable = false))
+    StructField("offsets", BinaryType, nullable = false))
     ++ dimensions)
 
   override def unhandledFilters(filters: Array[Filter]): Array[Filter] = filters

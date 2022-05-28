@@ -32,7 +32,7 @@ object EngineUtilities {
       "end_time" -> 3,
       "mtid" -> 4,
       "model" -> 5,
-      "gaps" -> 6) ++
+      "offsets" -> 6) ++
       dimensions.getColumns.zipWithIndex.map(p => (p._1, p._2 + 7)).toMap
 
     //Data Point View

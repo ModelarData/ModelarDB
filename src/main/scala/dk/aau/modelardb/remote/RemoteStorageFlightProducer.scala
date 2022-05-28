@@ -141,7 +141,7 @@ class RemoteStorageFlightProducer(configuration: Configuration, h2Storage: H2Sto
     val end = vsr.getVector("END_TIME").asInstanceOf[BigIntVector].get(row)
     val mtid = vsr.getVector("MTID").asInstanceOf[IntVector].get(row)
     val model = vsr.getVector("MODEL").asInstanceOf[VarBinaryVector].get(row)
-    val gaps = vsr.getVector("GAPS").asInstanceOf[VarBinaryVector].get(row)
+    val gaps = vsr.getVector("OFFSETS").asInstanceOf[VarBinaryVector].get(row)
     new SegmentGroup(gid, start, end, mtid, model, gaps)
   }
 

@@ -73,7 +73,7 @@ class ViewDataPoint(dimensions: Array[StructField]) (@transient override val sql
     }
 
     //Dimensions are appended to each data point if necessary, so they are not requested from the segment view
-    df = df.select("tid", "start_time", "end_time", "mtid", "model", "gaps")
+    df = df.select("tid", "start_time", "end_time", "mtid", "model", "offsets")
     df.rdd
   }
 }

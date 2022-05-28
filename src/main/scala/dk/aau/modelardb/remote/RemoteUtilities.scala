@@ -19,7 +19,7 @@ object RemoteUtilities {
   /** Public Methods **/
   def rewriteQuery(query: String): String = {
     query.replace("COUNT_S(#)", "COUNT_S(tid, start_time, end_time)")
-      .replace("#", "tid, start_time, end_time, mtid, model, gaps")
+      .replace("#", "tid, start_time, end_time, mtid, model, offsets")
   }
 
   def getInterfaceAndPort(interfaceAndMaybePort : String, defaultPort: Int): (String, Int) = {
