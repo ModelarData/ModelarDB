@@ -21,7 +21,25 @@ import java.util
 
 abstract class AbstractModelTypeTest extends AnyWordSpec {
 
-    "when empty" should {
+  "withinErrorBound" should {
+    val model = getModelType(1, 10, 50)
+    val dataPoints = new util.ArrayList[DataPoint]()
+    dataPoints.add(new DataPoint(1, 100, 25))
+    dataPoints.add(new DataPoint(1, 200, 25))
+    dataPoints.add(new DataPoint(1, 300, 25))
+    dataPoints.add(new DataPoint(1, 400, 25))
+    dataPoints.add(new DataPoint(1, 500, 25))
+
+    "return true for equivalent time series with error bound zero" in {
+      assert(model.withinErrorBound(0, dataPoints.iterator(), dataPoints.iterator()))
+    }
+
+    "return true for equivalent time series with error bound ten" in {
+      assert(model.withinErrorBound(10, dataPoints.iterator(), dataPoints.iterator()))
+    }
+  }
+
+  "when empty" should {
       val model = getModelType(1, 10, 50)
       val noDataPoints = new util.ArrayList[Array[DataPoint]]()
       model.initialize(noDataPoints)
