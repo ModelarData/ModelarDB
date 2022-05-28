@@ -68,7 +68,7 @@ class ViewDataPoint(dimensions: Array[StructField]) (@transient override val sql
           df.filter(s"$column = '$value'") else df.filter(s"$column = $value")
 
         //If a predicate is not supported by the segment view all we can do is inform the user
-        case p => Static.warn("ModelarDB: unsupported predicate for Data Point View predicate push-down " + p)
+        case p => Static.warn("ModelarDB: predicate push-down is not supported for " + p, 120)
       }
     }
 

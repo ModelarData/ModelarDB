@@ -234,7 +234,7 @@ object Spark {
         case sources.EqualTo("end_time", value: Timestamp) => predicates.append(s"end_time = '$value'")
 
         //If a predicate is not supported the information is simply logged to inform the user
-        case p => Static.warn("ModelarDB: unsupported predicate " + p, 120)
+        case p => Static.warn("ModelarDB: predicate push-down is not supported for " + p, 120)
       }
     }
     val predicate = predicates.mkString(" AND ")

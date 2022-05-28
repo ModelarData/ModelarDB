@@ -357,7 +357,7 @@ object H2 {
           //DIMENSIONS
           case (columnName, "=") if idc.contains(columnName) =>
             EngineUtilities.dimensionEqualToGidIn(columnName, ve.getValue(null).getObject, idc).mkString("GID IN (", ",", ")")
-          case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
+          case p => Static.warn("ModelarDB: predicate push-down is not supported for " + p, 120); ""
         }
       //IN
       case cin: ConditionInConstantSet =>
@@ -368,7 +368,7 @@ object H2 {
               tids(i - 1) = cin.getSubexpression(i).getValue(null).asInstanceOf[ValueInt].getInt
             }
             EngineUtilities.tidInToGidIn(tids, tsgc).mkString("GID IN (", ",", ")")
-          case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
+          case p => Static.warn("ModelarDB: predicate push-down is not supported for " + p, 120); ""
         }
       //AND
       case cao: ConditionAndOr if this.andOrTypeField.getInt(cao) == ConditionAndOr.AND =>
@@ -383,7 +383,7 @@ object H2 {
         val left = expressionToSQLLikePredicates(cao.getSubexpression(0), tsgc, idc, sql)
         val right = expressionToSQLLikePredicates(cao.getSubexpression(1), tsgc, idc, sql)
         if (left == "" || right == "") "" else "(" + left + " OR " + right + ")"
-      case p => Static.warn("ModelarDB: unsupported predicate " + p, 120); ""
+      case p => Static.warn("ModelarDB: predicate push-down is not supported for " + p, 120); ""
     }
   }
 
