@@ -57,10 +57,8 @@ class RemoteStorageReceiver(masterIPWithPort: String, port: Int) extends Receive
     }
 
     //Flight Server
-    val receiverLocation = InetAddress.getLocalHost.getHostAddress + ":" + 13000
-    //val receiverLocation = InetAddress.getLocalHost.getHostAddress + ":" + port
     this.flightServer = {
-      val location = new Location("grpc://" + receiverLocation) //Configuration and port are never used
+      val location = new Location("grpc://0.0.0.0:" + port) //Configuration and port are never used
       val producer = new RemoteStorageFlightProducer(null, this.h2storage, -1)
       FlightServer.builder(new RootAllocator(), location, producer).executor(Executors.newCachedThreadPool()).build()
     }
@@ -69,6 +67,7 @@ class RemoteStorageReceiver(masterIPWithPort: String, port: Int) extends Receive
     //Register this with the master
     val location = new Location("grpc://" + masterIPWithPort)
     val flightClient = FlightClient.builder().location(location).allocator(new RootAllocator()).build()
+    val receiverLocation = InetAddress.getLocalHost.getHostAddress + ":" + port
     val action = new Action("register", receiverLocation.getBytes(StandardCharsets.UTF_8))
     flightClient.doAction(action).hasNext //Ensures action is performed
     flightClient.close()

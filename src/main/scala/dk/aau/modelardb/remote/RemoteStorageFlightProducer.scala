@@ -95,7 +95,7 @@ class RemoteStorageFlightProducer(configuration: Configuration, h2Storage: H2Sto
         val uri = new String(action.getBody, StandardCharsets.UTF_8)
         this.remoteStorageReceivers.put(uri, 0)
         listener.onCompleted()
-        Static.info("ModelarDB: registered " + uri + " as an Apache Arrow Flight transfer endpoint")
+        Static.info("ModelarDB: registered " + uri + " as an Apache Arrow Flight transfer end-point")
         this.remoteLock.writeLock().unlock()
       case "retrieve" =>
         //Returns the end-point that the client should start transmitting segments to
@@ -112,7 +112,7 @@ class RemoteStorageFlightProducer(configuration: Configuration, h2Storage: H2Sto
         }
         listener.onNext(new Result(remote.getBytes(StandardCharsets.UTF_8)))
         listener.onCompleted()
-        Static.info("ModelarDB: assigned " + remote + " as an Apache Arrow Flight transfer endpoint to a client")
+        Static.info("ModelarDB: assigned " + remote + " as an Apache Arrow Flight transfer end-point to a client")
         this.remoteLock.writeLock().unlock()
       case actionType => listener.onError(new IllegalArgumentException("ModelarDB: unknown action type: " + actionType))
     }
