@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - H2 adding parentheses to CQL WHERE clauses and not appending ALLOW FILTERING.
 - Fix `ModelType.withinErrorBound()` never returning true with error bound zero.
 - Fix Apache Spark using the wrong case for predicate push-down of members.
+- Fix the denormalized dimensions using the wrong case for the column names.
 
 ### Security
 
