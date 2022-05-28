@@ -17,11 +17,9 @@ package dk.aau.modelardb.core;
 import dk.aau.modelardb.core.models.ModelType;
 import dk.aau.modelardb.core.models.Segment;
 import dk.aau.modelardb.core.utility.Static;
-import dk.aau.modelardb.storage.ArrayCache;
 import dk.aau.modelardb.storage.Storage;
 
 import java.nio.ByteBuffer;
-
 import scala.collection.mutable.HashMap;
 
 public class SegmentGroup {
@@ -50,9 +48,9 @@ public class SegmentGroup {
         return sb.toString();
     }
 
-    public SegmentGroup[] explode(ArrayCache<int[]> groupMetadataCache, HashMap<Integer, int[]> groupDerivedCache) {
-        int[] gmc = groupMetadataCache.get(gid);
-        int[] derivedTimeSeries = groupDerivedCache.getOrElse(gid, () -> SegmentGroup.defaultDerivedTimeSeries);
+    public SegmentGroup[] explode(int[][] groupMetadataCache, HashMap<Integer, int[]> groupDerivedCache) {
+        int[] gmc = groupMetadataCache[this.gid];
+        int[] derivedTimeSeries = groupDerivedCache.getOrElse(this.gid, () -> SegmentGroup.defaultDerivedTimeSeries);
         int[] timeSeriesInAGap = Static.bytesToInts(this.offsets);
         int temporalOffset = 0;
         if (timeSeriesInAGap.length > 0 && timeSeriesInAGap[timeSeriesInAGap.length - 1] < 0) {
@@ -113,12 +111,12 @@ public class SegmentGroup {
     }
 
     public Segment[] toSegments(Storage storage) {
-        ArrayCache<int[]> groupMetadataCache = storage.groupMetadataCache();
-        SegmentGroup[] sgs = explode(groupMetadataCache, storage.groupDerivedCache());
+        int[][] groupMetadataCache = storage.groupMetadataCache();
+        SegmentGroup[] sgs = this.explode(groupMetadataCache, storage.groupDerivedCache());
         Segment[] segments = new Segment[sgs.length];
 
         ModelType m = storage.modelTypeCache()[mtid];
-        int[] gmc = groupMetadataCache.get(gid);
+        int[] gmc = groupMetadataCache[this.gid];
         for (int i = 0; i < sgs.length; i++) {
             segments[i] = m.get(sgs[i].gid, this.startTime, this.endTime, gmc[0], this.model, sgs[i].offsets);
         }

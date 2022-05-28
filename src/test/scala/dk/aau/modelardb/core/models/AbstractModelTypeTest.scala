@@ -17,13 +17,9 @@ package dk.aau.modelardb.core.models
 import dk.aau.modelardb.core.DataPoint
 import org.scalatest.wordspec.AnyWordSpec
 
-import java.io.{OutputStream, PrintStream}
 import java.util
 
 abstract class AbstractModelTypeTest extends AnyWordSpec {
-    //HACK: Disable stdout during testing as some of the tests produces a lot of output
-    System.setOut(new PrintStream(OutputStream.nullOutputStream()))
-    System.setErr(new PrintStream(OutputStream.nullOutputStream()))
 
     "when empty" should {
       val model = getModelType(1, 10, 50)

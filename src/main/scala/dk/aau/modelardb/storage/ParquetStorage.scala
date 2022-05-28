@@ -14,13 +14,17 @@
  */
 package dk.aau.modelardb.storage
 
-import dk.aau.modelardb.OffsetType
 import dk.aau.modelardb.core.utility.Static
-import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
+import dk.aau.modelardb.core.{Dimensions, SegmentGroup}
 import dk.aau.modelardb.engines.spark.Spark
+
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
+
 import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+
 import org.apache.parquet.column.page.PageReadStore
 import org.apache.parquet.example.data.Group
 import org.apache.parquet.example.data.simple.SimpleGroup
@@ -33,23 +37,15 @@ import org.apache.parquet.hadoop.{ParquetFileReader, ParquetWriter}
 import org.apache.parquet.io.api.Binary
 import org.apache.parquet.io.{ColumnIOFactory, MessageColumnIO, RecordReader}
 import org.apache.parquet.schema.{MessageType, PrimitiveType, Type}
-import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+
 import org.h2.table.TableFilter
 
 import java.io.FileNotFoundException
-import java.util
+import java.{lang, util}
+
 import scala.collection.mutable
 
-class ParquetStorage(rootFolder: String, tidOffset: Int) extends FileStorage(rootFolder, tidOffset) {
-  /** Instance Variables **/
-  private val segmentGroupSchema = new MessageType("segment",
-    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "gid" ),
-    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT64, "start_time"),
-    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT64, "end_time"),
-    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "mtid" ),
-    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "model"),
-    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "gaps"))
+class ParquetStorage(rootFolder: String) extends FileStorage(rootFolder) {
 
   /** Protected Methods **/
   //FileStorage
@@ -85,38 +81,38 @@ class ParquetStorage(rootFolder: String, tidOffset: Int) extends FileStorage(roo
   override protected def mergeFiles(outputFilePath: Path, inputFilesPaths: mutable.ArrayBuffer[Path]): Unit = {
     //NOTE: merge assumes all inputs share the same schema
     val inputPathsScala = inputFilesPaths
-    val segmentFile = getReader(inputFilesPaths(0))
-    val schema = segmentFile.getFooter.getFileMetaData.getSchema
-    segmentFile.close()
+    val reader = getReader(inputFilesPaths(0))
+    val schema = reader.getFooter.getFileMetaData.getSchema
+    reader.close()
 
     //Write the new file
     val writer = getWriter(outputFilePath, schema)
     for (inputPath <- inputPathsScala) {
-      val segmentFile = getReader(inputPath)
+      val reader = getReader(inputPath)
       val columnIO = new ColumnIOFactory().getColumnIO(schema)
-      var pages = segmentFile.readNextRowGroup()
+      var pages = reader.readNextRowGroup()
 
       while (pages != null) {
         val recordReader = columnIO.getRecordReader(pages, new GroupRecordConverter(schema))
         for (_ <- 0L until pages.getRowCount) {
           writer.write(recordReader.read)
         }
-        pages = segmentFile.readNextRowGroup()
+        pages = reader.readNextRowGroup()
       }
-      segmentFile.close()
+      reader.close()
     }
     writer.close()
   }
 
-  override protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path, tidOffset: Int): Unit = {
+  override protected def writeTimeSeriesFile(timeSeriesGroupRows: Array[Array[Object]], timeSeriesFilePath: Path): Unit = {
     val columns = new util.ArrayList[Type]()
     columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "tid"))
     columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.FLOAT, "scaling_factor"))
     columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "sampling_interval"))
     columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "gid"))
 
-    val dimensionTypes = dimensions.getTypes
-    for (dimi <- dimensions.getColumns.zipWithIndex) {
+    val dimensionTypes = this.dimensions.getTypes
+    for (dimi <- this.dimensions.getColumns.zipWithIndex) {
       dimensionTypes(dimi._2) match {
         case Dimensions.Types.TEXT => columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, dimi._1))
         case Dimensions.Types.INT => columns.add(new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, dimi._1))
@@ -126,25 +122,20 @@ class ParquetStorage(rootFolder: String, tidOffset: Int) extends FileStorage(roo
       }
     }
     val schema = new MessageType("time_series", columns)
+
     val writer = getWriter(timeSeriesFilePath, schema)
-    for (tsg <- timeSeriesGroups) {
-      for (ts <- tsg.getTimeSeries) {
-        val group = new SimpleGroup(schema)
-        group.add(0, ts.tid + tidOffset)
-        group.add(1, ts.scalingFactor)
-        group.add(2, ts.samplingInterval)
-        group.add(3, tsg.gid)
-        for (mi <- dimensions.get(ts.source).zipWithIndex) {
-          dimensionTypes(mi._2) match {
-            case Dimensions.Types.TEXT => group.add(4 + mi._2, mi._1.toString)
-            case Dimensions.Types.INT => group.add(4 + mi._2, mi._1.asInstanceOf[Int])
-            case Dimensions.Types.LONG => group.add(4 + mi._2, mi._1.asInstanceOf[Long])
-            case Dimensions.Types.FLOAT => group.add(4 + mi._2, mi._1.asInstanceOf[Float])
-            case Dimensions.Types.DOUBLE => group.add(4 + mi._2, mi._1.asInstanceOf[Double])
-          }
+    for (row <- timeSeriesGroupRows) {
+      val group = new SimpleGroup(schema)
+      for (elementAndIndex <- row.zipWithIndex) {
+        elementAndIndex._1 match {
+          case elem: lang.String => group.add(elementAndIndex._2, elem)
+          case elem: lang.Integer => group.add(elementAndIndex._2, elem)
+          case elem: lang.Long => group.add(elementAndIndex._2, elem)
+          case elem: lang.Float => group.add(elementAndIndex._2, elem)
+          case elem: lang.Double => group.add(elementAndIndex._2, elem)
         }
-        writer.write(group)
       }
+      writer.write(group)
     }
     writer.close()
   }
@@ -224,9 +215,9 @@ class ParquetStorage(rootFolder: String, tidOffset: Int) extends FileStorage(roo
   }
 
   //FileStorage - H2Storage
-  override protected def writeSegmentGroupFile(segmentGroups: Array[SegmentGroup], size: Int, segmentGroupFile: Path): Unit = {
+  override protected def writeSegmentGroupFile(segmentGroups: Array[SegmentGroup], segmentGroupFile: Path): Unit = {
     val writer = getWriter(segmentGroupFile, this.segmentGroupSchema)
-    for (segmentGroup <- segmentGroups.take(size)) {
+    for (segmentGroup <- segmentGroups) {
       val group = new SimpleGroup(this.segmentGroupSchema)
       group.add(0, segmentGroup.gid)
       group.add(1, segmentGroup.startTime)
@@ -331,13 +322,14 @@ class ParquetStorage(rootFolder: String, tidOffset: Int) extends FileStorage(roo
       .withType(schema).withCompressionCodec(CompressionCodecName.SNAPPY).build()
   }
 
-  override protected def storeOffset(edgeId: String, offset: Int, offsetType: OffsetType): Unit = ???
-  override protected def readOffset(edgeId: String, offsetType: OffsetType): Option[Int] = ???
-  override protected def initializeOffsetCache(): Unit = ???
-
-  override def getMinTid: Int = ???
-
-  override def getMinGid: Int = ???
+  /** Instance Variables **/
+  private val segmentGroupSchema = new MessageType("segment",
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "gid" ),
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT64, "start_time"),
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT64, "end_time"),
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.INT32, "mtid" ),
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "model"),
+    new PrimitiveType(Type.Repetition.REQUIRED, PrimitiveType.PrimitiveTypeName.BINARY, "gaps"))
 }
 
 private class ParquetWriterBuilder(parquetFilePath: Path) extends ParquetWriter.Builder[Group, ParquetWriterBuilder](parquetFilePath) {

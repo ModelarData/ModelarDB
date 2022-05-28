@@ -1,17 +1,22 @@
+/* Copyright 2022 The ModelarDB Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package dk.aau.modelardb.engines
 
-import akka.stream.scaladsl.SourceQueueWithComplete
-import dk.aau.modelardb.core.SegmentGroup
-import org.apache.arrow.vector.VectorSchemaRoot
+import dk.aau.modelardb.remote.ArrowResultSet
 
 trait QueryEngine {
-
-  def start(): Unit
-
-  def start(queue: SourceQueueWithComplete[SegmentGroup]): Unit
-
-  def stop(): Unit
-
-  def execute(query: String): VectorSchemaRoot
-
+  def executeToJSON(query: String): Array[String]
+  def executeToArrow(query: String): ArrowResultSet
 }

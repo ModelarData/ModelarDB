@@ -15,7 +15,7 @@
 package dk.aau.modelardb.storage
 
 import dk.aau.modelardb.core.utility.Static
-import dk.aau.modelardb.core.{Dimensions, SegmentGroup, TimeSeriesGroup}
+import dk.aau.modelardb.core.{Dimensions, SegmentGroup}
 import dk.aau.modelardb.engines.h2.H2Storage
 import dk.aau.modelardb.engines.spark.SparkStorage
 import org.apache.hadoop.conf.Configuration
@@ -29,26 +29,9 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import scala.collection.mutable
 import java.lang.ref.{PhantomReference, ReferenceQueue}
 
-abstract class FileStorage(rootFolder: String, tidOffset: Int) extends Storage(tidOffset) with H2Storage with SparkStorage {
+abstract class FileStorage(rootFolder: String) extends Storage with H2Storage with SparkStorage {
   //Warn users that the FileStorage storage layers should be considered experimental
   Static.warn("ModelarDB: using experimental storage layer " + this.getClass)
-
-  /** Instance Variables **/
-  private val segmentFolder = this.rootFolder + "segment/"
-  private val segmentFolderPath: Path = new Path(segmentFolder)
-  private val segmentNew = this.rootFolder + "segment_new" + this.getFileSuffix
-  private val segmentNewPath = new Path(segmentNew)
-  private val segmentLogPath = new Path(this.rootFolder + "segment_new_log")
-  private val fileSystem: FileSystem = new Path(this.rootFolder).getFileSystem(new Configuration())
-  this.fileSystem.setWriteChecksum(false)
-
-  //Variables for tracking when to merge and which files can be included in a merge
-  private val batchesBetweenMerges: Int = 10 //Chosen as a simple trade-off between ingestion and query time
-  private var batchesSinceLastMerge: Int = 0
-  private val segmentGroupFilesInQuery = mutable.HashMap[Object, Integer]().withDefaultValue(0)
-  private val segmentGroupFilesIterators = mutable.HashMap[Object, mutable.ArrayBuffer[Object]]()
-  private val phantomReferenceQueue = new ReferenceQueue[Object]()
-  private val fileStorageLock = new ReentrantReadWriteLock()
 
   /** Public Methods **/
   override final def open(dimensions: Dimensions): Unit = {
@@ -64,15 +47,11 @@ abstract class FileStorage(rootFolder: String, tidOffset: Int) extends Storage(t
     this.initialize()
   }
 
-  override def storeTimeseries(timeseries: Seq[(Int, Float, Int, Int)]): Unit = {
-    ???
-  }
-
-  override final def storeTimeSeries(timeSeriesGroups: Array[TimeSeriesGroup], tidOffset: Int): Unit = {
-    val outputFilePath = new Path(rootFolder + "time_series" + getFileSuffix)
-    val newFilePath = new Path(rootFolder + "time_series" + getFileSuffix + "_new")
-    writeTimeSeriesFile(timeSeriesGroups, newFilePath, tidOffset)
-    mergeAndDeleteInputFiles(outputFilePath, outputFilePath, newFilePath)
+  override final def storeTimeSeries(timeSeriesGroupRows: Array[Array[Object]]): Unit = {
+    val outputFilePath = new Path(this.rootFolder + "time_series" + this.getFileSuffix)
+    val newFilePath = new Path(this.rootFolder + "time_series" + this.getFileSuffix + "_new")
+    this.writeTimeSeriesFile(timeSeriesGroupRows, newFilePath)
+    this.mergeAndDeleteInputFiles(outputFilePath, outputFilePath, newFilePath)
   }
 
   override final def getTimeSeries: mutable.HashMap[Integer, Array[Object]] = {
@@ -101,9 +80,10 @@ abstract class FileStorage(rootFolder: String, tidOffset: Int) extends Storage(t
   }
 
   //H2Storage
-  override final def storeSegmentGroups(segmentGroups: Array[SegmentGroup], size: Int): Unit = {
+  override final def storeSegmentGroups(segmentGroups: Array[SegmentGroup]): Unit = {
+    this.storageSegmentGroupLock.writeLock().lock()
     //The file is written to segmentNewPath and renamed to ensure that the final file is created atomically
-    this.writeSegmentGroupFile(segmentGroups, size, this.segmentNewPath)
+    this.writeSegmentGroupFile(segmentGroups, this.segmentNewPath)
     this.fileSystem.rename(this.segmentNewPath, new Path(this.getSegmentGroupPath))
 
     if (shouldMerge()) {
@@ -113,17 +93,21 @@ abstract class FileStorage(rootFolder: String, tidOffset: Int) extends Storage(t
       this.mergeFiles(this.segmentNewPath, filesToMerge)
       this.replaceSegmentFilesAndFolders(filesToMerge)
     }
+    this.storageSegmentGroupLock.writeLock().unlock()
   }
 
   override final def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
+    this.storageSegmentGroupLock.readLock().lock()
     val segmentGroupFiles = this.listFiles(this.segmentFolderPath)
-    if (segmentGroupFiles.isEmpty) {
+    val rs = if (segmentGroupFiles.isEmpty) {
       Array[SegmentGroup]().iterator
     } else {
       val iterator = this.readSegmentGroupsFiles(filter, segmentGroupFiles)
       this.lockSegmentGroupFilesAndFolders(segmentGroupFiles.asInstanceOf[mutable.ArrayBuffer[Object]], iterator)
       iterator
     }
+    this.storageSegmentGroupLock.readLock().lock()
+    rs
   }
 
   //SparkStorage
@@ -133,6 +117,7 @@ abstract class FileStorage(rootFolder: String, tidOffset: Int) extends Storage(t
   }
 
   override final def storeSegmentGroups(sparkSession: SparkSession, df: DataFrame): Unit = {
+    this.storageSegmentGroupLock.writeLock().lock()
     if ( ! shouldMerge) {
       //The file is written to segmentNewPath and renamed to ensure that the final file is created atomically
       this.writeSegmentGroupsFolder(sparkSession, df, this.segmentNew)
@@ -145,12 +130,15 @@ abstract class FileStorage(rootFolder: String, tidOffset: Int) extends Storage(t
       this.writeSegmentGroupsFolder(sparkSession, mergedDF, this.segmentNew)
       this.replaceSegmentFilesAndFolders(filesAndFoldersToMerge.map(new Path(_)))
     }
+    this.storageSegmentGroupLock.writeLock().unlock()
   }
 
   override final def getSegmentGroups(sparkSession: SparkSession, filters: Array[Filter]): DataFrame = {
+    this.storageSegmentGroupLock.readLock().lock()
     val segmentGroupFilesAndFolders = this.listFilesAndFolders(this.segmentFolderPath)
     val df = readSegmentGroupsFolders(sparkSession, filters, segmentGroupFilesAndFolders)
     this.lockSegmentGroupFilesAndFolders(segmentGroupFilesAndFolders.asInstanceOf[mutable.ArrayBuffer[Object]], df)
+    this.storageSegmentGroupLock.readLock().unlock()
     df
   }
 
@@ -170,11 +158,11 @@ abstract class FileStorage(rootFolder: String, tidOffset: Int) extends Storage(t
   protected def getFileSuffix: String
   protected def getMaxID(columnName: String, timeSeriesFilePath: Path): Int
   protected def mergeFiles(outputFilePath: Path, inputFilesPaths: mutable.ArrayBuffer[Path]): Unit
-  protected def writeTimeSeriesFile(timeSeriesGroups: Array[TimeSeriesGroup], timeSeriesFilePath: Path, tidOffset: Int): Unit
+  protected def writeTimeSeriesFile(timeSeriesGroups: Array[Array[Object]], timeSeriesFilePath: Path): Unit
   protected def readTimeSeriesFile(timeSeriesFilePath: Path): mutable.HashMap[Integer, Array[Object]]
   protected def writeModelTypeFile(modelsToInsert: mutable.HashMap[String,Integer], modelTypeFilePath: Path): Unit
   protected def readModelTypeFile(modelTypeFilePath: Path): mutable.HashMap[String, Integer]
-  protected def writeSegmentGroupFile(segmentGroups: Array[SegmentGroup], size: Int, segmentGroupFilePath: Path): Unit
+  protected def writeSegmentGroupFile(segmentGroups: Array[SegmentGroup], segmentGroupFilePath: Path): Unit
   protected def readSegmentGroupsFiles(filter: TableFilter, segmentGroupFiles: mutable.ArrayBuffer[Path]): Iterator[SegmentGroup]
   protected def writeSegmentGroupsFolder(sparkSession: SparkSession, df: DataFrame, segmentGroupFilePath: String): Unit
   protected def readSegmentGroupsFolders(sparkSession: SparkSession, filters: Array[Filter], segmentFolders: mutable.ArrayBuffer[String]): DataFrame
@@ -348,4 +336,21 @@ abstract class FileStorage(rootFolder: String, tidOffset: Int) extends Storage(t
       None
     }
   }
+
+  /** Instance Variables **/
+  private val segmentFolder = this.rootFolder + "segment/"
+  private val segmentFolderPath: Path = new Path(this.segmentFolder)
+  private val segmentNew = this.rootFolder + "segment_new" + this.getFileSuffix
+  private val segmentNewPath = new Path(this.segmentNew)
+  private val segmentLogPath = new Path(this.rootFolder + "segment_new_log")
+  private val fileSystem: FileSystem = new Path(this.rootFolder).getFileSystem(new Configuration())
+  this.fileSystem.setWriteChecksum(false)
+
+  //Variables for tracking when to merge and which files can be included in a merge
+  private val batchesBetweenMerges: Int = 10 //Chosen as a simple trade-off between ingestion and query time
+  private var batchesSinceLastMerge: Int = 0
+  private val segmentGroupFilesInQuery = mutable.HashMap[Object, Integer]().withDefaultValue(0)
+  private val segmentGroupFilesIterators = mutable.HashMap[Object, mutable.ArrayBuffer[Object]]()
+  private val phantomReferenceQueue = new ReferenceQueue[Object]()
+  private val fileStorageLock = new ReentrantReadWriteLock()
 }

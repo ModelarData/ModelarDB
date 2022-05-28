@@ -6,10 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- The data transfer module now supports any combination of H2 and Apache Spark
+  as client and server. Apache Spark uses distributed Receivers run by Workers.
+
 ### Changed
+- The Apache Arrow Flight-based query interface now transfers data in batches.
+- Reverted to the key-value configuration file format and removed PureConfig.
+  The data transfer module is configured with the `modelardb.transfer` setting.
+
 ### Deprecated
 ### Removed
+- Dropped Akka Streams from the data transfer module and switched to using
+  Apache Arrow Flight directly for data transfer.
+
 ### Fixed
+- H2 adding parentheses to CQL WHERE clauses and not appending ALLOW FILTERING.
+
 ### Security
 
 ## [0.2.0] - 2021-12-21

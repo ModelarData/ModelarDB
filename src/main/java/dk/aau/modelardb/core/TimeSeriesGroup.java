@@ -185,12 +185,10 @@ public class TimeSeriesGroup implements Serializable {
         }
     }
 
-    public void setGid(int gid) {
-        this.gid = gid;
-    }
-
     /** Instance Variables **/
+    //Updated by local instances after tids have been received by a remote instance
     public int gid;
+
     public final boolean isAsync;
     public final int samplingInterval;
 

@@ -26,19 +26,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 
 class SparkCache(sparkSession: SparkSession, maxSegmentsCached: Int, newGids: Range) {
 
-  /** Instance Variables **/
-  private var checkpointCounter = 10
-  private val emptyRDD = sparkSession.sparkContext.emptyRDD[Row]
-  private val cacheLock = new ReentrantReadWriteLock()
-  private var lastFlush = 0
-
-  private var storageCacheKey: Array[Filter] = Array(null)
-  private var storageCacheRDD = this.emptyRDD
-
-  private var temporaryRDD: IndexedRDD[Int, Array[Row]] = getIndexedRDD
-  private var finalizedRDD = this.emptyRDD
-  private var ingestedRDD = this.emptyRDD
-
   /** Public Methods **/
   def update(microBatch: RDD[Row]): Unit = {
     this.cacheLock.writeLock().lock()
@@ -74,14 +61,18 @@ class SparkCache(sparkSession: SparkSession, maxSegmentsCached: Int, newGids: Ra
     //The cache is now invalid and must be cleared to ensure queries are correct
     this.finalizedRDD.unpersist()
     this.finalizedRDD = this.emptyRDD
-    this.storageCacheRDD.unpersist()
-    this.storageCacheKey = Array(null)
+    this.invalidate()
 
     //A ReentrantReadWriteLock cannot be upgraded, so a reader must be informed that a flush occurred
     // between it releasing its read lock and getting a write lock. A counter is used instead of a flag
     // so two writes cannot reset the flag for a reader: Unlock Read -> Writer -> Writer -> Lock Write
     this.lastFlush += 1
     this.cacheLock.writeLock().unlock()
+  }
+
+  def invalidate(): Unit = {
+    this.storageCacheRDD.unpersist()
+    this.storageCacheKey = Array(null)
   }
 
   def getSegmentGroupRDD(filters: Array[Filter]): RDD[Row] = {
@@ -155,12 +146,22 @@ class SparkCache(sparkSession: SparkSession, maxSegmentsCached: Int, newGids: Ra
       indexedRDD.persist()
     }
   }
+
+  /** Instance Variables **/
+  private var checkpointCounter = 10
+  private val emptyRDD = sparkSession.sparkContext.emptyRDD[Row]
+  private val cacheLock = new ReentrantReadWriteLock()
+  private var lastFlush = 0
+
+  private var storageCacheKey: Array[Filter] = Array(null)
+  private var storageCacheRDD = this.emptyRDD
+
+  private var temporaryRDD: IndexedRDD[Int, Array[Row]] = getIndexedRDD
+  private var finalizedRDD = this.emptyRDD
+  private var ingestedRDD = this.emptyRDD
 }
 
 object SparkCache {
-
-  /** Instance Variables **/
-  private val groupMetadataCache = Spark.getSparkStorage.groupMetadataCache
 
   /** Private Methods **/
   private def updateTemporarySegment(buffer: Array[Row], input: Array[Row]): Array[Row] = {
@@ -170,8 +171,8 @@ object SparkCache {
     val inputGaps = Static.bytesToInts(inputRow.getAs[Array[Byte]](5))
 
     //Extracts the metadata for the group of time series being updated
-    val group = groupMetadataCache.get(inputRow.getInt(0)).drop(1)
-    val samplingInterval = groupMetadataCache.get(inputRow.getInt(0))(0)
+    val group = this.groupMetadataCache(inputRow.getInt(0)).drop(1)
+    val samplingInterval = this.groupMetadataCache(inputRow.getInt(0))(0)
     val inputIngested = group.toSet.diff(inputGaps.toSet)
     var updatedExistingSegment = false
 
@@ -210,4 +211,7 @@ object SparkCache {
       buffer.filter(_ != null).distinct
     }
   }
+
+  /** Instance Variables **/
+  private val groupMetadataCache = Spark.getSparkStorage.groupMetadataCache
 }

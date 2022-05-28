@@ -180,8 +180,6 @@ public class Dimensions {
     }
 
     public String toString() {
-        if (columns.length == 0) { return ""; }
-
         StringBuilder sb = new StringBuilder();
         //Indents the header to match the first row
         int indent = 0;
