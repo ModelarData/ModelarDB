@@ -1,4 +1,5 @@
 name := "ModelarDB"
+version := "0.2.0"
 scalaVersion := "2.12.15"
 scalacOptions ++= Seq("-opt:l:inline", "-opt-inline-from:<sources>", "-feature", "-deprecation", "-Xlint:_")
 
@@ -56,20 +57,3 @@ Test / testOptions += Tests.Argument("-oDF")
 
 /* Execute tests sequentially to reduce the amount of memory required */
 Test / parallelExecution := false
-
-/* Create a code coverage report in HTML using Jacoco */
-jacocoReportSettings := JacocoReportSettings(formats = Seq(JacocoReportFormats.ScalaHTML))
-
-/* GitHub Package Repository */
-val owner = "ModelarData"
-val repo = "ModelarDB"
-publishMavenStyle := true
-publishTo := Some("GitHub Package Registry" at s"https://maven.pkg.github.com/$owner/$repo")
-
-credentials +=
-Credentials(
-  "GitHub Package Registry",
-  "maven.pkg.github.com",
-  "_", // The username is ignored when using a GITHUB_TOKEN is used for login
-  sys.env.getOrElse("GITHUB_TOKEN", "") // getOrElse allows SBT to always run
-)
