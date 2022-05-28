@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - The data transfer module now supports any combination of H2 and Apache Spark
   as client and server. Apache Spark uses distributed Receivers run by Workers.
+- The configuration file parser now also supports inline comments and emits
+  errors that contain information about which settings are missing arguments.
 
 ### Changed
 - The Apache Arrow Flight-based query interface now transfers data in batches.
