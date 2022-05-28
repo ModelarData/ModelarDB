@@ -246,13 +246,19 @@ public class Configuration {
                 break;
             case "modelardb.ingestors":
                 if ( ! (value instanceof Integer) || (int) value < 0) {
-                    throw new UnsupportedOperationException("ModelarDB: modelardb.ingestors must be zero or a positive number of ingestors");
+                    throw new IllegalArgumentException("ModelarDB: modelardb.ingestors must be zero or a positive number of ingestors");
                 }
                 break;
             case "modelardb.time_zone":
                 if ( ! (value instanceof String) || ! TimeZone.getTimeZone((String) value).getID().equals(value)) {
-                    throw new UnsupportedOperationException("ModelarDB: modelardb.time_zone must be a valid time zone id");
+                    throw new IllegalArgumentException("ModelarDB: modelardb.time_zone must be a valid time zone id");
                 }
+                break;
+            case "modelardb.dynamic_split_fraction":
+                if ( ! (value instanceof Float) || (float) value < 0.0) {
+                    throw new IllegalArgumentException("ModelarDB: modelardb.dynamic_split_fraction must be zero or a positive float");
+                }
+                break;
         }
     }
 
