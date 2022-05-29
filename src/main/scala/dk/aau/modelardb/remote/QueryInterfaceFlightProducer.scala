@@ -59,9 +59,7 @@ class QueryInterfaceFlightProducer(queryEngine: QueryEngine) extends FlightProdu
   override def listFlights(context: FlightProducer.CallContext, criteria: Criteria, listener: FlightProducer.StreamListener[FlightInfo]): Unit = {
     try {
       val schema = new Schema(new util.ArrayList[Field]())
-
-      val flightDescriptor = FlightDescriptor.path("DATAPOINT", "SEGMENT")
-
+      val flightDescriptor = FlightDescriptor.path(queryEngine.listTables():_*)
       val ticket = new Ticket(Array())
       val ip = InetAddress.getLocalHost().getHostAddress()
       val flightEndPoint = new FlightEndpoint(ticket, new Location(ip))

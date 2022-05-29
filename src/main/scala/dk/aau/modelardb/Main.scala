@@ -67,6 +67,7 @@ object Main {
     val configuration = new Configuration()
     val models = ArrayBuffer[String]()
     val sources = ArrayBuffer[String]()
+    val external = ArrayBuffer[Array[String]]()
     val derivedSources = new util.HashMap[String, ArrayBuffer[Pair[String, ValueFunction]]]()
     val correlations = ArrayBuffer[Correlation]()
 
@@ -114,6 +115,9 @@ object Main {
             } else {
               correlations.append(parseCorrelation(tls, dimensions))
             }
+          case "modelardb.spark.external" =>
+            external.append(lineSplit(1) //Splits the argument on spaces but not inside single quotes
+              .split(" (?=([^']*'[^']*')*[^']*$)").map(_.trim.stripPrefix("'").stripSuffix("'")))
           case "modelardb.engine" | "modelardb.storage" | "modelardb.interface" | "modelardb.transfer" |
                "modelardb.time_zone" | "modelardb.ingestors" | "modelardb.timestamp_column" | "modelardb.value_column" |
                "modelardb.error_bound" | "modelardb.length_bound" | "modelardb.maximum_latency" |
@@ -135,6 +139,7 @@ object Main {
 
     configuration.add("modelardb.model_types", models.toArray)
     configuration.add("modelardb.sources", sources.toArray)
+    configuration.add("modelardb.spark.external", external.toArray)
     val finalDerivedSources = new util.HashMap[String, Array[Pair[String, ValueFunction]]]()
     val dsIter = derivedSources.entrySet().iterator()
     while (dsIter.hasNext) {

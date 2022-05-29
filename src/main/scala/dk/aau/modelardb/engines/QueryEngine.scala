@@ -17,6 +17,7 @@ package dk.aau.modelardb.engines
 import dk.aau.modelardb.remote.ArrowResultSet
 
 trait QueryEngine {
+  def listTables(): Array[String]
   def executeToJSON(query: String): Array[String]
   def executeToArrow(query: String): ArrowResultSet
 }

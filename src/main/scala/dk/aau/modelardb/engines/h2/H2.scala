@@ -67,7 +67,11 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
     connection.close()
   }
 
-  def executeToJSON(query: String): Array[String] = {
+  override def listTables(): Array[String] = {
+    Array("DATAPOINT", "SEGMENT")
+  }
+
+  override def executeToJSON(query: String): Array[String] = {
     //Execute Query
     val connection = DriverManager.getConnection(this.h2ConnectionString)
     val stmt = connection.createStatement()
@@ -98,7 +102,7 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
     result.toArray
   }
 
-  def executeToArrow(query: String): ArrowResultSet = {
+  override def executeToArrow(query: String): ArrowResultSet = {
     new H2ResultSet(this.h2ConnectionString, query)
   }
 

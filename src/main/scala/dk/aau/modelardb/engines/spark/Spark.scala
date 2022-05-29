@@ -61,11 +61,15 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) extends Qu
     ss.stop()
   }
 
-  def executeToJSON(query: String): Array[String] = {
+  override def listTables(): Array[String] = {
+    Spark.sparkSession.catalog.listTables().collect().map(_.name.toUpperCase)
+  }
+
+  override def executeToJSON(query: String): Array[String] = {
     this.sparkSession.sql(query).toJSON.collect()
   }
 
-  def executeToArrow(query: String): ArrowResultSet = {
+  override def executeToArrow(query: String): ArrowResultSet = {
     new SparkResultSet(this.sparkSession.sql(query))
   }
 
@@ -139,6 +143,12 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) extends Qu
     dataPointView.createOrReplaceTempView("DataPoint")
     SparkUDAF.initialize(spark)
     EngineUtilities.initialize(dimensions)
+
+    configuration.get("modelardb.spark.external").foreach(obj => {
+      val nameFormatAndOptions = obj.asInstanceOf[Array[String]]
+      val options = nameFormatAndOptions.drop(2).sliding(2).map(kva => (kva(0), kva(1))).toMap
+      spark.read.format(nameFormatAndOptions(1)).options(options).load().createOrReplaceTempView(nameFormatAndOptions(0))
+    })
 
     //Last, return the Spark interfaces so they can be controlled
     (spark, ssc)

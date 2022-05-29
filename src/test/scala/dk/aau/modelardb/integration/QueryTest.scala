@@ -210,6 +210,7 @@ abstract class QueryTest extends AnyFlatSpec with Matchers {
     configuration.add("modelardb.csv.header", false);
     configuration.add("modelardb.csv.locale", "en");
     configuration.add("modelardb.csv.separator", "");
+    configuration.add("modelardb.spark.external", Array());
 
     //Test configuration
     for ((name, value) <- configurationValues) {

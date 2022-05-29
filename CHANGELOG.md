@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The configuration file parser now also supports inline comments and emits
   errors that contain information about which settings are missing arguments.
 - Improved messages from predicate push-down when a predicate is not supported.
+- External tables can be added to Apache Spark with `modelardb.spark.external`.
 
 ### Changed
 - The Apache Arrow Flight-based query interface now transfers data in batches.
