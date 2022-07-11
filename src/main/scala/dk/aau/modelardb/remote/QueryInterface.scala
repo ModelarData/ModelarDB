@@ -19,8 +19,7 @@ import dk.aau.modelardb.engines.QueryEngine
 import dk.aau.modelardb.core.utility.Static
 
 import org.apache.arrow.flight.{FlightServer, Location}
-import org.apache.arrow.memory.RootAllocator
-
+import org.apache.arrow.memory.BufferAllocator
 import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
 
 import java.nio.charset.StandardCharsets
@@ -42,7 +41,7 @@ object QueryInterface {
     val (interface, port) = RemoteUtilities.getInterfaceAndPort(
       configuration.getString("modelardb.interface"), 9999)
     interface match {
-      case "arrow" => arrow(configuration.getExecutorService, port)
+      case "arrow" => arrow(configuration.getExecutorService, port, RemoteUtilities.getRootAllocator(configuration))
       case "socket" => socket(configuration.getExecutorService, port)
       case "http" => http(configuration.getExecutorService, port)
       case "repl" => repl(configuration.getStorage)
@@ -52,11 +51,10 @@ object QueryInterface {
   }
 
   /** Private Methods * */
-  private def arrow(executor: ExecutorService, port: Int): Unit = {
-    val allocator = new RootAllocator()
+  private def arrow(executor: ExecutorService, port: Int, rootAllocator: BufferAllocator): Unit = {
     val location = new Location("grpc://0.0.0.0:" + port)
     val producer = new QueryInterfaceFlightProducer(this.queryEngine)
-    val flightServer = FlightServer.builder(allocator, location, producer).executor(executor).build()
+    val flightServer = FlightServer.builder(rootAllocator, location, producer).executor(executor).build()
     flightServer.start()
     Static.info(f"ModelarDB: Arrow Flight query end-point is ready (Port: $port)")
     readLine() //Prevents the method from returning to keep the Arrow Flight query end-point running

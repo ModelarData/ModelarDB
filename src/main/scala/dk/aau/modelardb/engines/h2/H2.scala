@@ -26,7 +26,6 @@ import org.h2.table.TableFilter
 import org.h2.value.{ValueInt, ValueTimestamp}
 
 import org.apache.arrow.flight.{FlightServer, Location}
-import org.apache.arrow.memory.RootAllocator
 import org.codehaus.jackson.map.util.ISO8601Utils
 
 import java.sql.{DriverManager, Timestamp}
@@ -103,7 +102,7 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
   }
 
   override def executeToArrow(query: String): ArrowResultSet = {
-    new H2ResultSet(this.h2ConnectionString, query)
+    new H2ResultSet(this.h2ConnectionString, query, this.rootAllocator)
   }
 
   def getSegmentGroups(filter: TableFilter): Iterator[SegmentGroup] = {
@@ -136,7 +135,7 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
           val location = new Location("grpc://0.0.0.0:" + port)
           val producer = new RemoteStorageFlightProducer(configuration, h2storage, port)
           val executor = Executors.newFixedThreadPool(ingestors + 1) //Plus one so ingestors threads perform ingestion
-          this.flightServer = FlightServer.builder(new RootAllocator(), location, producer).executor(executor).build()
+          this.flightServer = FlightServer.builder(this.rootAllocator, location, producer).executor(executor).build()
           this.flightServer.start()
           Static.info(f"ModelarDB: Arrow Flight transfer end-point is ready (Port: $port)")
         case _ => //If data transfer is enabled to StorageFactory have wrapped H2Storage with a RemoteStorage instance
@@ -304,6 +303,7 @@ class H2(configuration: Configuration, h2storage: H2Storage) extends QueryEngine
   private val cacheLock = new ReentrantReadWriteLock()
   private val temporarySegments = mutable.HashMap[Int, Array[SegmentGroup]]()
   private val base64Encoder = Base64.getEncoder
+  private val rootAllocator = RemoteUtilities.getRootAllocator(this.configuration)
   private var flightServer: FlightServer = _
 
   //The H2 in-memory databases is named by an UUID so multiple can be constructed in parallel by the tests

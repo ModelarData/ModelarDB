@@ -21,7 +21,6 @@ import dk.aau.modelardb.engines.{EngineUtilities, QueryEngine}
 import dk.aau.modelardb.remote.{ArrowResultSet, QueryInterface, RemoteStorageFlightProducer, RemoteUtilities}
 
 import org.apache.arrow.flight.{FlightServer, Location}
-import org.apache.arrow.memory.RootAllocator
 
 import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
@@ -52,6 +51,7 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) extends Qu
     //Ensures that Spark does not terminate until ingestion is safely stopped
     if (ssc != null) {
       Static.info("ModelarDB: awaiting termination")
+      ssc.stop(false, true)
       ssc.awaitTermination()
       Spark.getCache.flush()
     }
@@ -70,7 +70,7 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) extends Qu
   }
 
   override def executeToArrow(query: String): ArrowResultSet = {
-    new SparkResultSet(this.sparkSession.sql(query))
+    new SparkResultSet(this.sparkSession.sql(query), this.rootAllocator)
   }
 
   /** Private Methods **/
@@ -110,7 +110,7 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) extends Qu
           val location = new Location("grpc://0.0.0.0:" + port)
           val producer = new RemoteStorageFlightProducer(configuration, sparkStorage.asInstanceOf[H2Storage], port)
           val executor = configuration.getExecutorService
-          this.flightServer = FlightServer.builder(new RootAllocator(), location, producer).executor(executor).build()
+          this.flightServer = FlightServer.builder(this.rootAllocator, location, producer).executor(executor).build()
           this.flightServer.start()
           Static.info(f"ModelarDB: Arrow Flight transfer end-point is ready (Port: $port)")
 
@@ -187,6 +187,7 @@ class Spark(configuration: Configuration, sparkStorage: SparkStorage) extends Qu
 
   /** Instance Variable **/
   private var sparkSession: SparkSession = _
+  private val rootAllocator = RemoteUtilities.getRootAllocator(this.configuration)
   private var flightServer: FlightServer = _
 }
 

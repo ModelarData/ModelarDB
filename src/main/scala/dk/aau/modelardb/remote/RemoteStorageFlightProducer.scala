@@ -17,6 +17,7 @@ package dk.aau.modelardb.remote
 import dk.aau.modelardb.core.utility.Static
 import dk.aau.modelardb.core.{Configuration, SegmentGroup}
 import dk.aau.modelardb.engines.h2.H2Storage
+
 import org.apache.arrow.flight.{Action, ActionType, Criteria, FlightDescriptor, FlightInfo, FlightProducer, FlightStream, PutResult, Result, Ticket}
 import org.apache.arrow.vector.{BigIntVector, Float4Vector, Float8Vector, IntVector, VarBinaryVector, VarCharVector, VectorSchemaRoot}
 
@@ -58,8 +59,8 @@ class RemoteStorageFlightProducer(configuration: Configuration, h2Storage: H2Sto
             for (row <- Range(0, vsr.getRowCount)) {
               rowsBuilder.append(toTimeSeriesRow(row, columns, vsr))
             }
-            vsr.close()
           }
+          vsr.close()
           flightStream.close()
           //HACK: it is assumed that new instances are rarely added so storeMetadataAndInitializeCaches is used
           h2Storage.storeMetadataAndInitializeCaches(configuration, rowsBuilder.toArray)

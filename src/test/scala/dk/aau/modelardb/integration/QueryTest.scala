@@ -22,6 +22,8 @@ import dk.aau.modelardb.core.Correlation
 import dk.aau.modelardb.engines.spark.Spark
 import dk.aau.modelardb.engines.spark.SparkStorage
 
+import org.apache.arrow.memory.RootAllocator
+
 import java.io.{OutputStream, PrintStream}
 import java.lang.reflect.Field
 import java.nio.file.Files
@@ -202,6 +204,7 @@ abstract class QueryTest extends AnyFlatSpec with Matchers {
     configuration.add("modelardb.sources.derived", new util.HashMap());
     configuration.add("modelardb.correlations", Array[Correlation]());
     configuration.add("modelardb.dynamic_split_fraction", 10);
+    configuration.add("modelardb.root_allocator", new RootAllocator());
     configuration.add("modelardb.executor_service", Executors.newCachedThreadPool());
     configuration.add("modelardb.timestamp_column", 0);
     configuration.add("modelardb.value_column", 1);

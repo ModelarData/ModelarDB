@@ -45,7 +45,7 @@ object StorageFactory {
     val (mode, port) = RemoteUtilities.getInterfaceAndPort(transfer, 10000)
     mode match {
       case "server" => storage
-      case ip => new RemoteStorage(ip, port, storage)
+      case ip => new RemoteStorage(ip, port, storage, configuration)
     }
   }
 }

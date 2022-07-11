@@ -17,7 +17,7 @@ package dk.aau.modelardb.engines.h2
 import dk.aau.modelardb.engines.{CodeGenerator, H2JDBCToArrow}
 import dk.aau.modelardb.remote.ArrowResultSet
 
-import org.apache.arrow.memory.RootAllocator
+import org.apache.arrow.memory.BufferAllocator
 import org.apache.arrow.vector.VectorSchemaRoot
 import org.apache.arrow.vector.types.{FloatingPointPrecision, TimeUnit}
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType, Schema}
@@ -26,7 +26,7 @@ import java.sql.{DriverManager, ResultSetMetaData, Types}
 import java.util
 import java.util.concurrent.ConcurrentHashMap
 
-class H2ResultSet(connectionString: String, query: String) extends ArrowResultSet {
+class H2ResultSet(connectionString: String, query: String, rootAllocator: BufferAllocator) extends ArrowResultSet {
 
   /** Public Methods **/
   override def get(): VectorSchemaRoot = {
@@ -42,6 +42,7 @@ class H2ResultSet(connectionString: String, query: String) extends ArrowResultSe
   }
 
   override def close(): Unit = {
+    this.vsr.close()
     this.rs.close()
     this.stmt.close()
     this.connection.close()
@@ -78,7 +79,7 @@ class H2ResultSet(connectionString: String, query: String) extends ArrowResultSe
   }
   private val vsr = {
     val schema = this.convertSchema(this.rs.getMetaData)
-    val vsr = VectorSchemaRoot.create(schema, new RootAllocator())
+    val vsr = VectorSchemaRoot.create(schema, this.rootAllocator)
     vsr.setRowCount(this.DEFAULT_TARGET_BATCH_SIZE)
     vsr
   }

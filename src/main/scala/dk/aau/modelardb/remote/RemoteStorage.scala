@@ -19,8 +19,9 @@ import dk.aau.modelardb.core.{Configuration, Dimensions, SegmentGroup, TimeSerie
 import dk.aau.modelardb.engines.h2.H2Storage
 import dk.aau.modelardb.engines.spark.SparkStorage
 import dk.aau.modelardb.storage.Storage
+
 import org.apache.arrow.flight.{Action, FlightClient, FlightDescriptor, Location, SyncPutListener}
-import org.apache.arrow.memory.RootAllocator
+import org.apache.arrow.memory.BufferAllocator
 import org.apache.arrow.vector.types.FloatingPointPrecision
 import org.apache.arrow.vector.{BigIntVector, FloatingPointVector, IntVector, VarBinaryVector, VarCharVector, VectorSchemaRoot}
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType, Schema}
@@ -34,7 +35,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import scala.collection.mutable
 
-class RemoteStorage(ip: String, port: Int, storage: Storage) extends H2Storage with SparkStorage {
+class RemoteStorage(ip: String, port: Int, storage: Storage, configuration: Configuration) extends H2Storage with SparkStorage {
 
   /** Public Methods **/
   //Storage
@@ -107,7 +108,7 @@ class RemoteStorage(ip: String, port: Int, storage: Storage) extends H2Storage w
 
     //Package information about all the time series
     var index = 0
-    val vsr = VectorSchemaRoot.create(timeSeriesSchema, new RootAllocator())
+    val vsr = VectorSchemaRoot.create(timeSeriesSchema, this.rootAllocator)
     vsr.setRowCount(timeSeriesInStorage.size) //Size is set before values are added to preallocate memory
     val streamListener = this.masterFlightClient.startPut(this.flightDescriptor, vsr, new SyncPutListener())
     for ((tid, metadata) <- timeSeriesInStorage) { //The vectors must be written from zero to row count as string otherwise are overwritten
@@ -159,7 +160,7 @@ class RemoteStorage(ip: String, port: Int, storage: Storage) extends H2Storage w
   //H2Storage
   override def storeSegmentGroups(segmentGroups: Array[SegmentGroup]): Unit = {
     //Transfers the segment groups to the storage on a remote instance
-    val vsr = VectorSchemaRoot.create(this.segmentGroupSchema, new RootAllocator())
+    val vsr = VectorSchemaRoot.create(this.segmentGroupSchema, this.rootAllocator)
     val streamListener = this.segmentFlightClient.startPut(this.flightDescriptor, vsr, new SyncPutListener())
     vsr.setRowCount(segmentGroups.length) //Size is set before values are added to preallocate memory
     segmentGroups.zipWithIndex.foreach({ case (sg, index) => this.addSegmentGroupToRoot(index, sg, vsr) })
@@ -215,7 +216,7 @@ class RemoteStorage(ip: String, port: Int, storage: Storage) extends H2Storage w
     }
 
     //Create a connection to the remote instance to transfer segment groups to
-    FlightClient.builder().location(new Location("grpc://" + remote)).allocator(new RootAllocator()).build()
+    FlightClient.builder().location(new Location("grpc://" + remote)).allocator(this.rootAllocator).build()
   }
 
   private def assertModelTypes(): Unit = {
@@ -257,10 +258,11 @@ class RemoteStorage(ip: String, port: Int, storage: Storage) extends H2Storage w
   }
 
   /** Instance Variables **/
+  private val rootAllocator: BufferAllocator = RemoteUtilities.getRootAllocator(configuration)
   private val flightDescriptor = FlightDescriptor.path(InetAddress.getLocalHost().getHostName())
   private val masterFlightClient = {
     val location = new Location("grpc://" + ip + ":" + port)
-    FlightClient.builder().location(location).allocator(new RootAllocator()).build()
+    FlightClient.builder().location(location).allocator(this.rootAllocator).build()
   }
   private val segmentGroupSchema = {
     val fields = new util.ArrayList[Field]();

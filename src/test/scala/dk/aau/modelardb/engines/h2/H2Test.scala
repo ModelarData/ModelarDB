@@ -18,15 +18,20 @@ import dk.aau.modelardb.core.models.ModelTypeFactory
 import dk.aau.modelardb.core.{Configuration, Dimensions, SegmentGroup}
 import dk.aau.modelardb.engines.EngineUtilities
 import dk.aau.modelardb.storage.JDBCStorage
+
+import org.apache.arrow.memory.RootAllocator
+
 import org.h2.expression.condition.{Comparison, ConditionAndOr}
 import org.h2.jdbc.JdbcSQLDataException
 import org.h2.table.TableFilter
+
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
 import java.sql.{DriverManager, Statement}
 import java.time.Instant
+
 import scala.collection.mutable
 
 class H2Test extends AnyFlatSpec with Matchers with MockFactory {
@@ -80,6 +85,7 @@ class H2Test extends AnyFlatSpec with Matchers with MockFactory {
 
       val configuration = new Configuration()
       configuration.add("modelardb.batch_size", 500)
+      configuration.add("modelardb.root_allocator", new RootAllocator());
       val h2 = new H2(configuration, storage)
       H2.initialize(h2, storage)
 

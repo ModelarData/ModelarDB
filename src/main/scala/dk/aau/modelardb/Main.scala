@@ -18,13 +18,17 @@ import dk.aau.modelardb.core._
 import dk.aau.modelardb.core.models.ModelTypeFactory
 import dk.aau.modelardb.core.utility.{Pair, Static, ValueFunction}
 import dk.aau.modelardb.engines.{CodeGenerator, EngineFactory}
+import dk.aau.modelardb.remote.RemoteUtilities
 import dk.aau.modelardb.storage.StorageFactory
+
+import org.apache.arrow.memory.RootAllocator
 
 import java.io.File
 import java.nio.file.{FileSystems, Paths}
 import java.util
 import java.util.TimeZone
 import java.util.concurrent.Executors
+
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
@@ -33,6 +37,8 @@ object Main {
 
   /** Public Methods **/
   def main(args: Array[String]): Unit = {
+    //DEBUG: prints all log messages to System.out
+    //org.apache.log4j.BasicConfigurator.configure()
 
     //ModelarDB checks args(0) for a config and uses $HOME/.modelardb.conf as a fallback
     val fallback = System.getProperty("user.home") + "/.modelardb.conf"
@@ -59,6 +65,7 @@ object Main {
 
     /* Cleanup */
     storage.close()
+    RemoteUtilities.getRootAllocator(configuration).close() //Explicitly closed to log memory leaks
   }
 
   /** Private Methods **/
@@ -148,6 +155,7 @@ object Main {
     }
     configuration.add("modelardb.sources.derived", finalDerivedSources)
     configuration.add("modelardb.correlations", correlations.toArray)
+    configuration.add("modelardb.root_allocator", new RootAllocator())
     configuration.add("modelardb.executor_service", Executors.newCachedThreadPool())
     validate(configuration)
   }

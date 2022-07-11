@@ -14,6 +14,10 @@
  */
 package dk.aau.modelardb.remote
 
+import org.apache.arrow.memory.BufferAllocator
+
+import dk.aau.modelardb.core.Configuration
+
 object RemoteUtilities {
 
   /** Public Methods **/
@@ -29,5 +33,9 @@ object RemoteUtilities {
     } else {
       (interfaceAndMaybePort.substring(0, startOfPort), interfaceAndMaybePort.substring(startOfPort + 1).toInt)
     }
+  }
+
+  def getRootAllocator(configuration: Configuration): BufferAllocator = {
+    configuration.get("modelardb.root_allocator")(0).asInstanceOf[BufferAllocator]
   }
 }

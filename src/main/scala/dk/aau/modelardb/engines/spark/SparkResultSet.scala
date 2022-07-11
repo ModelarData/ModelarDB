@@ -17,7 +17,7 @@ package dk.aau.modelardb.engines.spark
 import dk.aau.modelardb.engines.{CodeGenerator, SparkDataFrameToArrow}
 import dk.aau.modelardb.remote.ArrowResultSet
 
-import org.apache.arrow.memory.RootAllocator
+import org.apache.arrow.memory.BufferAllocator
 import org.apache.arrow.vector.VectorSchemaRoot
 import org.apache.arrow.vector.types.{FloatingPointPrecision, TimeUnit}
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType, Schema}
@@ -28,7 +28,7 @@ import org.apache.spark.sql.types.{BinaryType, DoubleType, FloatType, IntegerTyp
 import java.util.concurrent.ConcurrentHashMap
 import scala.collection.JavaConverters._
 
-class SparkResultSet(df: DataFrame) extends ArrowResultSet {
+class SparkResultSet(df: DataFrame, rootAllocator: BufferAllocator) extends ArrowResultSet {
 
   /** Public Methods **/
   def get(): VectorSchemaRoot = {
@@ -44,7 +44,8 @@ class SparkResultSet(df: DataFrame) extends ArrowResultSet {
   }
 
   def close(): Unit = {
-    df.unpersist()
+    this.vsr.close()
+    this.df.unpersist()
   }
 
   /** Private Methods **/
@@ -72,7 +73,7 @@ class SparkResultSet(df: DataFrame) extends ArrowResultSet {
   }
   private val vsr = {
     val schema = this.convertSchema(df.schema)
-    val vsr = VectorSchemaRoot.create(schema, new RootAllocator())
+    val vsr = VectorSchemaRoot.create(schema, this.rootAllocator)
     vsr.setRowCount(this.DEFAULT_TARGET_BATCH_SIZE)
     vsr
   }
