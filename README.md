@@ -1,3 +1,10 @@
+<p align="center"><b><a href=https://github.com/modelardata/modelardb>The
+JVM-based version of ModelarDB in this repository</a> is no longer being
+actively developed as it has been deprecated in favor of a significantly more
+efficient and user-friendly <a
+href=https://github.com/modelardata/modelardb-rs>Rust-based
+implementation.</a></b></p>
+
 # ModelarDB
 ModelarDB is a modular model-based time series management system that
 interfaces a query engine and a data store with ModelarDB Core. This Core is a
