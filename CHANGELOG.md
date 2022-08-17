@@ -4,7 +4,7 @@ All notable changes to ModelarDB will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2022-08-17
 ### Added
 - The data transfer module now supports any combination of H2 and Apache Spark
   as client and server. Apache Spark uses distributed Receivers run by Workers.
@@ -21,7 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed `gaps` in the Segment View to `offsets` for both Apache Spark and H2.
 - Renamed `mid` to `mtid` in `ORCStorage` and `ParquetStorage` for consistency.
 
-### Deprecated
 ### Removed
 - Dropped Akka Streams from the data transfer module and switched to using
   Apache Arrow Flight directly for data transfer.
@@ -31,8 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix `ModelType.withinErrorBound()` never returning true with error bound zero.
 - Fix Apache Spark using the wrong case for predicate push-down of members.
 - Fix the denormalized dimensions using the wrong case for the column names.
-
-### Security
 
 ## [0.2.0] - 2021-12-21
 ### Added

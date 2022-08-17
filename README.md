@@ -52,7 +52,7 @@ file must specify the query processing engine and data store to use. An example
 configuration is included as part of this repository.
 
 ## Documentation
-For more information about using ModelarDB see the [user manual](https://docs.modelardata.com/).
+For more information about using ModelarDB see the [user manual](https://github.com/ModelarData/ModelarDB/blob/master/docs/index.md).
 
 ## Development
 The repository is organized using two sets of branches:
